@@ -40,6 +40,10 @@ class PlayerController:
         
         # Load favorites
         self._load_favorites()
+        
+        # Load last playlist and EPG
+        self._load_last_playlist()
+        self._load_last_epg()
     
     def _load_favorites(self):
         """Load favorite channels from database"""
@@ -139,6 +143,8 @@ class PlayerController:
                 self.playlist = M3UParser.parse(file_path)
                 self._update_categories()
                 self._update_channel_list()
+                # Save the playlist path
+                self.db.save_setting('last_playlist', file_path)
                 self.window.show_notification(
                     "Playlist loaded successfully",
                     NotificationType.SUCCESS
@@ -198,10 +204,17 @@ class PlayerController:
                 NotificationType.INFO
             )
         except Exception as e:
-            self.window.show_notification(
-                f"Failed to play channel: {str(e)}",
-                NotificationType.ERROR
-            )
+            error_msg = str(e)
+            if "unable to open the MRL" in error_msg.lower():
+                self.window.show_notification(
+                    f"Channel '{channel.name}' is not available",
+                    NotificationType.ERROR
+                )
+            else:
+                self.window.show_notification(
+                    f"Failed to play channel: {str(e)}",
+                    NotificationType.ERROR
+                )
     
     def toggle_playback(self):
         if self.window.player_widget.vlc_available:
@@ -306,7 +319,9 @@ class PlayerController:
         )
         
         if file_path:
-            self._load_epg_from_file(file_path)
+            if self._load_epg_from_file(file_path):
+                # Save the EPG file path
+                self.db.save_setting('last_epg_file', file_path)
     
     def load_epg_url(self):
         url = self.window.epg_url_input.text().strip()
@@ -361,3 +376,42 @@ class PlayerController:
                 NotificationType.ERROR
             )
             return False 
+    
+    def _load_last_playlist(self):
+        """Load the last used playlist if available"""
+        playlist_path = self.db.get_setting('last_playlist')
+        if playlist_path and os.path.exists(playlist_path):
+            try:
+                self.playlist = M3UParser.parse(playlist_path)
+                self._update_categories()
+                self._update_channel_list()
+                self.window.show_notification(
+                    "Previous playlist loaded",
+                    NotificationType.SUCCESS
+                )
+            except Exception as e:
+                self.window.show_notification(
+                    f"Failed to load previous playlist: {str(e)}",
+                    NotificationType.ERROR
+                )
+    
+    def _load_last_epg(self):
+        """Load the last used EPG if available"""
+        epg_file = self.db.get_setting('last_epg_file')
+        epg_url = self.db.get_setting('last_epg_url')
+        
+        if epg_url:
+            self.window.epg_url_input.setText(epg_url)
+            self.load_epg_url()
+        elif epg_file and os.path.exists(epg_file):
+            try:
+                self._load_epg_from_file(epg_file)
+                self.window.show_notification(
+                    "Previous EPG loaded",
+                    NotificationType.SUCCESS
+                )
+            except Exception as e:
+                self.window.show_notification(
+                    f"Failed to load previous EPG: {str(e)}",
+                    NotificationType.ERROR
+                ) 

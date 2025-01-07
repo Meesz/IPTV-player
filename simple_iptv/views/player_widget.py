@@ -88,7 +88,14 @@ class PlayerWidget(QFrame):
             
         media = self.instance.media_new(url)
         self.player.set_media(media)
-        self.player.play()
+        result = self.player.play()
+        
+        # Check if playback started successfully
+        if result == -1:  # VLC returns -1 on error
+            error_msg = "VLC is unable to open the MRL"
+            print(f"Playback error: {error_msg}")
+            raise Exception(error_msg)
+        
         self.placeholder.hide()
         
     def stop(self):

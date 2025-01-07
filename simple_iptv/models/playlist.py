@@ -9,6 +9,28 @@ class Channel:
     group: str = ""
     logo: str = ""
     epg_id: str = ""
+    id: int = None  # Add this for database ID
+
+    @classmethod
+    def from_db_row(cls, row):
+        """Create Channel from database row"""
+        data = dict(row)
+        # Map database column names to Channel attributes
+        mapping = {
+            'group_name': 'group',  # Map group_name from DB to group attribute
+            'id': 'id'  # Keep ID if present
+        }
+        
+        # Rename keys according to mapping
+        for db_name, attr_name in mapping.items():
+            if db_name in data:
+                data[attr_name] = data.pop(db_name)
+        
+        # Remove any extra fields not in Channel class
+        valid_fields = cls.__annotations__.keys()
+        data = {k: v for k, v in data.items() if k in valid_fields}
+        
+        return cls(**data)
 
 class Playlist:
     def __init__(self):

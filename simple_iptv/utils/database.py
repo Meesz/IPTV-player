@@ -18,10 +18,10 @@ class Database:
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
-                    url TEXT NOT NULL,
+                    url TEXT NOT NULL UNIQUE,
                     group_name TEXT,
                     logo TEXT,
-                    UNIQUE(url)
+                    epg_id TEXT
                 );
                 
                 CREATE TABLE IF NOT EXISTS settings (
@@ -37,17 +37,25 @@ class Database:
                     description TEXT,
                     PRIMARY KEY (channel_id, start_time)
                 );
+                
+                -- Add default settings for file paths
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
             ''')
     
     def add_favorite(self, channel: Channel) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
-                    'INSERT OR REPLACE INTO favorites (name, url, group_name, logo) VALUES (?, ?, ?, ?)',
+                    '''INSERT OR REPLACE INTO favorites 
+                       (name, url, group_name, logo) 
+                       VALUES (?, ?, ?, ?)''',
                     (channel.name, channel.url, channel.group, channel.logo)
                 )
-            return True
-        except sqlite3.Error:
+                return True
+        except sqlite3.Error as e:
+            print(f"Database error: {str(e)}")
             return False
     
     def remove_favorite(self, url: str) -> bool:
@@ -63,8 +71,9 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute('SELECT * FROM favorites')
-                return [Channel(**dict(row)) for row in cursor.fetchall()]
-        except sqlite3.Error:
+                return [Channel.from_db_row(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Database error: {str(e)}")
             return []
     
     def is_favorite(self, url: str) -> bool:
