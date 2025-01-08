@@ -222,3 +222,17 @@ class MainWindow(QMainWindow):
     
     def show_notification(self, message: str, type: NotificationType = NotificationType.INFO):
         self.notification.show_message(message, type) 
+    
+    def _create_menu(self):
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu('File')
+        
+        # Add Playlist Manager action
+        playlist_manager_action = QAction('Playlist Manager', self)
+        playlist_manager_action.setShortcut('Ctrl+P')
+        file_menu.addAction(playlist_manager_action)
+        
+        # Store the action for connecting signals
+        self.playlist_manager_action = playlist_manager_action 

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PyQt6.QtCore import Qt, QTimer
 from models.playlist import Playlist, Channel
 from models.epg import EPGGuide
@@ -12,6 +12,7 @@ from datetime import datetime
 import requests
 import tempfile
 import os
+from views.playlist_manager import PlaylistManagerDialog
 
 class PlayerController:
     def __init__(self, main_window: MainWindow):
@@ -44,6 +45,9 @@ class PlayerController:
         # Load last playlist and EPG
         self._load_last_playlist()
         self._load_last_epg()
+        
+        # Show playlist manager on startup
+        self.show_playlist_manager()
     
     def _load_favorites(self):
         """Load favorite channels from database"""
@@ -402,11 +406,11 @@ class PlayerController:
     def _load_last_playlist(self):
         """Load the last used playlist if available"""
         playlist_path = self.db.get_setting('last_playlist')
-        if playlist_path and os.path.exists(playlist_path):
+        is_url = self.db.get_setting('last_playlist_is_url') == 'true'
+        
+        if playlist_path:
             try:
-                self.playlist = M3UParser.parse(playlist_path)
-                self._update_categories()
-                self._update_channel_list()
+                self.load_playlist_from_path(playlist_path, is_url)
                 self.window.show_notification(
                     "Previous playlist loaded",
                     NotificationType.SUCCESS
@@ -437,3 +441,74 @@ class PlayerController:
                     f"Failed to load previous EPG: {str(e)}",
                     NotificationType.ERROR
                 ) 
+    
+    def show_playlist_manager(self):
+        dialog = PlaylistManagerDialog(self.window)
+        
+        # Load saved playlists
+        saved_playlists = self.db.get_playlists()
+        print(f"Loading {len(saved_playlists)} saved playlists")
+        dialog.set_playlists(saved_playlists)
+        
+        # Connect playlist selected signal
+        dialog.playlist_selected.connect(lambda path, is_url: self.load_playlist_from_path(path, is_url))
+        
+        result = dialog.exec()
+        
+        # Always save playlists when dialog is closed
+        playlists = dialog.get_playlists()
+        print(f"Attempting to save {len(playlists)} playlists")
+        
+        if playlists:
+            success = self.db.save_playlists(playlists)
+            if success:
+                # Verify the save by reloading
+                verification = self.db.get_playlists()
+                print(f"Verification: {len(verification)} playlists in database")
+                self.window.show_notification(
+                    f"Saved {len(playlists)} playlists successfully",
+                    NotificationType.SUCCESS
+                )
+            else:
+                self.window.show_notification(
+                    "Failed to save playlists",
+                    NotificationType.ERROR
+                )
+        
+        if result == QDialog.accepted:
+            # A playlist was selected, it will be loaded via the signal
+            pass
+        else:
+            # If no playlist was selected and we have none loaded, quit
+            if not self.playlist.channels:
+                self.window.close()
+    
+    def load_playlist_from_path(self, file_path: str, is_url: bool = False):
+        try:
+            if is_url:
+                # Download playlist from URL
+                response = requests.get(file_path, timeout=30)
+                response.raise_for_status()
+                
+                # Save to temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.m3u8') as tmp_file:
+                    tmp_file.write(response.content)
+                    file_path = tmp_file.name
+            
+            self.playlist = M3UParser.parse(file_path)
+            self._update_categories()
+            self._update_channel_list()
+            
+            # Save as last used playlist with is_url flag
+            self.db.save_setting('last_playlist', file_path)
+            self.db.save_setting('last_playlist_is_url', 'true' if is_url else 'false')
+            
+            self.window.show_notification(
+                "Playlist loaded successfully",
+                NotificationType.SUCCESS
+            )
+        except Exception as e:
+            self.window.show_notification(
+                f"Failed to load playlist: {str(e)}",
+                NotificationType.ERROR
+            ) 

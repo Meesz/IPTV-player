@@ -149,3 +149,8 @@ cython_debug/
 .idea/
 
 # End Generation Here
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
