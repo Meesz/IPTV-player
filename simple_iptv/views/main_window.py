@@ -61,6 +61,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Simple IPTV Player")
         self.setMinimumSize(1024, 768)
         
+        # Create menu bar
+        self._create_menu()
+        
         # Create central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -227,12 +230,20 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         
         # File menu
-        file_menu = menubar.addMenu('File')
+        file_menu = menubar.addMenu('&File')
         
         # Add Playlist Manager action
-        playlist_manager_action = QAction('Playlist Manager', self)
-        playlist_manager_action.setShortcut('Ctrl+P')
-        file_menu.addAction(playlist_manager_action)
+        self.playlist_manager_action = QAction('&Playlist Manager', self)
+        self.playlist_manager_action.setShortcut('Ctrl+P')
+        self.playlist_manager_action.setStatusTip('Open playlist manager')
+        file_menu.addAction(self.playlist_manager_action)
         
-        # Store the action for connecting signals
-        self.playlist_manager_action = playlist_manager_action 
+        # Add separator
+        file_menu.addSeparator()
+        
+        # Add Exit action
+        exit_action = QAction('&Exit', self)
+        exit_action.setShortcut('Ctrl+Q')
+        exit_action.setStatusTip('Exit application')
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action) 

@@ -45,9 +45,6 @@ class PlayerController:
         # Load last playlist and EPG
         self._load_last_playlist()
         self._load_last_epg()
-        
-        # Show playlist manager on startup
-        self.show_playlist_manager()
     
     def _load_favorites(self):
         """Load favorite channels from database"""
@@ -80,6 +77,9 @@ class PlayerController:
         
         # Search
         self.window.search_bar.textChanged.connect(self._search_changed)
+        
+        # Connect menu actions
+        self.window.playlist_manager_action.triggered.connect(self.show_playlist_manager)
     
     def _load_settings(self):
         # Load volume
@@ -462,7 +462,6 @@ class PlayerController:
         if playlists:
             success = self.db.save_playlists(playlists)
             if success:
-                # Verify the save by reloading
                 verification = self.db.get_playlists()
                 print(f"Verification: {len(verification)} playlists in database")
                 self.window.show_notification(
@@ -475,12 +474,18 @@ class PlayerController:
                     NotificationType.ERROR
                 )
         
-        if result == QDialog.accepted:
-            # A playlist was selected, it will be loaded via the signal
-            pass
-        else:
-            # If no playlist was selected and we have none loaded, quit
-            if not self.playlist.channels:
+        # Only show quit confirmation if we have no channels at all
+        if result == QDialog.rejected and not self.playlist.channels:
+            response = QMessageBox.question(
+                self.window,
+                "No Playlist",
+                "No playlist is loaded. Would you like to add one?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if response == QMessageBox.StandardButton.Yes:
+                QTimer.singleShot(0, self.show_playlist_manager)
+            else:
                 self.window.close()
     
     def load_playlist_from_path(self, file_path: str, is_url: bool = False):

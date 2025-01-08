@@ -13,6 +13,10 @@ def main():
     # Show the main window
     main_window.show()
     
+    # Show playlist manager if needed
+    if not controller.playlist.channels:
+        controller.show_playlist_manager()
+    
     sys.exit(app.exec())
 
 if __name__ == "__main__":
