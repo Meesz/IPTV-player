@@ -1,9 +1,24 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QListWidget, QSlider, QComboBox,
-                            QTabWidget, QLabel, QScrollArea, QFrame, QLineEdit,
-                            QMenu, QWidgetAction)
-from PyQt6.QtCore import Qt
+                            QTabWidget, QLabel, QLineEdit, QMenu, QToolBar,
+                            QWidgetAction, QFrame, QSizePolicy)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QAction
 from .player_widget import PlayerWidget
+from .notification import NotificationWidget, NotificationType
+from utils.themes import Themes
+
+class SearchBar(QLineEdit):
+    def __init__(self):
+        super().__init__()
+        self.setPlaceholderText("Search channels...")
+        self.setStyleSheet("""
+            QLineEdit {
+                padding: 5px 10px;
+                border-radius: 15px;
+                min-width: 200px;
+            }
+        """)
 
 class EPGWidget(QFrame):
     def __init__(self):
@@ -46,18 +61,75 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Simple IPTV Player")
         self.setMinimumSize(1024, 768)
         
-        # Create central widget and layout
+        # Create central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QHBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Create left panel
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
+        # Create toolbar
+        self._create_toolbar()
+        
+        # Create content area
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.addLayout(content_layout)
+        
+        # Create left sidebar
+        left_panel = self._create_left_panel()
+        content_layout.addWidget(left_panel)
+        
+        # Create right panel with player
+        right_panel = self._create_right_panel()
+        content_layout.addWidget(right_panel)
+        
+        # Set content stretch
+        content_layout.setStretch(0, 1)  # Left panel
+        content_layout.setStretch(1, 4)  # Right panel
+        
+        # Create notification widget
+        self.notification = NotificationWidget(self)
+        
+        # Apply default theme
+        self.apply_theme(Themes.get_dark_theme())
+    
+    def _create_toolbar(self):
+        toolbar = QToolBar()
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        self.addToolBar(toolbar)
+        
+        # Add search bar
+        self.search_bar = SearchBar()
+        toolbar.addWidget(self.search_bar)
+        
+        # Add spacer
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+        
+        # Add settings button
+        self.settings_button = QPushButton("⚙")
+        self.settings_button.setFixedSize(32, 32)
+        self.settings_menu = QMenu(self.settings_button)
+        
+        # Add theme actions
+        theme_menu = self.settings_menu.addMenu("Theme")
+        self.light_theme_action = theme_menu.addAction("Light")
+        self.dark_theme_action = theme_menu.addAction("Dark")
+        
+        self.settings_button.setMenu(self.settings_menu)
+        toolbar.addWidget(self.settings_button)
+    
+    def _create_left_panel(self):
+        panel = QFrame()
+        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        layout = QVBoxLayout(panel)
         
         # Add category selector
         self.category_combo = QComboBox()
-        left_layout.addWidget(self.category_combo)
+        layout.addWidget(self.category_combo)
         
         # Add tabs for channels and favorites
         self.tabs = QTabWidget()
@@ -66,7 +138,7 @@ class MainWindow(QMainWindow):
         
         self.tabs.addTab(self.channel_list, "Channels")
         self.tabs.addTab(self.favorites_list, "Favorites")
-        left_layout.addWidget(self.tabs)
+        layout.addWidget(self.tabs)
         
         # Add controls
         controls_layout = QHBoxLayout()
@@ -98,20 +170,38 @@ class MainWindow(QMainWindow):
         url_action.setDefaultWidget(url_widget)
         self.load_epg_menu.addAction(url_action)
         
-        # Playback controls
+        # Add controls to layout
+        controls_layout.addWidget(self.load_button)
+        controls_layout.addWidget(self.load_epg_button)
+        
+        layout.addLayout(controls_layout)
+        
+        # Add EPG widget
+        self.epg_widget = EPGWidget()
+        layout.addWidget(self.epg_widget)
+        
+        return panel
+    
+    def _create_right_panel(self):
+        panel = QFrame()
+        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        layout = QVBoxLayout(panel)
+        
+        # Add player widget
+        self.player_widget = PlayerWidget()
+        layout.addWidget(self.player_widget)
+        
+        # Add playback controls
+        controls_layout = QHBoxLayout()
+        
         self.play_button = QPushButton("Play/Pause")
         self.stop_button = QPushButton("Stop")
         self.favorite_button = QPushButton("★")
         self.favorite_button.setCheckable(True)
         
-        # Add all controls to layout
-        controls_layout.addWidget(self.load_button)
-        controls_layout.addWidget(self.load_epg_button)
         controls_layout.addWidget(self.play_button)
         controls_layout.addWidget(self.stop_button)
         controls_layout.addWidget(self.favorite_button)
-        
-        left_layout.addLayout(controls_layout)
         
         # Add volume control
         volume_layout = QHBoxLayout()
@@ -120,20 +210,15 @@ class MainWindow(QMainWindow):
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
         volume_layout.addWidget(self.volume_slider)
-        left_layout.addLayout(volume_layout)
         
-        # Add EPG widget
-        self.epg_widget = EPGWidget()
-        left_layout.addWidget(self.epg_widget)
+        # Add controls to layout
+        layout.addLayout(controls_layout)
+        layout.addLayout(volume_layout)
         
-        # Create right panel with player
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        
-        # Add player widget
-        self.player_widget = PlayerWidget()
-        right_layout.addWidget(self.player_widget)
-        
-        # Add widgets to main layout
-        layout.addWidget(left_panel, 1)
-        layout.addWidget(right_panel, 4) 
+        return panel
+    
+    def apply_theme(self, theme: str):
+        self.setStyleSheet(theme)
+    
+    def show_notification(self, message: str, type: NotificationType = NotificationType.INFO):
+        self.notification.show_message(message, type) 

@@ -10,18 +10,35 @@ class Database:
     def __init__(self):
         self.db_path = Path.home() / '.simple_iptv' / 'database.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = None
         self.init_database()
     
+    def _get_connection(self):
+        if self._connection is None:
+            self._connection = sqlite3.connect(self.db_path)
+            self._connection.row_factory = sqlite3.Row
+        return self._connection
+    
+    def close(self):
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+    
     def init_database(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
+            # Enable WAL mode for better performance
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA cache_size=-2000')  # Use 2MB cache
+            conn.execute('PRAGMA temp_store=MEMORY')
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
-                    url TEXT NOT NULL,
+                    url TEXT NOT NULL UNIQUE,
                     group_name TEXT,
                     logo TEXT,
-                    UNIQUE(url)
+                    epg_id TEXT
                 );
                 
                 CREATE TABLE IF NOT EXISTS settings (
@@ -37,17 +54,25 @@ class Database:
                     description TEXT,
                     PRIMARY KEY (channel_id, start_time)
                 );
+                
+                -- Add default settings for file paths
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
             ''')
     
     def add_favorite(self, channel: Channel) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
-                    'INSERT OR REPLACE INTO favorites (name, url, group_name, logo) VALUES (?, ?, ?, ?)',
+                    '''INSERT OR REPLACE INTO favorites 
+                       (name, url, group_name, logo) 
+                       VALUES (?, ?, ?, ?)''',
                     (channel.name, channel.url, channel.group, channel.logo)
                 )
-            return True
-        except sqlite3.Error:
+                return True
+        except sqlite3.Error as e:
+            print(f"Database error: {str(e)}")
             return False
     
     def remove_favorite(self, url: str) -> bool:
@@ -63,8 +88,9 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute('SELECT * FROM favorites')
-                return [Channel(**dict(row)) for row in cursor.fetchall()]
-        except sqlite3.Error:
+                return [Channel.from_db_row(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Database error: {str(e)}")
             return []
     
     def is_favorite(self, url: str) -> bool:

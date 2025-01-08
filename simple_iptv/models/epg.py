@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict
+from functools import lru_cache
 
 @dataclass
 class Program:
@@ -31,6 +32,8 @@ class EPGData:
 class EPGGuide:
     def __init__(self):
         self._data: Dict[str, EPGData] = {}
+        self._cache_timeout = timedelta(minutes=5)
+        self._last_cache_clear = datetime.now()
     
     def add_channel_data(self, channel_id: str, epg_data: EPGData):
         self._data[channel_id] = epg_data
@@ -40,3 +43,20 @@ class EPGGuide:
     
     def clear(self):
         self._data.clear() 
+    
+    @lru_cache(maxsize=100)
+    def get_current_program(self, channel_id: str, timestamp: int) -> Program:
+        """Get current program with caching"""
+        epg_data = self._data.get(channel_id)
+        if not epg_data:
+            return None
+            
+        current_time = datetime.fromtimestamp(timestamp)
+        return epg_data.get_current_program(current_time)
+    
+    def clear_cache(self):
+        """Clear the program cache periodically"""
+        now = datetime.now()
+        if now - self._last_cache_clear > self._cache_timeout:
+            self.get_current_program.cache_clear()
+            self._last_cache_clear = now 

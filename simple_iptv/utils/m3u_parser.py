@@ -20,18 +20,25 @@ class M3UParser:
                 continue
                 
             if line.startswith('#EXTINF'):
-                info_regex = r'#EXTINF:-1(?:.*tvg-name="(.*?)")?(?:.*group-title="(.*?)")?(?:.*tvg-logo="(.*?)")?,(.+)$'
+                info_regex = r'#EXTINF:-1(?:.*tvg-id="(.*?)")?(?:.*tvg-name="(.*?)")?(?:.*group-title="(.*?)")?(?:.*tvg-logo="(.*?)")?,(.+)$'
                 match = re.match(info_regex, line)
                 
                 if match:
-                    name = match.group(1) or match.group(4)
-                    group = match.group(2) or ""
-                    logo = match.group(3) or ""
-                    current_channel = (name, group, logo)
+                    epg_id = match.group(1) or ""
+                    name = match.group(2) or match.group(5)
+                    group = match.group(3) or ""
+                    logo = match.group(4) or ""
+                    current_channel = (name, group, logo, epg_id)
             
             elif not line.startswith('#') and current_channel:
-                name, group, logo = current_channel
-                channel = Channel(name=name, url=line, group=group, logo=logo)
+                name, group, logo, epg_id = current_channel
+                channel = Channel(
+                    name=name,
+                    url=line,
+                    group=group,
+                    logo=logo,
+                    epg_id=epg_id
+                )
                 playlist.add_channel(channel)
                 current_channel = None
                 
