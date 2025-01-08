@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Set
 from collections import defaultdict
 
 @dataclass
@@ -9,42 +9,43 @@ class Channel:
     group: str = ""
     logo: str = ""
     epg_id: str = ""
-    id: int = None  # Add this for database ID
+    id: int = None
 
-    @classmethod
-    def from_db_row(cls, row):
-        """Create Channel from database row"""
-        data = dict(row)
-        # Map database column names to Channel attributes
-        mapping = {
-            'group_name': 'group',  # Map group_name from DB to group attribute
-            'id': 'id'  # Keep ID if present
-        }
-        
-        # Rename keys according to mapping
-        for db_name, attr_name in mapping.items():
-            if db_name in data:
-                data[attr_name] = data.pop(db_name)
-        
-        # Remove any extra fields not in Channel class
-        valid_fields = cls.__annotations__.keys()
-        data = {k: v for k, v in data.items() if k in valid_fields}
-        
-        return cls(**data)
+    def __hash__(self):
+        return hash(self.url)  # Use URL as unique identifier
 
 class Playlist:
     def __init__(self):
         self.channels: List[Channel] = []
         self._categories: Dict[str, List[Channel]] = defaultdict(list)
+        self._url_index: Dict[str, Channel] = {}  # Index for quick URL lookups
+        self._name_index: Dict[str, List[Channel]] = defaultdict(list)  # Index for quick name searches
     
     def add_channel(self, channel: Channel):
         self.channels.append(channel)
         category = channel.group or "Uncategorized"
         self._categories[category].append(channel)
+        
+        # Update indexes
+        self._url_index[channel.url] = channel
+        self._name_index[channel.name.lower()].append(channel)
     
     def clear(self):
         self.channels.clear()
         self._categories.clear()
+        self._url_index.clear()
+        self._name_index.clear()
+    
+    def get_channel_by_url(self, url: str) -> Channel:
+        return self._url_index.get(url)
+    
+    def search_channels(self, query: str) -> List[Channel]:
+        query = query.lower()
+        return [
+            channel for name_match in self._name_index.keys()
+            if query in name_match
+            for channel in self._name_index[name_match]
+        ]
     
     @property
     def categories(self) -> List[str]:

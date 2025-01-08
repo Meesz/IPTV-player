@@ -26,6 +26,8 @@ class EPGParser:
     @staticmethod
     def parse_xmltv(file_path: str) -> EPGGuide:
         guide = EPGGuide()
+        channel_count = 0
+        program_count = 0
         
         try:
             tree = ET.parse(file_path)
@@ -66,12 +68,16 @@ class EPGParser:
                 if channel_data is None:
                     channel_data = EPGData(channel_id=channel_id, programs=[])
                     guide.add_channel_data(channel_id, channel_data)
+                    channel_count += 1
                 
                 channel_data.programs.append(prog)
+                program_count += 1
             
-            # Sort programs by start time
-            for channel_data in guide._data.values():
-                channel_data.programs.sort(key=lambda x: x.start_time)
+            print(f"EPG loaded: {channel_count} channels, {program_count} programs")
+            
+            # Debug: Print some channel IDs
+            channel_ids = list(guide._data.keys())[:5]
+            print(f"Sample channel IDs: {channel_ids}")
             
             return guide
             

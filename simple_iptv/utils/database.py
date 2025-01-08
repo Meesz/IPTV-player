@@ -10,10 +10,27 @@ class Database:
     def __init__(self):
         self.db_path = Path.home() / '.simple_iptv' / 'database.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = None
         self.init_database()
     
+    def _get_connection(self):
+        if self._connection is None:
+            self._connection = sqlite3.connect(self.db_path)
+            self._connection.row_factory = sqlite3.Row
+        return self._connection
+    
+    def close(self):
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+    
     def init_database(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
+            # Enable WAL mode for better performance
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA cache_size=-2000')  # Use 2MB cache
+            conn.execute('PRAGMA temp_store=MEMORY')
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

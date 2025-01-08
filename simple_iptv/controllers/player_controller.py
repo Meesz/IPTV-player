@@ -288,12 +288,28 @@ class PlayerController:
             return
             
         # Get EPG data for current channel
-        epg_data = self.epg_guide.get_channel_data(self.current_channel.epg_id)
+        epg_id = self.current_channel.epg_id
+        if not epg_id:
+            self.window.epg_widget.update_current_program(
+                "No EPG ID available",
+                "",
+                "This channel does not have EPG information"
+            )
+            return
+            
+        epg_data = self.epg_guide.get_channel_data(epg_id)
         if not epg_data:
+            self.window.epg_widget.update_current_program(
+                "No EPG data available",
+                "",
+                "No program information found for this channel"
+            )
             return
             
         # Get current program
-        current_program = epg_data.get_current_program()
+        current_time = datetime.now()
+        current_program = epg_data.get_current_program(current_time)
+        
         if current_program:
             time_str = (f"{current_program.start_time.strftime('%H:%M')} - "
                        f"{current_program.end_time.strftime('%H:%M')}")
@@ -306,8 +322,14 @@ class PlayerController:
             
             # Get upcoming programs
             upcoming = [p for p in epg_data.programs 
-                       if p.start_time > datetime.now()][:5]
-            self.window.epg_widget.set_upcoming_programs(upcoming) 
+                       if p.start_time > current_time][:5]
+            self.window.epg_widget.set_upcoming_programs(upcoming)
+        else:
+            self.window.epg_widget.update_current_program(
+                "No current program",
+                "",
+                "No program information available for current time"
+            )
     
     def load_epg_file(self):
         """Load EPG from local file"""
