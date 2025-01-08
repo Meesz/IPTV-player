@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+simple_iptv/controllers/__pycache__/
+simple_iptv/models/__pycache__/
+simple_iptv/utils/__pycache__/
+simple_iptv/views/__pycache__/
+
 # C extensions
 *.so
 
