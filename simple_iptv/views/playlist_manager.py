@@ -36,11 +36,15 @@ class PlaylistManagerDialog(QDialog):
         self.add_menu.addAction("From URL...", self.add_playlist_url)
         self.add_button.setMenu(self.add_menu)
         
+        self.edit_button = QPushButton("Edit")
+        self.edit_button.setEnabled(False)
+        
         self.remove_button = QPushButton("Remove")
         self.select_button = QPushButton("Select")
         self.cancel_button = QPushButton("Cancel")
         
         button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.edit_button)
         button_layout.addWidget(self.remove_button)
         button_layout.addWidget(self.select_button)
         button_layout.addWidget(self.cancel_button)
@@ -48,10 +52,11 @@ class PlaylistManagerDialog(QDialog):
         layout.addLayout(button_layout)
         
         # Connect signals
+        self.edit_button.clicked.connect(self.edit_playlist)
         self.remove_button.clicked.connect(self.remove_playlist)
         self.select_button.clicked.connect(self.select_playlist)
         self.cancel_button.clicked.connect(self.reject)
-        self.playlist_list.itemDoubleClicked.connect(self.select_playlist)
+        self.playlist_list.itemDoubleClicked.connect(self.edit_playlist)
         
         # Disable buttons initially
         self.remove_button.setEnabled(False)
@@ -59,11 +64,19 @@ class PlaylistManagerDialog(QDialog):
         
         # Connect selection changed
         self.playlist_list.itemSelectionChanged.connect(self.selection_changed)
+        
+        # Add context menu
+        self.playlist_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.playlist_list.customContextMenuRequested.connect(self._show_context_menu)
+        
+        # Set the window close button to trigger reject() instead of accept()
+        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
     
     def selection_changed(self):
         has_selection = bool(self.playlist_list.selectedItems())
         self.remove_button.setEnabled(has_selection)
         self.select_button.setEnabled(has_selection)
+        self.edit_button.setEnabled(has_selection)
     
     def add_playlist_file(self):
         """Add playlist from local file"""
@@ -123,6 +136,8 @@ class PlaylistManagerDialog(QDialog):
                 'path': path,
                 'is_url': is_url
             })
+            # Add tooltip showing full path/URL
+            item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
             self.playlist_list.addItem(item)
     
     def remove_playlist(self):
@@ -167,4 +182,73 @@ class PlaylistManagerDialog(QDialog):
                 'path': path,
                 'is_url': is_url
             })
+            item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
             self.playlist_list.addItem(item) 
+    
+    def _show_context_menu(self, position):
+        item = self.playlist_list.itemAt(position)
+        if item:
+            menu = QMenu()
+            edit_action = menu.addAction("Edit")
+            remove_action = menu.addAction("Remove")
+            
+            action = menu.exec(self.playlist_list.mapToGlobal(position))
+            if action == edit_action:
+                self.edit_playlist()
+            elif action == remove_action:
+                self.remove_playlist()
+    
+    def edit_playlist(self):
+        current_item = self.playlist_list.currentItem()
+        if not current_item:
+            return
+            
+        data = current_item.data(Qt.ItemDataRole.UserRole)
+        is_url = data['is_url']
+        
+        # Edit name
+        name, ok = QInputDialog.getText(
+            self,
+            "Edit Playlist Name",
+            "Enter new name for playlist:",
+            text=current_item.text()
+        )
+        
+        if not ok:
+            return
+            
+        # Edit path/url
+        if is_url:
+            path, ok = QInputDialog.getText(
+                self,
+                "Edit Playlist URL",
+                "Enter new URL for playlist:",
+                text=data['path']
+            )
+        else:
+            path, ok = QFileDialog.getOpenFileName(
+                self,
+                "Select New Playlist File",
+                data['path'],
+                "M3U Files (*.m3u *.m3u8)"
+            )
+        
+        if ok and path:
+            # Update item
+            current_item.setText(name)
+            current_item.setData(Qt.ItemDataRole.UserRole, {
+                'path': path,
+                'is_url': is_url
+            })
+            
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Success",
+                "Playlist updated successfully"
+            ) 
+    
+    def closeEvent(self, event):
+        """Handle window close button (X) click"""
+        self.reject()
+        event.accept() 
