@@ -13,6 +13,9 @@ import requests
 import tempfile
 import os
 from views.playlist_manager import PlaylistManagerDialog
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PlayerController:
     def __init__(self, main_window: MainWindow):
@@ -135,6 +138,7 @@ class PlayerController:
             self.window.channel_list.addItem(channel.name)
     
     def load_playlist(self):
+        logger.debug("Opening file dialog for playlist selection")
         file_path, _ = QFileDialog.getOpenFileName(
             self.window,
             "Open M3U Playlist",
@@ -142,18 +146,29 @@ class PlayerController:
             "M3U Files (*.m3u *.m3u8)"
         )
         
+        logger.debug(f"Selected file path: {file_path}")
+        
         if file_path:
             try:
+                logger.debug("Attempting to parse playlist")
                 self.playlist = M3UParser.parse(file_path)
+                logger.debug(f"Parsed playlist with {len(self.playlist.channels)} channels")
+                
+                logger.debug("Updating categories")
                 self._update_categories()
+                logger.debug("Updating channel list")
                 self._update_channel_list()
+                
                 # Save the playlist path
+                logger.debug(f"Saving playlist path to database: {file_path}")
                 self.db.save_setting('last_playlist', file_path)
+                
                 self.window.show_notification(
                     "Playlist loaded successfully",
                     NotificationType.SUCCESS
                 )
             except Exception as e:
+                logger.error(f"Failed to load playlist: {str(e)}", exc_info=True)
                 self.window.show_notification(
                     f"Failed to load playlist: {str(e)}",
                     NotificationType.ERROR
@@ -410,12 +425,14 @@ class PlayerController:
         
         if playlist_path:
             try:
+                logger.debug(f"Loading last playlist from {'URL' if is_url else 'path'}: {playlist_path}")
                 self.load_playlist_from_path(playlist_path, is_url)
                 self.window.show_notification(
                     "Previous playlist loaded",
                     NotificationType.SUCCESS
                 )
             except Exception as e:
+                logger.error(f"Failed to load previous playlist: {str(e)}", exc_info=True)
                 self.window.show_notification(
                     f"Failed to load previous playlist: {str(e)}",
                     NotificationType.ERROR
@@ -443,76 +460,98 @@ class PlayerController:
                 ) 
     
     def show_playlist_manager(self):
-        dialog = PlaylistManagerDialog(self.window)
-        
-        # Load saved playlists
-        saved_playlists = self.db.get_playlists()
-        print(f"Loading {len(saved_playlists)} saved playlists")
-        dialog.set_playlists(saved_playlists)
-        
-        # Connect playlist selected signal
-        dialog.playlist_selected.connect(lambda path, is_url: self.load_playlist_from_path(path, is_url))
-        
-        result = dialog.exec()
-        
-        # Always save playlists when dialog is closed
-        playlists = dialog.get_playlists()
-        print(f"Attempting to save {len(playlists)} playlists")
-        
-        if playlists:
-            success = self.db.save_playlists(playlists)
-            if success:
-                verification = self.db.get_playlists()
-                print(f"Verification: {len(verification)} playlists in database")
-                self.window.show_notification(
-                    f"Saved {len(playlists)} playlists successfully",
-                    NotificationType.SUCCESS
-                )
-            else:
-                self.window.show_notification(
-                    "Failed to save playlists",
-                    NotificationType.ERROR
-                )
-        
-        # Only show quit confirmation if we have no channels at all
-        if result == QDialog.rejected and not self.playlist.channels:
-            response = QMessageBox.question(
-                self.window,
-                "No Playlist",
-                "No playlist is loaded. Would you like to add one?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
+        try:
+            dialog = PlaylistManagerDialog(self.window)
             
-            if response == QMessageBox.StandardButton.Yes:
-                QTimer.singleShot(0, self.show_playlist_manager)
-            else:
-                self.window.close()
+            # Load saved playlists
+            saved_playlists = self.db.get_playlists()
+            print(f"Loading {len(saved_playlists)} saved playlists")
+            dialog.set_playlists(saved_playlists)
+            
+            # Connect playlist selected signal
+            dialog.playlist_selected.connect(lambda path, is_url: self.load_playlist_from_path(path, is_url))
+            
+            result = dialog.exec()
+            
+            # Always save playlists when dialog is closed
+            playlists = dialog.get_playlists()
+            print(f"Attempting to save {len(playlists)} playlists")
+            
+            if playlists:
+                success = self.db.save_playlists(playlists)
+                if success:
+                    verification = self.db.get_playlists()
+                    print(f"Verification: {len(verification)} playlists in database")
+                    self.window.show_notification(
+                        f"Saved {len(playlists)} playlists successfully",
+                        NotificationType.SUCCESS
+                    )
+                else:
+                    self.window.show_notification(
+                        "Failed to save playlists",
+                        NotificationType.ERROR
+                    )
+            
+            # Only show quit confirmation if we have no channels at all
+            if result == QDialog.rejected and not self.playlist.channels:
+                response = QMessageBox.question(
+                    self.window,
+                    "No Playlist",
+                    "No playlist is loaded. Would you like to add one?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if response == QMessageBox.StandardButton.Yes:
+                    QTimer.singleShot(0, self.show_playlist_manager)
+                else:
+                    self.window.close()
+        except Exception as e:
+            self.window.show_notification(
+                f"Error showing playlist manager: {str(e)}",
+                NotificationType.ERROR
+            )
     
-    def load_playlist_from_path(self, file_path: str, is_url: bool = False):
+    def load_playlist_from_path(self, path: str, is_url: bool):
+        logger.debug(f"Loading playlist from {'URL' if is_url else 'path'}: {path}")
         try:
             if is_url:
-                # Download playlist from URL
-                response = requests.get(file_path, timeout=30)
+                logger.debug("Downloading playlist from URL")
+                response = requests.get(path)
                 response.raise_for_status()
-                
-                # Save to temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.m3u8') as tmp_file:
                     tmp_file.write(response.content)
                     file_path = tmp_file.name
+                    logger.debug(f"Saved URL content to temporary file: {file_path}")
+            else:
+                file_path = path
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"Playlist file not found: {file_path}")
             
+            logger.debug("Parsing playlist file")
             self.playlist = M3UParser.parse(file_path)
+            logger.debug(f"Parsed {len(self.playlist.channels)} channels")
+            
             self._update_categories()
             self._update_channel_list()
             
             # Save as last used playlist with is_url flag
-            self.db.save_setting('last_playlist', file_path)
+            logger.debug("Saving playlist settings to database")
+            self.db.save_setting('last_playlist', path)  # Save original path/URL, not temporary file
             self.db.save_setting('last_playlist_is_url', 'true' if is_url else 'false')
+            
+            # Cleanup temporary file if it was a URL download
+            if is_url and 'tmp_file' in locals():
+                try:
+                    os.unlink(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup temporary file: {e}")
             
             self.window.show_notification(
                 "Playlist loaded successfully",
                 NotificationType.SUCCESS
             )
         except Exception as e:
+            logger.error(f"Failed to load playlist: {str(e)}", exc_info=True)
             self.window.show_notification(
                 f"Failed to load playlist: {str(e)}",
                 NotificationType.ERROR

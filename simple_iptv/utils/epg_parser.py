@@ -7,7 +7,7 @@ class EPGParser:
     @staticmethod
     def parse_date(date_str: str) -> datetime:
         """Parse various EPG date formats"""
-        # Remove timezone if present (we'll assume UTC)
+        # Add timezone handling
         date_str = date_str.split('+')[0].split('-')[0]
         
         # Remove any spaces or 'T'
