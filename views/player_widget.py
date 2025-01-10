@@ -10,7 +10,14 @@ from .loading_spinner import LoadingSpinner
 logger = logging.getLogger(__name__)
 
 class FullscreenWindow(QWidget):
+    """A window that displays the player widget in fullscreen mode."""
+    
     def __init__(self, player_widget):
+        """Initialize the FullscreenWindow.
+        
+        Args:
+            player_widget: The player widget to display in fullscreen.
+        """
         super().__init__()
         self.player_widget = player_widget
         self.player = player_widget.player  # Get the VLC player instance
@@ -36,21 +43,25 @@ class FullscreenWindow(QWidget):
                 self.player.set_xwindow(self.winId())
             elif sys.platform == "darwin":
                 self.player.set_nsobject(int(self.winId()))
-    
-    def resizeEvent(self, event):
+    def resize_event(self, event):
         """Handle resize to update VLC rendering target"""
         super().resizeEvent(event)
         self._update_vlc_rendering_target()
     
-    def mouseDoubleClickEvent(self, event: QMouseEvent):
+    def mouse_double_click_event(self, event: QMouseEvent):
+        """Handle double click to close the fullscreen window."""
         self.close()
     
-    def keyPressEvent(self, event):
+    def key_press_event(self, event):
+        """Handle key press events to close the fullscreen window on ESC key."""
         if event.key() == Qt.Key.Key_Escape:
             self.close()
 
 class PlayerWidget(QFrame):
+    """A widget that displays and controls VLC media playback."""
+    
     def __init__(self):
+        """Initialize the PlayerWidget."""
         super().__init__()
         self.setMinimumSize(400, 300)
         
@@ -84,6 +95,7 @@ class PlayerWidget(QFrame):
         )
     
     def _init_vlc(self):
+        """Initialize VLC player and set up the environment."""
         try:
             # Try to determine Python architecture
             is_64bits = sys.maxsize > 2**32
@@ -161,6 +173,11 @@ class PlayerWidget(QFrame):
         super().closeEvent(event)
     
     def play(self, url: str):
+        """Play media from the given URL.
+        
+        Args:
+            url: The URL of the media to play.
+        """
         if not self.vlc_available:
             return
         
@@ -193,11 +210,10 @@ class PlayerWidget(QFrame):
             if result == -1:
                 self.loading_spinner.stop()
                 error_msg = "Failed to start playback - invalid or unsupported media"
-                logger.error(f"Playback error: {error_msg}")
+                logger.error("Playback error: %s", error_msg)
                 self.placeholder.setText(error_msg)
                 self.placeholder.show()
-                raise Exception(error_msg)
-            
+                raise RuntimeError(error_msg)
         except Exception as e:
             self.loading_spinner.stop()
             error_msg = f"Playback error: {str(e)}"
@@ -215,6 +231,7 @@ class PlayerWidget(QFrame):
         self.placeholder.show()
         
     def stop(self):
+        """Stop media playback."""
         if self.vlc_available:
             if self.fullscreen_window:
                 self._exit_fullscreen()
@@ -223,6 +240,7 @@ class PlayerWidget(QFrame):
             self.placeholder.show()
         
     def pause(self):
+        """Pause media playback."""
         if self.vlc_available:
             self.player.pause()
         
@@ -240,15 +258,33 @@ class PlayerWidget(QFrame):
         self.player.audio_set_volume(volume)
         
     def is_paused(self) -> bool:
+        """Check if the media is paused.
+        
+        Returns:
+            bool: True if the media is paused, False otherwise.
+        """
         if not self.vlc_available:
             return False
         try:
             return self.player.get_state() == self.vlc.State.Paused
-        except Exception:
-            return False 
-    
-    def mouseDoubleClickEvent(self, event: QMouseEvent):
-        """Handle double click for fullscreen toggle"""
+        except AttributeError:
+            logger.error("AttributeError: Failed to get player state")
+            return False
+        except TypeError:
+            logger.error("TypeError: Failed to get player state")
+            return False
+        except (RuntimeError, ValueError) as e:
+            logger.error("RuntimeError or ValueError: %s", str(e))
+            return False
+        except Exception as e:
+            logger.error("Unexpected error: %s", str(e))
+            return False
+    def mouse_double_click_event(self):
+        """Handle double click for fullscreen toggle.
+        
+        Args:
+            event (QMouseEvent): The mouse event that triggered the double click.
+        """
         if not self.vlc_available or not self.player.is_playing():
             return
             
@@ -259,6 +295,7 @@ class PlayerWidget(QFrame):
             self._exit_fullscreen()
     
     def _exit_fullscreen(self):
+        """Exit fullscreen mode and restore video to the main window."""
         if self.fullscreen_window:
             # Restore video to main window
             if sys.platform == "win32":
@@ -272,15 +309,24 @@ class PlayerWidget(QFrame):
             self.fullscreen_window = None
     
     def _on_fullscreen_closed(self):
+        """Callback for when the fullscreen window is closed."""
         self._exit_fullscreen() 
-    
-    def keyPressEvent(self, event):
-        """Handle ESC key to exit fullscreen"""
+     
+    def key_press_event(self, event):
+        """Handle ESC key to exit fullscreen.
+        
+        Args:
+            event: The key event that triggered the action.
+        """
         if event.key() == Qt.Key.Key_Escape and self.fullscreen_window:
             self._exit_fullscreen()
     
-    def resizeEvent(self, event):
-        """Handle resize to keep spinner centered"""
+    def resize_event(self, event):
+        """Handle resize to keep spinner centered.
+        
+        Args:
+            event: The resize event that triggered the action.
+        """
         super().resizeEvent(event)
         # Center the spinner
         self.loading_spinner.move(
