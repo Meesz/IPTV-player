@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from models.playlist import Playlist, Channel
-from models.epg import EPGGuide
 from utils.m3u_parser import M3UParser
 from utils.epg_parser import EPGParser
 from utils.database import Database
@@ -75,8 +74,7 @@ class PlayerController:
         self.window.favorite_button.clicked.connect(self.toggle_favorite)
         
         # Theme
-        self.window.light_theme_action.triggered.connect(lambda: self.change_theme('light'))
-        self.window.dark_theme_action.triggered.connect(lambda: self.change_theme('dark'))
+
         
         # Search
         self.window.search_bar.textChanged.connect(self._search_changed)
@@ -89,10 +87,6 @@ class PlayerController:
         volume = int(self.db.get_setting('volume', '100'))
         self.window.volume_slider.setValue(volume)
         self.window.player_widget.set_volume(volume)
-        
-        # Load theme
-        theme = self.db.get_setting('theme', 'dark')
-        self.change_theme(theme, save=False)
         
         # Load last category
         last_category = self.db.get_setting('last_category', '')
