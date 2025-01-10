@@ -1,7 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Dict
 from models.epg import Program, EPGData, EPGGuide
 
 class EPGParser:

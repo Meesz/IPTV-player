@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 from typing import List, Optional
-from dataclasses import asdict
 from models.playlist import Channel
 from models.epg import Program
 from datetime import datetime

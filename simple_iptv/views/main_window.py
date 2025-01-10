@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QListWidget, QSlider, QComboBox,
-                            QTabWidget, QLabel, QLineEdit, QMenu, QToolBar,
-                            QWidgetAction, QFrame, QSizePolicy, QScrollArea,
+                            QTabWidget, QLabel, QLineEdit, QToolBar,
+                            QWidgetAction, QFrame, QScrollArea,
                             QSplitter)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
 from .player_widget import PlayerWidget
 from .notification import NotificationWidget, NotificationType
 from utils.themes import Themes
@@ -12,12 +12,22 @@ from utils.themes import Themes
 class SearchBar(QLineEdit):
     def __init__(self):
         super().__init__()
-        self.setPlaceholderText("Search channels...")
+        self.setPlaceholderText("🔍 Search channels...")
         self.setStyleSheet("""
             QLineEdit {
-                padding: 5px 10px;
-                border-radius: 15px;
-                min-width: 200px;
+                padding: 8px 12px 8px 36px;
+                border-radius: 20px;
+                min-width: 250px;
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #666666;
+                background-color: #333333;
+            }
+            QLineEdit:hover {
+                background-color: #333333;
             }
         """)
 
@@ -118,37 +128,31 @@ class MainWindow(QMainWindow):
         # Create notification widget
         self.notification = NotificationWidget(self)
         
-        # Apply default theme
-        self.apply_theme(Themes.get_dark_theme())
+        # Apply dark theme
+        self.setStyleSheet(Themes.get_dark_theme())
     
     def _create_toolbar(self):
         toolbar = QToolBar()
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
+        toolbar.setStyleSheet("""
+            QToolBar {
+                spacing: 10px;
+                padding: 5px 15px;
+                background: transparent;
+            }
+        """)
         self.addToolBar(toolbar)
         
         # Add search bar
         self.search_bar = SearchBar()
         toolbar.addWidget(self.search_bar)
         
-        # Add spacer
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
+        # # Add spacer
+        # spacer = QWidget()
+        # spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # toolbar.addWidget(spacer)
         
-        # Add settings button
-        self.settings_button = QPushButton("⚙")
-        self.settings_button.setFixedSize(32, 32)
-        self.settings_menu = QMenu(self.settings_button)
-        
-        # Add theme actions
-        theme_menu = self.settings_menu.addMenu("Theme")
-        self.light_theme_action = theme_menu.addAction("Light")
-        self.dark_theme_action = theme_menu.addAction("Dark")
-        
-        self.settings_button.setMenu(self.settings_menu)
-        toolbar.addWidget(self.settings_button)
-    
     def _create_left_panel(self):
         panel = QFrame()
         panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)

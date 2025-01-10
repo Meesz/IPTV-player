@@ -1,6 +1,5 @@
 import sys
 import os
-import ctypes
 import logging
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
