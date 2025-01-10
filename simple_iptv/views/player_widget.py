@@ -7,22 +7,22 @@ from PyQt6.QtGui import QMouseEvent
 from .loading_spinner import LoadingSpinner
 
 class FullscreenWindow(QWidget):
-    def __init__(self, player):
+    def __init__(self, player_widget):
         super().__init__()
-        self.player = player
+        self.player_widget = player_widget
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.showFullScreen()
         
         # Set black background
         self.setStyleSheet("background-color: black;")
         
-        if player.vlc_available:
+        if self.player_widget.vlc_available:
             if sys.platform == "win32":
-                self.player.set_hwnd(self.winId())
+                self.player_widget.player.set_hwnd(self.winId())
             elif sys.platform.startswith('linux'):
-                self.player.set_xwindow(self.winId())
+                self.player_widget.player.set_xwindow(self.winId())
             elif sys.platform == "darwin":
-                self.player.set_nsobject(int(self.winId()))
+                self.player_widget.player.set_nsobject(int(self.winId()))
     
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         self.close()
@@ -197,7 +197,7 @@ class PlayerWidget(QFrame):
             
         if self.fullscreen_window is None:
             # Enter fullscreen
-            self.fullscreen_window = FullscreenWindow(self.player)
+            self.fullscreen_window = FullscreenWindow(self)
             self.fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         else:
             # Exit fullscreen
