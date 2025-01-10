@@ -143,42 +143,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.favorites_list, "Favorites")
         layout.addWidget(self.tabs)
         
-        # Add controls
-        controls_layout = QHBoxLayout()
-        
-        # Playlist and EPG controls
-        self.load_button = QPushButton("Load Playlist")
-        self.load_epg_button = QPushButton("Load EPG")
-        self.load_epg_menu = QMenu(self.load_epg_button)
-        self.load_epg_button.setMenu(self.load_epg_menu)
-        
-        # Add menu actions
-        self.load_epg_file_action = self.load_epg_menu.addAction("From File...")
-        self.load_epg_menu.addSeparator()
-        
-        # Add URL input
-        url_widget = QWidget()
-        url_layout = QHBoxLayout(url_widget)
-        url_layout.setContentsMargins(8, 0, 8, 0)
-        
-        self.epg_url_input = QLineEdit()
-        self.epg_url_input.setPlaceholderText("Enter EPG URL...")
-        url_layout.addWidget(self.epg_url_input)
-        
-        self.load_epg_url_button = QPushButton("Load")
-        url_layout.addWidget(self.load_epg_url_button)
-        
-        # Add URL widget to menu
-        url_action = QWidgetAction(self.load_epg_menu)
-        url_action.setDefaultWidget(url_widget)
-        self.load_epg_menu.addAction(url_action)
-        
-        # Add controls to layout
-        controls_layout.addWidget(self.load_button)
-        controls_layout.addWidget(self.load_epg_button)
-        
-        layout.addLayout(controls_layout)
-        
         # Add EPG widget
         self.epg_widget = EPGWidget()
         layout.addWidget(self.epg_widget)
@@ -246,4 +210,27 @@ class MainWindow(QMainWindow):
         exit_action.setShortcut('Ctrl+Q')
         exit_action.setStatusTip('Exit application')
         exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action) 
+        file_menu.addAction(exit_action)
+        
+        # EPG menu
+        epg_menu = menubar.addMenu('&EPG')
+        
+        # Add EPG actions
+        self.load_epg_file_action = QAction('Load from &File...', self)
+        self.load_epg_file_action.setStatusTip('Load EPG data from XML file')
+        epg_menu.addAction(self.load_epg_file_action)
+        
+        # Add URL input
+        self.epg_url_input = QLineEdit()
+        self.epg_url_input.setPlaceholderText("Enter EPG URL...")
+        self.load_epg_url_button = QPushButton("Load")
+        
+        url_widget = QWidget()
+        url_layout = QHBoxLayout(url_widget)
+        url_layout.setContentsMargins(8, 0, 8, 0)
+        url_layout.addWidget(self.epg_url_input)
+        url_layout.addWidget(self.load_epg_url_button)
+        
+        url_action = QWidgetAction(epg_menu)
+        url_action.setDefaultWidget(url_widget)
+        epg_menu.addAction(url_action)
