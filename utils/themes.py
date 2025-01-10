@@ -1,8 +1,8 @@
-
-
 class Themes:
+    """Utility class for managing themes."""
     @staticmethod
     def get_dark_theme() -> str:
+        """Get the CSS for the dark theme."""
         return """
             QMainWindow, QWidget {
                 background-color: #1a1a1a;
@@ -124,9 +124,10 @@ class Themes:
                 color: #aaaaaa;
             }
         """
-    
+
     @staticmethod
     def get_light_theme() -> str:
+        """Get the CSS for the light theme."""
         return """
             QMainWindow, QWidget {
                 background-color: #f5f5f5;
@@ -249,4 +250,4 @@ class Themes:
             QLabel#current_time {
                 color: #666666;
             }
-        """ 
+        """
