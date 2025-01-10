@@ -390,6 +390,7 @@ class PlayerController:
                 self.db.save_setting('last_epg_file', file_path)
     
     def load_epg_url(self):
+        """Load EPG from URL"""
         url = self.window.epg_url_input.text().strip()
         if not url:
             self.window.show_notification(
@@ -398,6 +399,7 @@ class PlayerController:
             )
             return
         
+        tmp_path = None
         try:
             response = requests.get(url, timeout=30)
             response.raise_for_status()
@@ -407,24 +409,34 @@ class PlayerController:
                 tmp_path = tmp_file.name
             
             success = self._load_epg_from_file(tmp_path)
-            os.unlink(tmp_path)
             
             if success:
+                # Save the URL if loading was successful
                 self.db.save_setting('epg_url', url)
                 self.window.show_notification(
                     "EPG loaded successfully",
                     NotificationType.SUCCESS
                 )
         except requests.RequestException as e:
+            logger.error(f"Failed to download EPG: {str(e)}")
             self.window.show_notification(
                 f"Failed to download EPG: {str(e)}",
                 NotificationType.ERROR
             )
         except Exception as e:
+            logger.error(f"Failed to load EPG: {str(e)}")
             self.window.show_notification(
                 f"Failed to load EPG: {str(e)}",
                 NotificationType.ERROR
             )
+        finally:
+            # Clean up temporary file
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                    logger.debug(f"Cleaned up temporary EPG file: {tmp_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup temporary EPG file: {e}")
     
     def _load_epg_from_file(self, file_path: str) -> bool:
         try:
@@ -466,12 +478,14 @@ class PlayerController:
     def _load_last_epg(self):
         """Load the last used EPG if available"""
         epg_file = self.db.get_setting('last_epg_file')
-        epg_url = self.db.get_setting('last_epg_url')
+        epg_url = self.db.get_setting('epg_url')
         
         if epg_url:
+            logger.debug(f"Loading last EPG from URL: {epg_url}")
             self.window.epg_url_input.setText(epg_url)
             self.load_epg_url()
         elif epg_file and os.path.exists(epg_file):
+            logger.debug(f"Loading last EPG from file: {epg_file}")
             try:
                 self._load_epg_from_file(epg_file)
                 self.window.show_notification(
@@ -479,10 +493,11 @@ class PlayerController:
                     NotificationType.SUCCESS
                 )
             except Exception as e:
+                logger.error(f"Failed to load previous EPG: {str(e)}")
                 self.window.show_notification(
                     f"Failed to load previous EPG: {str(e)}",
                     NotificationType.ERROR
-                ) 
+                )
     
     def show_playlist_manager(self, retry_count=0, max_retries=3):
         try:

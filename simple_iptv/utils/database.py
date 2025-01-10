@@ -77,7 +77,7 @@ class Database:
                 -- Add default settings
                 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
                 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
-                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
+                INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
                 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
             ''')
             
