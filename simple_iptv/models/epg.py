@@ -60,3 +60,8 @@ class EPGGuide:
         if now - self._last_cache_clear > self._cache_timeout:
             self.get_current_program.cache_clear()
             self._last_cache_clear = now 
+            
+    def force_clear_cache(self):
+        """Force clear the program cache immediately"""
+        self.get_current_program.cache_clear()
+        self._last_cache_clear = datetime.now()

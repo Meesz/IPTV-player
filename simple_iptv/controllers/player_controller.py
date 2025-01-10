@@ -57,7 +57,6 @@ class PlayerController:
     
     def _connect_signals(self):
         # Playlist and channels
-        self.window.load_button.clicked.connect(self.load_playlist)
         self.window.category_combo.currentTextChanged.connect(self.category_changed)
         self.window.channel_list.itemClicked.connect(self.channel_selected)
         self.window.favorites_list.itemClicked.connect(self.favorite_selected)
@@ -122,9 +121,12 @@ class PlayerController:
             self._update_channel_list()
             return
         
-        # Search in current category
+        # Get channels based on category
         category = self.window.category_combo.currentText()
-        channels = self.playlist.get_channels_by_category(category)
+        if category == "All":
+            channels = self.playlist.channels
+        else:
+            channels = self.playlist.get_channels_by_category(category)
         
         # Filter channels
         matched_channels = [
@@ -176,36 +178,59 @@ class PlayerController:
     
     def _update_categories(self):
         self.window.category_combo.clear()
+        
+        # Add "All" as the first category
+        self.window.category_combo.addItem("All")
         self.window.category_combo.addItems(self.playlist.categories)
         
         # Select last used category if available
         last_category = self.db.get_setting('last_category', '')
-        if last_category in self.playlist.categories:
+        if last_category in self.playlist.categories or last_category == "All":
             self.window.category_combo.setCurrentText(last_category)
     
     def _update_channel_list(self):
         category = self.window.category_combo.currentText()
         self.window.channel_list.clear()
         
-        if category:
+        if category == "All":
+            # Show all channels
+            channels = self.playlist.channels
+        elif category:
+            # Show channels for specific category
             channels = self.playlist.get_channels_by_category(category)
-            for channel in channels:
-                self.window.channel_list.addItem(channel.name)
+        
+        for channel in channels:
+            self.window.channel_list.addItem(channel.name)
     
     def category_changed(self, category: str):
         self._update_channel_list()
         self.db.save_setting('last_category', category)
     
     def channel_selected(self, item):
-        category = self.window.category_combo.currentText()
-        channels = self.playlist.get_channels_by_category(category)
-        self.current_channel = channels[self.window.channel_list.row(item)]
-        self._play_channel(self.current_channel)
+        """Handle channel selection from the channel list"""
+        if not item:
+            return
         
-        # Update favorite button state
-        self.window.favorite_button.setChecked(
-            self.db.is_favorite(self.current_channel.url)
-        )
+        selected_name = item.text()
+        category = self.window.category_combo.currentText()
+        
+        # Get the channel list based on category
+        if category == "All":
+            channels = self.playlist.channels
+        else:
+            channels = self.playlist.get_channels_by_category(category)
+        
+        # Find the channel by name instead of using index
+        for channel in channels:
+            if channel.name == selected_name:
+                self.current_channel = channel
+                self._play_channel(channel)
+                
+                # Update favorite button state
+                self.window.favorite_button.setChecked(
+                    self.db.is_favorite(channel.url)
+                )
+                break
     
     def favorite_selected(self, item):
         favorites = self.db.get_favorites()
@@ -567,3 +592,11 @@ class PlayerController:
                     logger.debug(f"Cleaned up temporary file: {tmp_path}")
                 except Exception as e:
                     logger.warning(f"Failed to cleanup temporary file: {e}") 
+                    
+    def _cleanup_epg(self):
+        """Clean up EPG resources"""
+        if self.epg_timer.isActive():
+            self.epg_timer.stop()
+        if self.epg_guide:
+            self.epg_guide.clear()
+            self.epg_guide = None
