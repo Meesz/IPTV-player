@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 class NotificationType(Enum):
+    """Enumeration for different types of notifications."""
     INFO = auto()
     SUCCESS = auto()
     WARNING = auto()
@@ -11,11 +12,14 @@ class NotificationType(Enum):
 
 @dataclass
 class NotificationStyle:
+    """Data class to define the style attributes for a notification."""
     background: str
     border: str
     text_color: str
 
 class NotificationWidget(QLabel):
+    """A widget to display notifications with different styles and durations."""
+    
     STYLES = {
         NotificationType.INFO: NotificationStyle("#2196F3", "#1976D2", "#FFFFFF"),
         NotificationType.SUCCESS: NotificationStyle("#4CAF50", "#388E3C", "#FFFFFF"),
@@ -24,6 +28,12 @@ class NotificationWidget(QLabel):
     }
     
     def __init__(self, parent=None):
+        """
+        Initialize the NotificationWidget.
+
+        Args:
+            parent: The parent widget of this notification widget.
+        """
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("""
@@ -37,6 +47,14 @@ class NotificationWidget(QLabel):
         self.timer.timeout.connect(self.hide)
     
     def show_message(self, message: str, type: NotificationType, duration: int = 3000):
+        """
+        Display a notification message with a specific style and duration.
+
+        Args:
+            message (str): The message to display.
+            type (NotificationType): The type of notification to determine the style.
+            duration (int): The duration in milliseconds for which the notification is displayed.
+        """
         style = self.STYLES[type]
         self.setStyleSheet(f"""
             background-color: {style.background};
