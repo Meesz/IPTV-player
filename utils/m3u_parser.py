@@ -4,6 +4,7 @@ This module provides utilities for parsing M3U files.
 It defines the M3UParser class, which can parse M3U files and
 return a Playlist object containing the parsed channels.
 """
+
 import re
 from models.playlist import Channel, Playlist
 
