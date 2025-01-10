@@ -104,8 +104,6 @@ class PlayerWidget(QFrame):
         # Enable mouse tracking
         self.setMouseTracking(True)
 
-
-
     def _setup_player(self):
         """Configure the VLC player instance."""
         if not self.vlc_available:
@@ -160,11 +158,11 @@ class PlayerWidget(QFrame):
             events = self.player.event_manager()
             events.event_attach(
                 self.vlc.EventType.MediaPlayerPlaying,
-                lambda x: self.placeholder.hide()  # Hide placeholder when playing starts
+                lambda x: self.placeholder.hide(),  # Hide placeholder when playing starts
             )
             events.event_attach(
                 self.vlc.EventType.MediaPlayerEncounteredError,
-                lambda x: self._handle_playback_error()
+                lambda x: self._handle_playback_error(),
             )
 
             self.player.set_media(media)
@@ -288,7 +286,6 @@ class PlayerWidget(QFrame):
             event: The resize event that triggered the action.
         """
         super().resizeEvent(event)
-
 
     def _init_vlc(self):
         """Initialize VLC player and set up the environment."""
