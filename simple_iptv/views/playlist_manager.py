@@ -100,6 +100,7 @@ class PlaylistManagerDialog(QDialog):
         )
         
         if ok and url:
+            tmp_path = None
             try:
                 # Download the playlist
                 response = requests.get(url, timeout=30)
@@ -119,6 +120,13 @@ class PlaylistManagerDialog(QDialog):
                     "Error",
                     f"Failed to download playlist: {str(e)}"
                 )
+            finally:
+                # Clean up temporary file
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception as e:
+                        print(f"Failed to cleanup temporary file: {e}")
     
     def _add_playlist_entry(self, path: str, is_url: bool = False):
         """Common method to add playlist entry"""

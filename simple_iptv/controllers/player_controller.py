@@ -459,7 +459,7 @@ class PlayerController:
                     NotificationType.ERROR
                 ) 
     
-    def show_playlist_manager(self):
+    def show_playlist_manager(self, retry_count=0, max_retries=3):
         try:
             dialog = PlaylistManagerDialog(self.window)
             
@@ -494,6 +494,14 @@ class PlayerController:
             
             # Only show quit confirmation if we have no channels at all
             if result == QDialog.rejected and not self.playlist.channels:
+                if retry_count >= max_retries:
+                    self.window.show_notification(
+                        "No playlist loaded after multiple attempts. Closing application.",
+                        NotificationType.WARNING
+                    )
+                    self.window.close()
+                    return
+
                 response = QMessageBox.question(
                     self.window,
                     "No Playlist",
@@ -502,7 +510,7 @@ class PlayerController:
                 )
                 
                 if response == QMessageBox.StandardButton.Yes:
-                    QTimer.singleShot(0, self.show_playlist_manager)
+                    QTimer.singleShot(0, lambda: self.show_playlist_manager(retry_count + 1, max_retries))
                 else:
                     self.window.close()
         except Exception as e:
@@ -513,6 +521,7 @@ class PlayerController:
     
     def load_playlist_from_path(self, path: str, is_url: bool):
         logger.debug(f"Loading playlist from {'URL' if is_url else 'path'}: {path}")
+        tmp_path = None
         try:
             if is_url:
                 logger.debug("Downloading playlist from URL")
@@ -520,8 +529,9 @@ class PlayerController:
                 response.raise_for_status()
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.m3u8') as tmp_file:
                     tmp_file.write(response.content)
-                    file_path = tmp_file.name
-                    logger.debug(f"Saved URL content to temporary file: {file_path}")
+                    tmp_path = tmp_file.name
+                    logger.debug(f"Saved URL content to temporary file: {tmp_path}")
+                file_path = tmp_path
             else:
                 file_path = path
                 if not os.path.exists(file_path):
@@ -539,13 +549,6 @@ class PlayerController:
             self.db.save_setting('last_playlist', path)  # Save original path/URL, not temporary file
             self.db.save_setting('last_playlist_is_url', 'true' if is_url else 'false')
             
-            # Cleanup temporary file if it was a URL download
-            if is_url and 'tmp_file' in locals():
-                try:
-                    os.unlink(file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup temporary file: {e}")
-            
             self.window.show_notification(
                 "Playlist loaded successfully",
                 NotificationType.SUCCESS
@@ -555,4 +558,12 @@ class PlayerController:
             self.window.show_notification(
                 f"Failed to load playlist: {str(e)}",
                 NotificationType.ERROR
-            ) 
+            )
+        finally:
+            # Clean up temporary file if it was created
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                    logger.debug(f"Cleaned up temporary file: {tmp_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup temporary file: {e}") 
