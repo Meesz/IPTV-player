@@ -1,3 +1,10 @@
+"""
+This module contains the main window of the Simple IPTV Player application.
+"""
+
+from utils.themes import Themes
+
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -18,9 +25,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
-from .player_widget import PlayerWidget
-from .notification import NotificationWidget, NotificationType
-from utils.themes import Themes
+from views.player_widget import PlayerWidget
+from views.notification import NotificationWidget, NotificationType
 
 
 class SearchBar(QLineEdit):
