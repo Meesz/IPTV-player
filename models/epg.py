@@ -7,6 +7,7 @@ from functools import lru_cache
 @dataclass
 class Program:
     """Represents a TV program with its details."""
+
     title: str
     start_time: datetime
     end_time: datetime
@@ -22,6 +23,7 @@ class Program:
 @dataclass
 class EPGData:
     """Holds EPG data for a specific channel."""
+
     channel_id: str
     programs: List[Program]
 
@@ -45,6 +47,7 @@ class EPGData:
 
 class EPGGuide:
     """Manages EPG data and provides methods to access current programs."""
+
     def __init__(self):
         """Initialize the EPGGuide with an empty data store and cache settings."""
         self._data: Dict[str, EPGData] = {}
