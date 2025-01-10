@@ -10,6 +10,7 @@ from .notification import NotificationWidget, NotificationType
 from utils.themes import Themes
 
 class SearchBar(QLineEdit):
+    """A custom search bar widget."""
     def __init__(self):
         super().__init__()
         self.setPlaceholderText("🔍 Search channels...")
@@ -32,6 +33,7 @@ class SearchBar(QLineEdit):
         """)
 
 class EPGWidget(QFrame):
+    """A widget to display the Electronic Program Guide (EPG)."""
     def __init__(self):
         super().__init__()
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
@@ -75,17 +77,20 @@ class EPGWidget(QFrame):
         layout.addWidget(scroll_area)
     
     def update_current_program(self, title: str, time_str: str, description: str):
+        """Update the current program information."""
         self.current_title.setText(title)
         self.current_time.setText(time_str)
         self.description.setText(description)
         
     def set_upcoming_programs(self, programs: list):
+        """Set the list of upcoming programs."""
         self.upcoming_list.clear()
         for prog in programs:
             time_str = prog.start_time.strftime("%H:%M")
             self.upcoming_list.addItem(f"{time_str} - {prog.title}")
 
 class MainWindow(QMainWindow):
+    """The main window of the Simple IPTV Player application."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simple IPTV Player")
@@ -149,6 +154,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(Themes.get_dark_theme())
     
     def _create_left_panel(self):
+        """Create the left panel with category selector, tabs, and EPG widget."""
         panel = QFrame()
         panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         layout = QVBoxLayout(panel)
@@ -173,6 +179,7 @@ class MainWindow(QMainWindow):
         return panel
     
     def _create_right_panel(self):
+        """Create the right panel with player widget and playback controls."""
         panel = QFrame()
         panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         layout = QVBoxLayout(panel)
@@ -208,12 +215,15 @@ class MainWindow(QMainWindow):
         return panel
     
     def apply_theme(self, theme: str):
+        """Apply the given theme to the main window."""
         self.setStyleSheet(theme)
     
     def show_notification(self, message: str, type: NotificationType = NotificationType.INFO):
+        """Show a notification with the given message and type."""
         self.notification.show_message(message, type) 
     
     def _create_menu(self):
+        """Create the menu bar with file and EPG menus."""
         menubar = self.menuBar()
         
         # File menu
@@ -259,7 +269,7 @@ class MainWindow(QMainWindow):
         epg_menu.addAction(url_action)
     
     def _handle_splitter_moved(self, pos, index):
-        """Handle splitter movement to show/hide search bar"""
+        """Handle splitter movement to show/hide search bar."""
         # Get the width of the left panel (sidebar)
         sizes = self.splitter.sizes()
         if not sizes:
