@@ -1,7 +1,13 @@
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtCore import Qt, QTimer
+"""
+This module contains the NotificationWidget class, which is responsible for displaying notifications.
+"""
+
 from dataclasses import dataclass
 from enum import Enum, auto
+
+# pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtCore import Qt, QTimer
 
 
 class NotificationType(Enum):
