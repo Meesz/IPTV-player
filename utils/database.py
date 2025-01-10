@@ -2,6 +2,7 @@
 This module provides utilities for managing the database.
 It defines the Database class, which can handle database operations.
 """
+
 import sqlite3
 from pathlib import Path
 from typing import List, Optional
@@ -408,3 +409,7 @@ class Database:
         finally:
             if conn:
                 conn.close()
+
+    def clear_setting(self, key: str):
+        """Clear a setting from the database."""
+        self.save_setting(key, "")
