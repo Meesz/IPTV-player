@@ -1,10 +1,19 @@
+"""
+This module contains the PlayerWidget class, 
+which is responsible for displaying and controlling VLC media playback.
+"""
+
 import sys
 import os
 import logging
+
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMouseEvent
 from .loading_spinner import LoadingSpinner
+from views.vlc_manager import VLCManager
+
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -78,8 +87,20 @@ class PlayerWidget(QFrame):
         self.layout.addWidget(self.placeholder)
 
         # Initialize VLC
-        self.vlc_available = False
-        self._init_vlc()
+        success, error = VLCManager.initialize()
+        self.vlc_available = success
+        if not success:
+            self.placeholder.setText(error)
+            logger.error(error)
+            return
+
+        # Store VLC module and instance references
+        self.vlc = VLCManager.get_vlc()
+        self.instance = VLCManager.get_instance()
+
+        # Create player
+        self.player = VLCManager.create_player()
+        self._setup_player()
 
         # Track fullscreen window
         self.fullscreen_window = None
@@ -97,73 +118,23 @@ class PlayerWidget(QFrame):
             (self.height() - self.loading_spinner.height()) // 2,
         )
 
-    def _init_vlc(self):
-        """Initialize VLC player and set up the environment."""
-        try:
-            # Try to determine Python architecture
-            is_64bits = sys.maxsize > 2**32
+    def _setup_player(self):
+        """Configure the VLC player instance."""
+        if not self.vlc_available:
+            return
 
-            if sys.platform == "win32":
-                vlc_path = (
-                    "C:\\Program Files\\VideoLAN\\VLC"
-                    if is_64bits
-                    else "C:\\Program Files (x86)\\VideoLAN\\VLC"
-                )
-                if not os.path.exists(vlc_path):
-                    error_msg = (
-                        f"Error: VLC not found in {vlc_path}\n"
-                        f"Please install {'64' if is_64bits else '32'}-bit VLC"
-                    )
-                    self.placeholder.setText(error_msg)
-                    logger.error(error_msg)
-                    return
+        # Set up the window for VLC playback
+        if sys.platform == "win32":
+            self.player.set_hwnd(self.winId())
+        elif sys.platform.startswith("linux"):
+            self.player.set_xwindow(self.winId())
+        elif sys.platform == "darwin":
+            self.player.set_nsobject(int(self.winId()))
 
-                os.environ["PATH"] = vlc_path + ";" + os.environ["PATH"]
-                os.add_dll_directory(vlc_path)
+        # Set optimized media options
 
-            # Import VLC with optimized parameters
-            import vlc
-
-            self.vlc = vlc  # Store vlc module as instance variable
-
-            # Create VLC instance with optimized parameters
-            self.instance = vlc.Instance(
-                "--no-video-title-show",  # Don't show video title
-                "--no-snapshot-preview",  # Disable snapshot preview
-                "--quiet",  # Reduce logging
-                "--no-xlib",  # Optimize for modern systems
-                "--network-caching=1000",  # 1 second network cache
-                "--live-caching=300",  # 300ms live stream cache
-                "--sout-mux-caching=300",  # 300ms mux cache
-            )
-
-            self.player = self.instance.media_player_new()
-
-            # Set up the window for VLC playback
-            if sys.platform == "win32":
-                self.player.set_hwnd(self.winId())
-            elif sys.platform.startswith("linux"):
-                self.player.set_xwindow(self.winId())
-            elif sys.platform == "darwin":
-                self.player.set_nsobject(int(self.winId()))
-
-            # Set optimized media options
-            self.player.set_role(vlc.MediaPlayerRole.Video)
-            self.player.video_set_key_input(False)
-            self.player.video_set_mouse_input(False)
-
-            self.vlc_available = True
-            logger.info("VLC initialized successfully")
-
-        except Exception as e:
-            error_msg = (
-                f"Error initializing VLC: {str(e)}\n"
-                f"Python is {'64' if is_64bits else '32'}-bit\n"
-                "Make sure you have the correct VLC version installed"
-            )
-            logger.error(error_msg)
-            self.placeholder.setText(error_msg)
-            self.vlc_available = False
+        self.player.video_set_key_input(False)
+        self.player.video_set_mouse_input(False)
 
     def cleanup_vlc(self):
         """Clean up VLC resources before application shutdown"""
@@ -175,10 +146,10 @@ class PlayerWidget(QFrame):
             self.instance.release()
             self.vlc_available = False
 
-    def closeEvent(self, event):
+    def close_event(self, event):
         """Handle cleanup when widget is closed"""
         self.cleanup_vlc()
-        super().closeEvent(event)
+        super().close_event(event)
 
     def play(self, url: str):
         """Play media from the given URL.
@@ -342,3 +313,22 @@ class PlayerWidget(QFrame):
             (self.width() - self.loading_spinner.width()) // 2,
             (self.height() - self.loading_spinner.height()) // 2,
         )
+    def _init_vlc(self):
+        """Initialize VLC player and set up the environment."""
+        # Get VLC instance from VLCManager
+        vlc_instance = VLCManager.get_instance()
+        if not vlc_instance:
+            logger.error("VLC not initialized")
+            error_msg = "Error: VLC not initialized\nPlease restart the application"
+            self.placeholder.setText(error_msg)
+            return
+
+        # Create media player
+        try:
+            self.player = VLCManager.create_player()
+            self.vlc_available = True
+        except Exception as e:
+            logger.error("Failed to create VLC player: %s", str(e))
+            error_msg = f"Error: Failed to create VLC player\n{str(e)}"
+            self.placeholder.setText(error_msg)
+            return
