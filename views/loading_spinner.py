@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QTimer, QRectF
-from PyQt6.QtGui import QPainter, QColor
+from PyQt5.QtWidgets import QWidget
+from PyQt5.QtCore import Qt, QTimer, QRectF
+from PyQt5.QtGui import QPainter, QColor
 
 
 class LoadingSpinner(QWidget):
@@ -41,7 +41,7 @@ class LoadingSpinner(QWidget):
         self.timer.timeout.connect(self.rotate)
 
         # Make background transparent
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TranslucentBackground)
 
     def start(self):
         """Starts the spinner animation."""
@@ -66,7 +66,7 @@ class LoadingSpinner(QWidget):
             event (QPaintEvent): The paint event.
         """
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.Antialiasing)
 
         # Calculate sizes
         center = self.size / 2
@@ -82,7 +82,7 @@ class LoadingSpinner(QWidget):
             color = QColor(self.color)
             color.setAlphaF(opacity)
             painter.setBrush(color)
-            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setPen(Qt.NoPen)
 
             # Calculate position
             angle = (360 / self.num_dots * i + self.rotation) * 3.14159 / 180

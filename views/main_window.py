@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -15,9 +15,9 @@ from PyQt6.QtWidgets import (
     QFrame,
     QScrollArea,
     QSplitter,
+    QAction,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PyQt5.QtCore import Qt
 from .player_widget import PlayerWidget
 from .notification import NotificationWidget, NotificationType
 from utils.themes import Themes
@@ -55,7 +55,7 @@ class EPGWidget(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self.setFixedHeight(300)  # Fixed height for the entire EPG widget
 
         layout = QVBoxLayout(self)
@@ -89,8 +89,8 @@ class EPGWidget(QFrame):
         scroll_area = QScrollArea()
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         # Add scroll area to main layout
         layout.addWidget(scroll_area)
@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addWidget(self.search_bar)
 
         # Create splitter for resizable panels
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = QSplitter(Qt.Horizontal)
 
         # Create left sidebar
         self.left_panel = self._create_left_panel()
@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
     def _create_left_panel(self):
         """Create the left panel with category selector, tabs, and EPG widget."""
         panel = QFrame()
-        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        panel.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         layout = QVBoxLayout(panel)
 
         # Add category selector
@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
     def _create_right_panel(self):
         """Create the right panel with player widget and playback controls."""
         panel = QFrame()
-        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        panel.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         layout = QVBoxLayout(panel)
 
         # Add player widget
@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
         # Add volume control
         volume_layout = QHBoxLayout()
         volume_layout.addWidget(QLabel("Volume:"))
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
         volume_layout.addWidget(self.volume_slider)

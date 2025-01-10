@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QMenu,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal
 import requests
 import tempfile
 import os
@@ -77,11 +77,11 @@ class PlaylistManagerDialog(QDialog):
         self.playlist_list.itemSelectionChanged.connect(self.selection_changed)
 
         # Add context menu
-        self.playlist_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.playlist_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.playlist_list.customContextMenuRequested.connect(self._show_context_menu)
 
         # Set the window close button to trigger reject() instead of accept()
-        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
+        self.setWindowFlag(Qt.WindowCloseButtonHint)
 
     def selection_changed(self):
         has_selection = bool(self.playlist_list.selectedItems())
@@ -145,7 +145,7 @@ class PlaylistManagerDialog(QDialog):
         if ok and name:
             item = QListWidgetItem(name)
             # Store both path and type
-            item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
+            item.setData(Qt.UserRole, {"path": path, "is_url": is_url})
             # Add tooltip showing full path/URL
             item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
             self.playlist_list.addItem(item)
@@ -157,16 +157,16 @@ class PlaylistManagerDialog(QDialog):
                 self,
                 "Confirm Removal",
                 f"Are you sure you want to remove '{current_item.text()}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.Yes | QMessageBox.No,
             )
 
-            if confirm == QMessageBox.StandardButton.Yes:
+            if confirm == QMessageBox.Yes:
                 self.playlist_list.takeItem(self.playlist_list.row(current_item))
 
     def select_playlist(self):
         current_item = self.playlist_list.currentItem()
         if current_item:
-            data = current_item.data(Qt.ItemDataRole.UserRole)
+            data = current_item.data(Qt.UserRole)
             self.playlist_selected.emit(data["path"], data["is_url"])
             self.accept()
 
@@ -175,7 +175,7 @@ class PlaylistManagerDialog(QDialog):
         playlists = []
         for i in range(self.playlist_list.count()):
             item = self.playlist_list.item(i)
-            data = item.data(Qt.ItemDataRole.UserRole)
+            data = item.data(Qt.UserRole)
             playlists.append((item.text(), data["path"], data["is_url"]))
         return playlists
 
@@ -184,7 +184,7 @@ class PlaylistManagerDialog(QDialog):
         self.playlist_list.clear()
         for name, path, is_url in playlists:
             item = QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
+            item.setData(Qt.UserRole, {"path": path, "is_url": is_url})
             item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
             self.playlist_list.addItem(item)
 
@@ -206,7 +206,7 @@ class PlaylistManagerDialog(QDialog):
         if not current_item:
             return
 
-        data = current_item.data(Qt.ItemDataRole.UserRole)
+        data = current_item.data(Qt.UserRole)
         is_url = data["is_url"]
 
         # Edit name
@@ -240,7 +240,7 @@ class PlaylistManagerDialog(QDialog):
             # Update item
             current_item.setText(name)
             current_item.setData(
-                Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url}
+                Qt.UserRole, {"path": path, "is_url": is_url}
             )
 
             # Show success message

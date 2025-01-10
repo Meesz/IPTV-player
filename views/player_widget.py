@@ -1,9 +1,9 @@
 import sys
 import os
 import logging
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QMouseEvent
+from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QMouseEvent
 from .loading_spinner import LoadingSpinner
 
 # Configure logger
@@ -24,7 +24,7 @@ class FullscreenWindow(QWidget):
         self.player = player_widget.player  # Get the VLC player instance
 
         # Make window resizable
-        self.setWindowFlags(Qt.WindowType.Window)
+        self.setWindowFlags(Qt.Window)
 
         # Set black background
         self.setStyleSheet("background-color: black;")
@@ -56,7 +56,7 @@ class FullscreenWindow(QWidget):
 
     def key_press_event(self, event):
         """Handle key press events to close the fullscreen window on ESC key."""
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key_Escape:
             self.close()
 
 
@@ -74,7 +74,7 @@ class PlayerWidget(QFrame):
 
         # Create placeholder label
         self.placeholder = QLabel("No media playing")
-        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.placeholder)
 
         # Initialize VLC
@@ -327,7 +327,7 @@ class PlayerWidget(QFrame):
         Args:
             event: The key event that triggered the action.
         """
-        if event.key() == Qt.Key.Key_Escape and self.fullscreen_window:
+        if event.key() == Qt.Key_Escape and self.fullscreen_window:
             self._exit_fullscreen()
 
     def resize_event(self, event):

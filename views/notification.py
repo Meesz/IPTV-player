@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QLabel
+from PyQt5.QtCore import Qt, QTimer
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -40,7 +40,7 @@ class NotificationWidget(QLabel):
             parent: The parent widget of this notification widget.
         """
         super().__init__(parent)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(
             """
             padding: 10px;

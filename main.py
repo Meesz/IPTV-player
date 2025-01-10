@@ -1,6 +1,6 @@
 import sys
 import logging
-from PyQt6.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication
 from views.main_window import MainWindow
 from controllers.player_controller import PlayerController
 
