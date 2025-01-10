@@ -107,3 +107,11 @@ class EPGGuide:
         """Force clear the program cache immediately."""
         self.get_current_program.cache_clear()
         self._last_cache_clear = datetime.now()
+
+    def get_channel_ids(self) -> list[str]:
+        """Get a list of all channel IDs in the guide.
+
+        Returns:
+            list[str]: List of channel IDs
+        """
+        return list(self._data.keys())
