@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QPainter
 from dataclasses import dataclass
 from enum import Enum, auto
 

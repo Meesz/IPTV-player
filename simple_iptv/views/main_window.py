@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QListWidget, QSlider, QComboBox,
-                            QTabWidget, QLabel, QLineEdit, QMenu, QToolBar,
-                            QWidgetAction, QFrame, QSizePolicy, QScrollArea)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QAction
+                            QTabWidget, QLabel, QLineEdit, QToolBar,
+                            QWidgetAction, QFrame, QScrollArea,
+                            QSplitter)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
 from .player_widget import PlayerWidget
 from .notification import NotificationWidget, NotificationType
 from utils.themes import Themes
@@ -11,12 +12,22 @@ from utils.themes import Themes
 class SearchBar(QLineEdit):
     def __init__(self):
         super().__init__()
-        self.setPlaceholderText("Search channels...")
+        self.setPlaceholderText("🔍 Search channels...")
         self.setStyleSheet("""
             QLineEdit {
-                padding: 5px 10px;
-                border-radius: 15px;
-                min-width: 200px;
+                padding: 8px 12px 8px 36px;
+                border-radius: 20px;
+                min-width: 250px;
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #666666;
+                background-color: #333333;
+            }
+            QLineEdit:hover {
+                background-color: #333333;
             }
         """)
 
@@ -90,59 +101,52 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Create toolbar
-        self._create_toolbar()
+        # Create toolbar and search bar first
+        self.toolbar = QToolBar()
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                spacing: 10px;
+                padding: 5px 15px;
+                background: transparent;
+            }
+        """)
+        self.addToolBar(self.toolbar)
         
-        # Create content area
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.addLayout(content_layout)
+        # Add search bar
+        self.search_bar = SearchBar()
+        self.toolbar.addWidget(self.search_bar)
+        
+        # Create splitter for resizable panels
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # Create left sidebar
-        left_panel = self._create_left_panel()
-        content_layout.addWidget(left_panel)
+        self.left_panel = self._create_left_panel()
+        self.left_panel.setMinimumWidth(200)  # Set minimum width for left panel
         
         # Create right panel with player
         right_panel = self._create_right_panel()
-        content_layout.addWidget(right_panel)
+        right_panel.setMinimumWidth(400)  # Set minimum width for player
         
-        # Set content stretch
-        content_layout.setStretch(0, 1)  # Left panel
-        content_layout.setStretch(1, 4)  # Right panel
+        # Add panels to splitter
+        self.splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(right_panel)
+        
+        # Set initial sizes (1:4 ratio)
+        self.splitter.setSizes([200, 800])
+        
+        # Connect splitter moved signal
+        self.splitter.splitterMoved.connect(self._handle_splitter_moved)
+        
+        # Add splitter to main layout
+        main_layout.addWidget(self.splitter)
         
         # Create notification widget
         self.notification = NotificationWidget(self)
         
-        # Apply default theme
-        self.apply_theme(Themes.get_dark_theme())
-    
-    def _create_toolbar(self):
-        toolbar = QToolBar()
-        toolbar.setMovable(False)
-        toolbar.setFloatable(False)
-        self.addToolBar(toolbar)
-        
-        # Add search bar
-        self.search_bar = SearchBar()
-        toolbar.addWidget(self.search_bar)
-        
-        # Add spacer
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
-        
-        # Add settings button
-        self.settings_button = QPushButton("⚙")
-        self.settings_button.setFixedSize(32, 32)
-        self.settings_menu = QMenu(self.settings_button)
-        
-        # Add theme actions
-        theme_menu = self.settings_menu.addMenu("Theme")
-        self.light_theme_action = theme_menu.addAction("Light")
-        self.dark_theme_action = theme_menu.addAction("Dark")
-        
-        self.settings_button.setMenu(self.settings_menu)
-        toolbar.addWidget(self.settings_button)
+        # Apply dark theme
+        self.setStyleSheet(Themes.get_dark_theme())
     
     def _create_left_panel(self):
         panel = QFrame()
@@ -253,3 +257,20 @@ class MainWindow(QMainWindow):
         url_action = QWidgetAction(epg_menu)
         url_action.setDefaultWidget(url_widget)
         epg_menu.addAction(url_action)
+    
+    def _handle_splitter_moved(self, pos, index):
+        """Handle splitter movement to show/hide search bar"""
+        # Get the width of the left panel (sidebar)
+        sizes = self.splitter.sizes()
+        if not sizes:
+            return
+        
+        left_panel_width = sizes[0]
+        
+        # Show/hide search bar based on sidebar width
+        if left_panel_width < 50:  # Collapsed
+            self.search_bar.hide()
+            self.toolbar.hide()
+        else:  # Expanded
+            self.search_bar.show()
+            self.toolbar.show()

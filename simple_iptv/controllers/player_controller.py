@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from models.playlist import Playlist, Channel
-from models.epg import EPGGuide
 from utils.m3u_parser import M3UParser
 from utils.epg_parser import EPGParser
 from utils.database import Database
@@ -14,6 +13,7 @@ import tempfile
 import os
 from views.playlist_manager import PlaylistManagerDialog
 import logging
+from views.player_widget import FullscreenWindow
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,7 @@ class PlayerController:
         self.window.favorite_button.clicked.connect(self.toggle_favorite)
         
         # Theme
-        self.window.light_theme_action.triggered.connect(lambda: self.change_theme('light'))
-        self.window.dark_theme_action.triggered.connect(lambda: self.change_theme('dark'))
+
         
         # Search
         self.window.search_bar.textChanged.connect(self._search_changed)
@@ -88,10 +87,6 @@ class PlayerController:
         volume = int(self.db.get_setting('volume', '100'))
         self.window.volume_slider.setValue(volume)
         self.window.player_widget.set_volume(volume)
-        
-        # Load theme
-        theme = self.db.get_setting('theme', 'dark')
-        self.change_theme(theme, save=False)
         
         # Load last category
         last_category = self.db.get_setting('last_category', '')
@@ -615,3 +610,22 @@ class PlayerController:
         if self.epg_guide:
             self.epg_guide.clear()
             self.epg_guide = None
+    
+    def toggle_fullscreen(self):
+        if self.fullscreen_window is None:
+            # Create new fullscreen window
+            self.fullscreen_window = FullscreenWindow(self.window.player_widget)
+            
+            # Set the same media player instance
+            self.fullscreen_window.player_widget.set_player(
+                self.window.player_widget.player
+            )
+            
+            # Connect close event
+            self.fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
+            
+            # Show fullscreen
+            self.fullscreen_window.showFullScreen()
+        else:
+            self.fullscreen_window.close()
+            self.fullscreen_window = None

@@ -1,6 +1,5 @@
 import sys
 import os
-import ctypes
 import logging
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
@@ -16,7 +15,8 @@ class FullscreenWindow(QWidget):
         self.player_widget = player_widget
         self.player = player_widget.player  # Get the VLC player instance
         
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        # Make window resizable
+        self.setWindowFlags(Qt.WindowType.Window)
         
         # Set black background
         self.setStyleSheet("background-color: black;")
@@ -25,6 +25,10 @@ class FullscreenWindow(QWidget):
         self.showFullScreen()
         
         # Update VLC rendering target after window is shown
+        self._update_vlc_rendering_target()
+    
+    def _update_vlc_rendering_target(self):
+        """Update VLC rendering target based on platform"""
         if self.player_widget.vlc_available:
             if sys.platform == "win32":
                 self.player.set_hwnd(self.winId())
@@ -32,6 +36,11 @@ class FullscreenWindow(QWidget):
                 self.player.set_xwindow(self.winId())
             elif sys.platform == "darwin":
                 self.player.set_nsobject(int(self.winId()))
+    
+    def resizeEvent(self, event):
+        """Handle resize to update VLC rendering target"""
+        super().resizeEvent(event)
+        self._update_vlc_rendering_target()
     
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         self.close()
