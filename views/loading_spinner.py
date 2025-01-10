@@ -3,7 +3,26 @@ from PyQt6.QtCore import Qt, QTimer, QRectF
 from PyQt6.QtGui import QPainter, QColor
 
 class LoadingSpinner(QWidget):
+    """
+    A widget that displays a loading spinner animation.
+    
+    Attributes:
+        size (int): The size of the spinner.
+        num_dots (int): The number of dots in the spinner.
+        color (QColor): The color of the dots.
+        rotation (float): The current rotation angle of the spinner.
+        timer (QTimer): The timer controlling the animation.
+    """
     def __init__(self, parent=None, size=64, num_dots=8, color=QColor(255, 255, 255)):
+        """
+        Initializes the LoadingSpinner with the given parameters.
+        
+        Args:
+            parent (QWidget, optional): The parent widget. Defaults to None.
+            size (int, optional): The size of the spinner. Defaults to 64.
+            num_dots (int, optional): The number of dots in the spinner. Defaults to 8.
+            color (QColor, optional): The color of the dots. Defaults to white.
+        """
         super().__init__(parent)
         
         # Set size
@@ -23,18 +42,27 @@ class LoadingSpinner(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     
     def start(self):
+        """Starts the spinner animation."""
         self.show()
         self.timer.start(50)  # 20 FPS
     
     def stop(self):
+        """Stops the spinner animation."""
         self.timer.stop()
         self.hide()
     
     def rotate(self):
+        """Updates the rotation angle and repaints the spinner."""
         self.rotation += 360 / self.num_dots
         self.update()
     
     def paintEvent(self, event):
+        """
+        Handles the paint event to draw the spinner.
+        
+        Args:
+            event (QPaintEvent): The paint event.
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
