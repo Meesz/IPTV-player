@@ -1,0 +1,114 @@
+[MASTER]
+# Python code files to analyze
+init-hook='import sys; sys.path.append(".")'
+ignore=CVS
+ignore-patterns=
+persistent=yes
+load-plugins=
+
+# Use multiple processes to speed up Pylint (use "0" to auto-detect)
+jobs=0
+
+# List of plugins to load
+extension-pkg-whitelist=PyQt6
+
+[MESSAGES CONTROL]
+# Disable specific warnings
+disable=C0111,  # missing-docstring
+        C0103,  # invalid-name (for Qt-style names)
+        R0903,  # too-few-public-methods
+        R0913,  # too-many-arguments
+        R0914,  # too-many-locals
+        W0511,  # fixme
+        W0703,  # broad-except
+        C0301   # line-too-long
+
+[REPORTS]
+# Set the output format
+output-format=text
+
+# Include a brief explanation of each error
+msg-template={path}:{line}: [{msg_id}({symbol}), {obj}] {msg}
+
+# Files or directories to exclude
+ignore-paths=
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=88
+
+# Expected format of line ending
+expected-line-ending-format=CRLF
+
+[BASIC]
+# Regular expression which should only match function or class names
+function-rgx=[a-z_][a-z0-9_]{2,50}$
+class-rgx=[A-Z_][a-zA-Z0-9]+$
+
+# Regular expression which should only match correct variable names
+variable-rgx=[a-z_][a-z0-9_]{2,30}$
+
+# Good variable names which should always be accepted
+good-names=i,j,k,ex,Run,_,id,qt,db
+
+[VARIABLES]
+# A regular expression matching the name of dummy variables
+dummy-variables-rgx=_$|dummy
+
+# List of additional names to consider as builtins
+additional-builtins=
+
+[SIMILARITIES]
+# Minimum lines number of a similarity
+min-similarity-lines=4
+
+# Ignore imports when computing similarities
+ignore-imports=yes
+
+[TYPECHECK]
+# List of module names for which member attributes should not be checked
+ignored-modules=numpy,PyQt6,vlc
+
+# List of classes names for which member attributes should not be checked
+ignored-classes=SQLObject,vlc.Instance,vlc.MediaPlayer
+
+[MISCELLANEOUS]
+# List of note tags to take into consideration
+notes=FIXME,XXX,TODO
+
+[IMPORTS]
+# Allow wildcard imports from modules that define __all__
+allow-wildcard-with-all=no
+
+# Analyse import fallback blocks
+analyse-fallback-blocks=no
+
+[DESIGN]
+# Maximum number of arguments for function / method
+max-args=10
+
+# Maximum number of locals for function / method
+max-locals=20
+
+# Maximum number of return / yield for function / method
+max-returns=6
+
+# Maximum number of statements in function / method
+max-statements=50
+
+# Maximum number of parents for a class
+max-parents=7
+
+[CLASSES]
+# List of method names used to declare (i.e. assign) instance attributes
+defining-attr-methods=__init__,__new__,setUp
+
+# List of valid names for the first argument in a class method
+valid-classmethod-first-arg=cls
+
+# List of valid names for the first argument in a metaclass class method
+valid-metaclass-classmethod-first-arg=mcs
+
+[EXCEPTIONS]
+# Exceptions that will emit a warning when caught
+overgeneral-exceptions=Exception
