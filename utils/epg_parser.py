@@ -1,3 +1,7 @@
+"""
+This module contains the EPGParser class, which is responsible for parsing EPG data from XMLTV files.
+"""
+
 import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -5,7 +9,8 @@ from models.epg import Program, EPGData, EPGGuide
 
 
 class EPGParser:
-    """Utility class for parsing EPG data from XMLTV files."""  
+    """Utility class for parsing EPG data from XMLTV files."""
+
     @staticmethod
     def parse_date(date_str: str) -> datetime:
         """Parse various EPG date formats into a datetime object.
