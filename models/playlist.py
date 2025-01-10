@@ -85,6 +85,7 @@ class Playlist:
             Channel: The channel with the specified URL, or None if not found.
         """
         return self._url_index.get(url)
+
     def search_channels(self, query: str) -> List[Channel]:
         """Search for channels by name.
 
