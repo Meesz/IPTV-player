@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QListWidget, QSlider, QComboBox,
                             QTabWidget, QLabel, QLineEdit, QMenu, QToolBar,
-                            QWidgetAction, QFrame, QSizePolicy)
+                            QWidgetAction, QFrame, QSizePolicy, QScrollArea)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction
 from .player_widget import PlayerWidget
@@ -24,26 +24,45 @@ class EPGWidget(QFrame):
     def __init__(self):
         super().__init__()
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        self.setFixedHeight(300)  # Fixed height for the entire EPG widget
         
         layout = QVBoxLayout(self)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Create a scroll area for the content
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(5)
         
         # Current program
         self.current_title = QLabel("No program information")
         self.current_title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self.current_title)
+        self.current_title.setWordWrap(True)
+        scroll_layout.addWidget(self.current_title)
         
         self.current_time = QLabel()
-        layout.addWidget(self.current_time)
+        scroll_layout.addWidget(self.current_time)
         
         self.description = QLabel()
         self.description.setWordWrap(True)
-        layout.addWidget(self.description)
+        scroll_layout.addWidget(self.description)
         
         # Upcoming programs
-        layout.addWidget(QLabel("Upcoming:"))
+        scroll_layout.addWidget(QLabel("Upcoming:"))
         self.upcoming_list = QListWidget()
-        layout.addWidget(self.upcoming_list)
+        scroll_layout.addWidget(self.upcoming_list)
         
+        # Create scroll area and add the content
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Add scroll area to main layout
+        layout.addWidget(scroll_area)
+    
     def update_current_program(self, title: str, time_str: str, description: str):
         self.current_title.setText(title)
         self.current_time.setText(time_str)
