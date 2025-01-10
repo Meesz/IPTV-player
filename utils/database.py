@@ -1,9 +1,13 @@
+"""
+This module provides utilities for managing the database.
+It defines the Database class, which can handle database operations.
+"""
 import sqlite3
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
 from models.playlist import Channel
 from models.epg import Program
-from datetime import datetime
 
 
 class Database:
