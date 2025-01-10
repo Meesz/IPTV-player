@@ -1,10 +1,14 @@
 import sys
 import os
 import ctypes
+import logging
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMouseEvent
 from .loading_spinner import LoadingSpinner
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class FullscreenWindow(QWidget):
     def __init__(self, player_widget):
@@ -78,10 +82,12 @@ class PlayerWidget(QFrame):
             if sys.platform == "win32":
                 vlc_path = "C:\\Program Files\\VideoLAN\\VLC" if is_64bits else "C:\\Program Files (x86)\\VideoLAN\\VLC"
                 if not os.path.exists(vlc_path):
-                    self.placeholder.setText(
+                    error_msg = (
                         f"Error: VLC not found in {vlc_path}\n"
                         f"Please install {'64' if is_64bits else '32'}-bit VLC"
                     )
+                    self.placeholder.setText(error_msg)
+                    logger.error(error_msg)
                     return
                 
                 os.environ['PATH'] = vlc_path + ';' + os.environ['PATH']
@@ -118,7 +124,7 @@ class PlayerWidget(QFrame):
             self.player.video_set_mouse_input(False)
             
             self.vlc_available = True
-            print("VLC initialized successfully")
+            logger.info("VLC initialized successfully")
             
         except Exception as e:
             error_msg = (
@@ -126,9 +132,24 @@ class PlayerWidget(QFrame):
                 f"Python is {'64' if is_64bits else '32'}-bit\n"
                 "Make sure you have the correct VLC version installed"
             )
-            print(error_msg)
+            logger.error(error_msg)
             self.placeholder.setText(error_msg)
             self.vlc_available = False
+    
+    def cleanup_vlc(self):
+        """Clean up VLC resources before application shutdown"""
+        if self.vlc_available:
+            if self.fullscreen_window:
+                self._exit_fullscreen()
+            self.player.stop()
+            self.player.release()
+            self.instance.release()
+            self.vlc_available = False
+    
+    def closeEvent(self, event):
+        """Handle cleanup when widget is closed"""
+        self.cleanup_vlc()
+        super().closeEvent(event)
     
     def play(self, url: str):
         if not self.vlc_available:
@@ -154,7 +175,7 @@ class PlayerWidget(QFrame):
             )
             events.event_attach(
                 self.vlc.EventType.MediaPlayerEncounteredError,
-                lambda x: self.loading_spinner.stop()
+                lambda x: self._handle_playback_error()
             )
             
             self.player.set_media(media)
@@ -162,15 +183,28 @@ class PlayerWidget(QFrame):
             
             if result == -1:
                 self.loading_spinner.stop()
-                error_msg = "VLC is unable to open the MRL"
-                print(f"Playback error: {error_msg}")
+                error_msg = "Failed to start playback - invalid or unsupported media"
+                logger.error(f"Playback error: {error_msg}")
+                self.placeholder.setText(error_msg)
+                self.placeholder.show()
                 raise Exception(error_msg)
             
         except Exception as e:
             self.loading_spinner.stop()
+            error_msg = f"Playback error: {str(e)}"
+            logger.error(error_msg)
+            self.placeholder.setText(error_msg)
             self.placeholder.show()
             raise e
     
+    def _handle_playback_error(self):
+        """Handle VLC playback errors"""
+        self.loading_spinner.stop()
+        error_msg = "Stream playback failed - please check the URL and try again"
+        logger.error(error_msg)
+        self.placeholder.setText(error_msg)
+        self.placeholder.show()
+        
     def stop(self):
         if self.vlc_available:
             if self.fullscreen_window:
@@ -184,8 +218,17 @@ class PlayerWidget(QFrame):
             self.player.pause()
         
     def set_volume(self, volume: int):
-        if self.vlc_available:
-            self.player.audio_set_volume(volume)
+        """Set the audio volume level.
+        
+        Args:
+            volume: Integer between 0 and 100 representing volume percentage
+        """
+        if not self.vlc_available:
+            return
+            
+        # Clamp volume between 0 and 100
+        volume = max(0, min(100, volume))
+        self.player.audio_set_volume(volume)
         
     def is_paused(self) -> bool:
         if not self.vlc_available:
@@ -220,14 +263,12 @@ class PlayerWidget(QFrame):
             self.fullscreen_window = None
     
     def _on_fullscreen_closed(self):
-        """Handle fullscreen window being closed"""
-        self._exit_fullscreen()
+        self._exit_fullscreen() 
     
     def keyPressEvent(self, event):
         """Handle ESC key to exit fullscreen"""
-        if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
-            self.window().showNormal()
-            self.is_fullscreen = False 
+        if event.key() == Qt.Key.Key_Escape and self.fullscreen_window:
+            self._exit_fullscreen()
     
     def resizeEvent(self, event):
         """Handle resize to keep spinner centered"""
