@@ -14,6 +14,7 @@ import tempfile
 import os
 from views.playlist_manager import PlaylistManagerDialog
 import logging
+from views.player_widget import FullscreenWindow
 
 logger = logging.getLogger(__name__)
 
@@ -615,3 +616,22 @@ class PlayerController:
         if self.epg_guide:
             self.epg_guide.clear()
             self.epg_guide = None
+    
+    def toggle_fullscreen(self):
+        if self.fullscreen_window is None:
+            # Create new fullscreen window
+            self.fullscreen_window = FullscreenWindow(self.window.player_widget)
+            
+            # Set the same media player instance
+            self.fullscreen_window.player_widget.set_player(
+                self.window.player_widget.player
+            )
+            
+            # Connect close event
+            self.fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
+            
+            # Show fullscreen
+            self.fullscreen_window.showFullScreen()
+        else:
+            self.fullscreen_window.close()
+            self.fullscreen_window = None
