@@ -2,8 +2,6 @@
 This module contains the main window of the Simple IPTV Player application.
 """
 
-from utils.themes import Themes
-
 # pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -25,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
+from utils.themes import Themes
 from views.player_widget import PlayerWidget
 from views.notification import NotificationWidget, NotificationType
 
@@ -248,10 +247,10 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(theme)
 
     def show_notification(
-        self, message: str, type: NotificationType = NotificationType.INFO
+        self, message: str, notification_type: NotificationType = NotificationType.INFO
     ):
         """Show a notification with the given message and type."""
-        self.notification.show_message(message, type)
+        self.notification.show_message(message, notification_type)
 
     def _create_menu(self):
         """Create the menu bar with file and EPG menus."""
@@ -299,7 +298,7 @@ class MainWindow(QMainWindow):
         url_action.setDefaultWidget(url_widget)
         epg_menu.addAction(url_action)
 
-    def _handle_splitter_moved(self, pos, index):
+    def _handle_splitter_moved(self):
         """Handle splitter movement to show/hide search bar."""
         # Get the width of the left panel (sidebar)
         sizes = self.splitter.sizes()

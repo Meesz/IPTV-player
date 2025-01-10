@@ -4,16 +4,12 @@ which is responsible for displaying and controlling VLC media playback.
 """
 
 import sys
-import os
 import logging
 
 # pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QMouseEvent
-from .loading_spinner import LoadingSpinner
 from views.vlc_manager import VLCManager
-
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -59,7 +55,7 @@ class FullscreenWindow(QWidget):
         super().resizeEvent(event)
         self._update_vlc_rendering_target()
 
-    def mouse_double_click_event(self, event: QMouseEvent):
+    def mouse_double_click_event(self):
         """Handle double click to close the fullscreen window."""
         self.close()
 
@@ -108,15 +104,7 @@ class PlayerWidget(QFrame):
         # Enable mouse tracking
         self.setMouseTracking(True)
 
-        # Create loading spinner
-        self.loading_spinner = LoadingSpinner(self)
-        self.loading_spinner.hide()
 
-        # Center the spinner
-        self.loading_spinner.move(
-            (self.width() - self.loading_spinner.width()) // 2,
-            (self.height() - self.loading_spinner.height()) // 2,
-        )
 
     def _setup_player(self):
         """Configure the VLC player instance."""
@@ -160,10 +148,6 @@ class PlayerWidget(QFrame):
         if not self.vlc_available:
             return
 
-        # Show loading spinner
-        self.loading_spinner.start()
-        self.placeholder.hide()
-
         try:
             # Create media with optimized options
             media = self.instance.media_new(url)
@@ -176,25 +160,23 @@ class PlayerWidget(QFrame):
             events = self.player.event_manager()
             events.event_attach(
                 self.vlc.EventType.MediaPlayerPlaying,
-                lambda x: self.loading_spinner.stop(),
+                lambda x: self.placeholder.hide()  # Hide placeholder when playing starts
             )
             events.event_attach(
                 self.vlc.EventType.MediaPlayerEncounteredError,
-                lambda x: self._handle_playback_error(),
+                lambda x: self._handle_playback_error()
             )
 
             self.player.set_media(media)
             result = self.player.play()
 
             if result == -1:
-                self.loading_spinner.stop()
                 error_msg = "Failed to start playback - invalid or unsupported media"
                 logger.error("Playback error: %s", error_msg)
                 self.placeholder.setText(error_msg)
                 self.placeholder.show()
                 raise RuntimeError(error_msg)
         except Exception as e:
-            self.loading_spinner.stop()
             error_msg = f"Playback error: {str(e)}"
             logger.error(error_msg)
             self.placeholder.setText(error_msg)
@@ -203,7 +185,6 @@ class PlayerWidget(QFrame):
 
     def _handle_playback_error(self):
         """Handle VLC playback errors"""
-        self.loading_spinner.stop()
         error_msg = "Stream playback failed - please check the URL and try again"
         logger.error(error_msg)
         self.placeholder.setText(error_msg)
@@ -215,7 +196,6 @@ class PlayerWidget(QFrame):
             if self.fullscreen_window:
                 self._exit_fullscreen()
             self.player.stop()
-            self.loading_spinner.stop()
             self.placeholder.show()
 
     def pause(self):
@@ -302,17 +282,14 @@ class PlayerWidget(QFrame):
             self._exit_fullscreen()
 
     def resize_event(self, event):
-        """Handle resize to keep spinner centered.
+        """Handle resize events.
 
         Args:
             event: The resize event that triggered the action.
         """
         super().resizeEvent(event)
-        # Center the spinner
-        self.loading_spinner.move(
-            (self.width() - self.loading_spinner.width()) // 2,
-            (self.height() - self.loading_spinner.height()) // 2,
-        )
+
+
     def _init_vlc(self):
         """Initialize VLC player and set up the environment."""
         # Get VLC instance from VLCManager

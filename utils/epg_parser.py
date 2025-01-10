@@ -114,7 +114,7 @@ class EPGParser:
             print(f"EPG loaded: {channel_count} channels, {program_count} programs")
 
             # Debug: Print some channel IDs
-            channel_ids = list(guide._data.keys())[:5]
+            channel_ids = list(guide.get_channel_ids())[:5]
             print(f"Sample channel IDs: {channel_ids}")
 
             return guide

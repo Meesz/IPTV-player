@@ -59,7 +59,7 @@ class NotificationWidget(QLabel):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.hide)
 
-    def show_message(self, message: str, type: NotificationType, duration: int = 3000):
+    def show_message(self, message: str, notification_type: NotificationType, duration: int = 3000):
         """
         Display a notification message with a specific style and duration.
 
@@ -68,7 +68,7 @@ class NotificationWidget(QLabel):
             type (NotificationType): The type of notification to determine the style.
             duration (int): The duration in milliseconds for which the notification is displayed.
         """
-        style = self.STYLES[type]
+        style = self.STYLES[notification_type]
         self.setStyleSheet(
             f"""
             background-color: {style.background};

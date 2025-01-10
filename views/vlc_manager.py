@@ -1,5 +1,4 @@
 """Module for managing VLC initialization and configuration."""
-
 import os
 import sys
 import logging
@@ -7,12 +6,13 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
 class VLCManager:
     """Manages VLC initialization and provides a clean interface for media playback."""
-    
+
     _instance = None
     _vlc = None
-    
+
     @classmethod
     def initialize(cls) -> Tuple[bool, Optional[str]]:
         """Initialize VLC environment before application starts."""
@@ -40,6 +40,7 @@ class VLCManager:
             # Now try to import VLC
             try:
                 import vlc
+
                 cls._vlc = vlc
                 cls._instance = cls._vlc.Instance()
                 return True, None
@@ -47,22 +48,22 @@ class VLCManager:
                 error_msg = f"Failed to import VLC: {str(e)}"
                 logger.error(error_msg)
                 return False, error_msg
-            
+
         except Exception as e:
             error_msg = f"Failed to initialize VLC: {str(e)}"
             logger.error(error_msg)
             return False, error_msg
-    
+
     @classmethod
     def get_instance(cls):
         """Get the VLC instance."""
         return cls._instance
-        
+
     @classmethod
     def get_vlc(cls):
         """Get the VLC module."""
         return cls._vlc
-    
+
     @classmethod
     def create_player(cls):
         """Create a new media player instance."""
