@@ -14,6 +14,18 @@ class Channel:
     def __hash__(self):
         return hash(self.url)  # Use URL as unique identifier
 
+    @staticmethod
+    def from_db_row(row):
+        """Create a Channel instance from a database row."""
+        return Channel(
+            name=row['name'],
+            url=row['url'],
+            group=row['group_name'],
+            logo=row['logo'],
+            epg_id=row['epg_id'],
+            id=row['id']
+        )
+
 class Playlist:
     def __init__(self):
         self.channels: List[Channel] = []
