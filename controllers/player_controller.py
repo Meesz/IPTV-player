@@ -3,27 +3,18 @@ This module contains the PlayerController class, which manages the player, playl
 It handles various events such as category changes, channel selections, and playback controls.
 The PlayerController class interacts with the main window, database, and other utility classes to provide a seamless user experience.
 """
-import os
-import tempfile
-from datetime import datetime
-import requests
 
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
+from PyQt6.QtWidgets import QMessageBox, QDialog
 
-from models.playlist import Playlist, Channel
-from utils.database import Database
-from utils.epg_parser import EPGParser
-from utils.m3u_parser import M3UParser
-from utils.themes import Themes
+from models.playlist import Channel
 from views.main_window import MainWindow
 from views.notification import NotificationType
 from views.playlist_manager import PlaylistManagerDialog
-from views.player_widget import FullscreenWindow
-from .playlist_controller import PlaylistController
-from .epg_controller import EPGController
-from .settings_controller import SettingsController
+from controllers.playlist_controller import PlaylistController
+from controllers.epg_controller import EPGController
+from controllers.settings_controller import SettingsController
 
 
 class PlayerController:
@@ -33,59 +24,59 @@ class PlayerController:
         """Initialize the PlayerController with the main window and set up necessary components."""
         self.window = main_window
         self.current_channel = None
-        
+
         # Initialize sub-controllers
         self.settings = SettingsController()
         self.playlist_controller = PlaylistController(main_window, self.settings)
         self.epg_controller = EPGController(main_window, self.settings)
-        
+
         # Create search timer for debouncing
         self.search_timer = QTimer()
         self.search_timer.setSingleShot(True)
         self.search_timer.setInterval(300)
         self.search_timer.timeout.connect(self._perform_search)
-        
+
         # Connect signals
         self._connect_signals()
-        
+
         # Load initial state
         self._load_initial_state()
-        
+
     def _connect_signals(self):
         """Connect UI signals to their respective handlers."""
         # Playlist and channels
         self.window.category_combo.currentTextChanged.connect(self._category_changed)
         self.window.channel_list.itemClicked.connect(self._channel_selected)
         self.window.favorites_list.itemClicked.connect(self._favorite_selected)
-        
+
         # Playback controls
         self.window.play_button.clicked.connect(self.toggle_playback)
         self.window.stop_button.clicked.connect(self.stop_playback)
         self.window.volume_slider.valueChanged.connect(self.volume_changed)
         self.window.favorite_button.clicked.connect(self._toggle_favorite)
-        
+
         # Search
-        self.window.search_bar.textChanged.connect(
-            lambda: self.search_timer.start()
-        )
-        
+        self.window.search_bar.textChanged.connect(self.search_timer.start)
+
         # Menu actions
-        self.window.playlist_manager_action.triggered.connect(self.show_playlist_manager)
-        
+        self.window.playlist_manager_action.triggered.connect(
+            self.show_playlist_manager
+        )
+
     def _load_initial_state(self):
         """Load the initial application state."""
         # Load volume
         volume = int(self.settings.get_setting("volume", "100"))
         self.window.volume_slider.setValue(volume)
         self.window.player_widget.set_volume(volume)
-        
+
         # Load last playlist
         last_playlist = self.settings.get_setting("last_playlist")
         is_url = self.settings.get_setting("last_playlist_is_url") == "true"
-        
+
         if last_playlist:
             self.playlist_controller.load_playlist_from_path(last_playlist, is_url)
-            
+
         # Load last EPG
         last_epg = self.settings.get_setting("last_epg")
         if last_epg:
@@ -101,8 +92,11 @@ class PlayerController:
 
         selected_name = item.text()
         category = self.window.category_combo.currentText()
-        channels = (self.playlist_controller.playlist.channels if category == "All" 
-                   else self.playlist_controller.playlist.get_channels_by_category(category))
+        channels = (
+            self.playlist_controller.playlist.channels
+            if category == "All"
+            else self.playlist_controller.playlist.get_channels_by_category(category)
+        )
 
         for channel in channels:
             if channel.name == selected_name:
@@ -148,18 +142,17 @@ class PlayerController:
                 self.window.show_notification(
                     "Failed to add favorite", NotificationType.ERROR
                 )
+        elif self.settings.db.remove_favorite(self.current_channel.url):
+            self._load_favorites()
+            self.window.show_notification(
+                f"Removed {self.current_channel.name} from favorites",
+                NotificationType.SUCCESS,
+            )
         else:
-            if self.settings.db.remove_favorite(self.current_channel.url):
-                self._load_favorites()
-                self.window.show_notification(
-                    f"Removed {self.current_channel.name} from favorites",
-                    NotificationType.SUCCESS,
-                )
-            else:
-                self.window.favorite_button.setChecked(True)
-                self.window.show_notification(
-                    "Failed to remove favorite", NotificationType.ERROR
-                )
+            self.window.favorite_button.setChecked(True)
+            self.window.show_notification(
+                "Failed to remove favorite", NotificationType.ERROR
+            )
 
     def _load_favorites(self):
         self.window.favorites_list.clear()
@@ -179,7 +172,9 @@ class PlayerController:
         if category == "All":
             channels = self.playlist_controller.playlist.channels
         else:
-            channels = self.playlist_controller.playlist.get_channels_by_category(category)
+            channels = self.playlist_controller.playlist.get_channels_by_category(
+                category
+            )
 
         # Filter channels
         matched_channels = [
@@ -220,7 +215,7 @@ class PlayerController:
     @property
     def playlist(self):
         """Get the playlist from the playlist controller.
-        
+
         Returns:
             Playlist: The current playlist
         """
@@ -241,7 +236,9 @@ class PlayerController:
             dialog.set_playlists(saved_playlists)
 
             # Connect playlist selected signal
-            dialog.playlist_selected.connect(self.playlist_controller.load_playlist_from_path)
+            dialog.playlist_selected.connect(
+                self.playlist_controller.load_playlist_from_path
+            )
 
             result = dialog.exec()
 
@@ -279,7 +276,9 @@ class PlayerController:
                 if response == QMessageBox.StandardButton.Yes:
                     QTimer.singleShot(
                         0,
-                        lambda: self.show_playlist_manager(retry_count + 1, max_retries),
+                        lambda: self.show_playlist_manager(
+                            retry_count + 1, max_retries
+                        ),
                     )
                 else:
                     self.window.close()
