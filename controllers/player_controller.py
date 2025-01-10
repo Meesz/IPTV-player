@@ -8,9 +8,6 @@ import tempfile
 from datetime import datetime
 import requests
 
-# pylint: disable=no-name-in-module
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
 
 from models.playlist import Playlist, Channel
 from utils.database import Database
