@@ -274,7 +274,7 @@ class Database:
                 conn.close()
     
     def get_playlists(self):
-        """Get list of (name, path, is_url) tuples"""
+        """Add index on frequently queried columns"""
         conn = None
         try:
             conn = sqlite3.connect(str(self.db_path))
