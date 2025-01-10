@@ -1,3 +1,7 @@
+"""
+This module contains the Playlist class, which manages a collection of TV channels.
+"""
+
 from dataclasses import dataclass
 from typing import List, Dict
 from collections import defaultdict
@@ -6,6 +10,7 @@ from collections import defaultdict
 @dataclass
 class Channel:
     """Represents a TV channel with its associated metadata."""
+
     name: str
     url: str
     group: str = ""
@@ -39,7 +44,7 @@ class Channel:
 
 class Playlist:
     """Manages a collection of TV channels and provides methods to interact with them."""
-    
+
     def __init__(self):
         """Initialize the Playlist with empty data structures for channels and indexes."""
         self.channels: List[Channel] = []
