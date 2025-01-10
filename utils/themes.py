@@ -2,8 +2,11 @@
 This module provides utilities for managing themes.
 It defines the Themes class, which can get the CSS for the dark and light themes.
 """
+
+
 class Themes:
     """Utility class for managing themes."""
+
     @staticmethod
     def get_dark_theme() -> str:
         """Get the CSS for the dark theme."""
