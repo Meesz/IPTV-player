@@ -1,4 +1,5 @@
 """Module for managing VLC initialization and configuration."""
+
 import os
 import sys
 import logging
