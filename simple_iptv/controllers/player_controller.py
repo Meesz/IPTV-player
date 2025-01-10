@@ -567,3 +567,11 @@ class PlayerController:
                     logger.debug(f"Cleaned up temporary file: {tmp_path}")
                 except Exception as e:
                     logger.warning(f"Failed to cleanup temporary file: {e}") 
+                    
+    def _cleanup_epg(self):
+        """Clean up EPG resources"""
+        if self.epg_timer.isActive():
+            self.epg_timer.stop()
+        if self.epg_guide:
+            self.epg_guide.clear()
+            self.epg_guide = None

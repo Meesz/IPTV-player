@@ -1,3 +1,4 @@
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Dict
@@ -25,13 +26,22 @@ class EPGParser:
     
     @staticmethod
     def parse_xmltv(file_path: str) -> EPGGuide:
-        guide = EPGGuide()
-        channel_count = 0
-        program_count = 0
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"EPG file not found: {file_path}")
         
+        if not os.path.getsize(file_path):
+            raise ValueError("EPG file is empty")
+
         try:
             tree = ET.parse(file_path)
             root = tree.getroot()
+
+            if root.tag != 'tv':
+                raise ValueError("Invalid XMLTV format: missing root 'tv' element")
+            
+            guide = EPGGuide()
+            channel_count = 0
+            program_count = 0
             
             for program in root.findall('.//programme'):
                 channel_id = program.get('channel')
@@ -82,4 +92,4 @@ class EPGParser:
             return guide
             
         except Exception as e:
-            raise ValueError(f"Failed to parse EPG file: {str(e)}") 
+            raise ValueError(f"Failed to parse EPG file: {str(e)}")
