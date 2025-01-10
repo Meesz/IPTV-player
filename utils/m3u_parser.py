@@ -1,29 +1,36 @@
-import re
-import logging
-from models.playlist import Channel, Playlist
+"""
+This module provides utilities for parsing M3U files.
 
-logger = logging.getLogger(__name__)
+It defines the M3UParser class, which can parse M3U files and
+return a Playlist object containing the parsed channels.
+"""
+import re
+from models.playlist import Channel, Playlist
 
 
 class M3UParser:
+    """Utility class for parsing M3U files."""
+
     @staticmethod
     def parse(file_path: str) -> Playlist:
-        logger.debug(f"Starting to parse M3U file: {file_path}")
+        """Parse an M3U file and return a Playlist object.
+
+        Args:
+            file_path (str): The path to the M3U file.
+
+        Returns:
+            Playlist: An object containing the parsed channels.
+        """
         playlist = Playlist()
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                logger.debug("Reading M3U file contents")
                 lines = f.readlines()
 
-            logger.debug(f"Read {len(lines)} lines from file")
-
             if not lines:
-                logger.error("File is empty")
                 raise ValueError("Empty M3U file")
 
             if not lines[0].strip().startswith("#EXTM3U"):
-                logger.error("File doesn't start with #EXTM3U")
                 raise ValueError("Invalid M3U file format")
 
             current_channel = None
@@ -35,7 +42,6 @@ class M3UParser:
                     continue
 
                 if line.startswith("#EXTINF"):
-                    logger.debug(f"Processing EXTINF line {line_num}: {line[:100]}...")
                     info_regex = r'#EXTINF:-1(?:.*tvg-id="(.*?)")?(?:.*tvg-name="(.*?)")?(?:.*group-title="(.*?)")?(?:.*tvg-logo="(.*?)")?,(.+)$'
                     match = re.match(info_regex, line)
 
@@ -45,10 +51,8 @@ class M3UParser:
                         group = match.group(3) or ""
                         logo = match.group(4) or ""
                         current_channel = (name, group, logo, epg_id)
-                        logger.debug(f"Found channel info: name={name}, group={group}")
 
                 elif not line.startswith("#") and current_channel:
-                    logger.debug(f"Processing URL line {line_num}: {line[:100]}...")
                     name, group, logo, epg_id = current_channel
                     channel = Channel(
                         name=name, url=line, group=group, logo=logo, epg_id=epg_id
@@ -57,9 +61,7 @@ class M3UParser:
                     channels_count += 1
                     current_channel = None
 
-            logger.info(f"Successfully parsed {channels_count} channels")
             return playlist
 
         except Exception as e:
-            logger.error(f"Error parsing M3U file: {str(e)}", exc_info=True)
-            raise
+            raise ValueError(f"Error parsing M3U file: {str(e)}") from e
