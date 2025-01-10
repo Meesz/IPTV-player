@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QListWidget, QSlider, QComboBox,
                             QTabWidget, QLabel, QLineEdit, QMenu, QToolBar,
-                            QWidgetAction, QFrame, QSizePolicy, QScrollArea)
+                            QWidgetAction, QFrame, QSizePolicy, QScrollArea,
+                            QSplitter)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction
 from .player_widget import PlayerWidget
@@ -93,22 +94,26 @@ class MainWindow(QMainWindow):
         # Create toolbar
         self._create_toolbar()
         
-        # Create content area
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.addLayout(content_layout)
+        # Create splitter for resizable panels
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # Create left sidebar
         left_panel = self._create_left_panel()
-        content_layout.addWidget(left_panel)
+        left_panel.setMinimumWidth(200)  # Set minimum width for left panel
         
         # Create right panel with player
         right_panel = self._create_right_panel()
-        content_layout.addWidget(right_panel)
+        right_panel.setMinimumWidth(400)  # Set minimum width for player
         
-        # Set content stretch
-        content_layout.setStretch(0, 1)  # Left panel
-        content_layout.setStretch(1, 4)  # Right panel
+        # Add panels to splitter
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        
+        # Set initial sizes (1:4 ratio)
+        splitter.setSizes([200, 800])
+        
+        # Add splitter to main layout
+        main_layout.addWidget(splitter)
         
         # Create notification widget
         self.notification = NotificationWidget(self)
