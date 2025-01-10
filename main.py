@@ -2,8 +2,9 @@ import sys
 import logging
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from views.main_window import MainWindow
-from controllers.player_controller import PlayerController
 from views.vlc_manager import VLCManager
+from controllers.player_controller import PlayerController
+
 
 # Configure logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ def main():
     if not success:
         QMessageBox.critical(None, "Error", f"Failed to initialize VLC:\n{error}")
         return 1
-    
+
     # Create main window and controller
     logger.debug("Creating main window")
     main_window = MainWindow()
