@@ -40,6 +40,7 @@ class VLCManager:
 
             # Now try to import VLC
             try:
+                # pylint: disable=import-outside-toplevel
                 import vlc
 
                 cls._vlc = vlc
