@@ -88,3 +88,7 @@ class EPGController:
                 p for p in channel_data.programs if p.start_time > current_time
             ][:5]
             self.window.epg_widget.set_upcoming_programs(upcoming)
+
+    def refresh_epg(self):
+        """Update the EPG display with current program information."""
+        self._update_epg_display()

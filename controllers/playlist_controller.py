@@ -85,3 +85,7 @@ class PlaylistController:
 
         for channel in channels:
             self.window.channel_list.addItem(channel.name)
+
+    def refresh_channels(self):
+        """Update the channel list display based on current category and filters."""
+        self._update_channel_list()

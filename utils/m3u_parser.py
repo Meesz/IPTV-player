@@ -6,7 +6,7 @@ including name, URL, group, logo, and EPG ID into a structured Playlist object.
 """
 
 from pathlib import Path
-from typing import Optional, Tuple, TextIO
+from typing import TextIO
 import re
 from models.playlist import Channel, Playlist
 

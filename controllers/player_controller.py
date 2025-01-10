@@ -83,7 +83,7 @@ class PlayerController:
             self.epg_controller.load_epg_from_file(last_epg)
 
     def _category_changed(self, category: str):
-        self.playlist_controller._update_channel_list()
+        self.playlist_controller.refresh_channels()
         self.settings.save_setting("last_category", category)
 
     def _channel_selected(self, item):
@@ -117,7 +117,7 @@ class PlayerController:
         try:
             self.window.player_widget.play(channel.url)
             self.current_channel = channel
-            self.epg_controller._update_epg_display()
+            self.epg_controller.refresh_epg()
             self.window.show_notification(
                 f"Playing: {channel.name}", NotificationType.INFO
             )
@@ -164,7 +164,7 @@ class PlayerController:
         search_text = self.window.search_bar.text().lower()
 
         if not search_text:
-            self.playlist_controller._update_channel_list()
+            self.playlist_controller.refresh_channels()
             return
 
         # Get channels based on category
