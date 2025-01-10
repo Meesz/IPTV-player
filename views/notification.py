@@ -59,7 +59,9 @@ class NotificationWidget(QLabel):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.hide)
 
-    def show_message(self, message: str, notification_type: NotificationType, duration: int = 3000):
+    def show_message(
+        self, message: str, notification_type: NotificationType, duration: int = 3000
+    ):
         """
         Display a notification message with a specific style and duration.
 
