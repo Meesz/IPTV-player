@@ -1,3 +1,13 @@
+"""
+This module contains the PlaylistManagerDialog class, 
+which is responsible for managing the playlist manager dialog.
+"""
+
+import tempfile
+import os
+import requests
+
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,12 +22,13 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-import requests
-import tempfile
-import os
 
 
 class PlaylistManagerDialog(QDialog):
+    """
+    This class is responsible for managing the playlist manager dialog.
+    """
+
     playlist_selected = pyqtSignal(str, bool)  # Emits (path, is_url)
 
     def __init__(self, parent=None):
@@ -84,6 +95,7 @@ class PlaylistManagerDialog(QDialog):
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
 
     def selection_changed(self):
+        """Handle selection change in playlist list"""
         has_selection = bool(self.playlist_list.selectedItems())
         self.remove_button.setEnabled(has_selection)
         self.select_button.setEnabled(has_selection)
@@ -151,6 +163,7 @@ class PlaylistManagerDialog(QDialog):
             self.playlist_list.addItem(item)
 
     def remove_playlist(self):
+        """Remove the currently selected playlist"""
         current_item = self.playlist_list.currentItem()
         if current_item:
             confirm = QMessageBox.question(
@@ -164,6 +177,7 @@ class PlaylistManagerDialog(QDialog):
                 self.playlist_list.takeItem(self.playlist_list.row(current_item))
 
     def select_playlist(self):
+        """Select the currently selected playlist"""
         current_item = self.playlist_list.currentItem()
         if current_item:
             data = current_item.data(Qt.ItemDataRole.UserRole)
@@ -189,6 +203,7 @@ class PlaylistManagerDialog(QDialog):
             self.playlist_list.addItem(item)
 
     def _show_context_menu(self, position):
+        """Show context menu for playlist list"""
         item = self.playlist_list.itemAt(position)
         if item:
             menu = QMenu()
@@ -202,6 +217,7 @@ class PlaylistManagerDialog(QDialog):
                 self.remove_playlist()
 
     def edit_playlist(self):
+        """Edit the currently selected playlist"""
         current_item = self.playlist_list.currentItem()
         if not current_item:
             return
@@ -246,7 +262,7 @@ class PlaylistManagerDialog(QDialog):
             # Show success message
             QMessageBox.information(self, "Success", "Playlist updated successfully")
 
-    def closeEvent(self, event):
+    def close_event(self, event):
         """Handle window close button (X) click"""
         self.reject()
         event.accept()
