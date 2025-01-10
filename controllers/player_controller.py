@@ -1,9 +1,14 @@
-import logging
+"""
+This module contains the PlayerController class, which manages the player, playlists, EPG, and UI interactions.
+It handles various events such as category changes, channel selections, and playback controls.
+The PlayerController class interacts with the main window, database, and other utility classes to provide a seamless user experience.
+"""
 import os
 import tempfile
 from datetime import datetime
 import requests
 
+# pylint: disable=no-name-in-module
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
 
@@ -16,8 +21,6 @@ from views.main_window import MainWindow
 from views.notification import NotificationType
 from views.playlist_manager import PlaylistManagerDialog
 from views.player_widget import FullscreenWindow
-
-logger = logging.getLogger(__name__)
 
 
 class PlayerController:
@@ -54,6 +57,9 @@ class PlayerController:
         # Load last playlist and EPG
         self._load_last_playlist()
         self._load_last_epg()
+
+        # Initialize fullscreen window
+        self.fullscreen_window = None
 
     def _load_favorites(self):
         """Load favorite channels from database and update the UI."""
@@ -119,7 +125,7 @@ class PlayerController:
         if save:
             self.db.save_setting("theme", theme)
 
-    def _search_changed(self, text: str):
+    def _search_changed(self):
         """Debounce search input by starting the search timer.
 
         Args:
@@ -154,35 +160,23 @@ class PlayerController:
 
     def load_playlist(self):
         """Open a file dialog to select and load an M3U playlist."""
-        logger.debug("Opening file dialog for playlist selection")
         file_path, _ = QFileDialog.getOpenFileName(
             self.window, "Open M3U Playlist", "", "M3U Files (*.m3u *.m3u8)"
         )
 
-        logger.debug(f"Selected file path: {file_path}")
-
         if file_path:
             try:
-                logger.debug("Attempting to parse playlist")
                 self.playlist = M3UParser.parse(file_path)
-                logger.debug(
-                    f"Parsed playlist with {len(self.playlist.channels)} channels"
-                )
-
-                logger.debug("Updating categories")
                 self._update_categories()
-                logger.debug("Updating channel list")
                 self._update_channel_list()
 
                 # Save the playlist path
-                logger.debug(f"Saving playlist path to database: {file_path}")
                 self.db.save_setting("last_playlist", file_path)
 
                 self.window.show_notification(
                     "Playlist loaded successfully", NotificationType.SUCCESS
                 )
             except Exception as e:
-                logger.error(f"Failed to load playlist: {str(e)}", exc_info=True)
                 self.window.show_notification(
                     f"Failed to load playlist: {str(e)}", NotificationType.ERROR
                 )
@@ -211,6 +205,8 @@ class PlayerController:
         elif category:
             # Show channels for specific category
             channels = self.playlist.get_channels_by_category(category)
+        else:
+            channels = []
 
         for channel in channels:
             self.window.channel_list.addItem(channel.name)
@@ -262,7 +258,6 @@ class PlayerController:
         self.current_channel = favorites[self.window.favorites_list.row(item)]
         self._play_channel(self.current_channel)
         self.window.favorite_button.setChecked(True)
-
     def _play_channel(self, channel: Channel):
         """Play the selected channel and update the EPG display.
 
@@ -276,7 +271,7 @@ class PlayerController:
             self.window.show_notification(
                 f"Playing: {channel.name}", NotificationType.INFO
             )
-        except Exception as e:
+        except RuntimeError as e:
             error_msg = str(e)
             if "unable to open the MRL" in error_msg.lower():
                 self.window.show_notification(
@@ -284,8 +279,12 @@ class PlayerController:
                 )
             else:
                 self.window.show_notification(
-                    f"Failed to play channel: {str(e)}", NotificationType.ERROR
+                    f"Failed to play channel: {error_msg}", NotificationType.ERROR
                 )
+        except Exception as e:
+            self.window.show_notification(
+                f"An unexpected error occurred: {str(e)}", NotificationType.ERROR
+            )
 
     def toggle_playback(self):
         """Toggle playback between play and pause states."""
@@ -450,12 +449,10 @@ class PlayerController:
                     "EPG loaded successfully", NotificationType.SUCCESS
                 )
         except requests.RequestException as e:
-            logger.error(f"Failed to download EPG: {str(e)}")
             self.window.show_notification(
                 f"Failed to download EPG: {str(e)}", NotificationType.ERROR
             )
         except Exception as e:
-            logger.error(f"Failed to load EPG: {str(e)}")
             self.window.show_notification(
                 f"Failed to load EPG: {str(e)}", NotificationType.ERROR
             )
@@ -464,9 +461,8 @@ class PlayerController:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
-                    logger.debug(f"Cleaned up temporary EPG file: {tmp_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup temporary EPG file: {e}")
+                except Exception:
+                    pass
 
     def _load_epg_from_file(self, file_path: str) -> bool:
         """Load EPG data from a file and update the display.
@@ -498,17 +494,11 @@ class PlayerController:
 
         if playlist_path:
             try:
-                logger.debug(
-                    f"Loading last playlist from {'URL' if is_url else 'path'}: {playlist_path}"
-                )
                 self.load_playlist_from_path(playlist_path, is_url)
                 self.window.show_notification(
                     "Previous playlist loaded", NotificationType.SUCCESS
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to load previous playlist: {str(e)}", exc_info=True
-                )
                 self.window.show_notification(
                     f"Failed to load previous playlist: {str(e)}",
                     NotificationType.ERROR,
@@ -520,18 +510,15 @@ class PlayerController:
         epg_url = self.db.get_setting("epg_url")
 
         if epg_url:
-            logger.debug(f"Loading last EPG from URL: {epg_url}")
             self.window.epg_url_input.setText(epg_url)
             self.load_epg_url()
         elif epg_file and os.path.exists(epg_file):
-            logger.debug(f"Loading last EPG from file: {epg_file}")
             try:
                 self._load_epg_from_file(epg_file)
                 self.window.show_notification(
                     "Previous EPG loaded", NotificationType.SUCCESS
                 )
             except Exception as e:
-                logger.error(f"Failed to load previous EPG: {str(e)}")
                 self.window.show_notification(
                     f"Failed to load previous EPG: {str(e)}", NotificationType.ERROR
                 )
@@ -552,9 +539,7 @@ class PlayerController:
             dialog.set_playlists(saved_playlists)
 
             # Connect playlist selected signal
-            dialog.playlist_selected.connect(
-                lambda path, is_url: self.load_playlist_from_path(path, is_url)
-            )
+            dialog.playlist_selected.connect(self.load_playlist_from_path)
 
             result = dialog.exec()
 
@@ -614,34 +599,28 @@ class PlayerController:
             path (str): The path or URL to the playlist.
             is_url (bool): Whether the path is a URL.
         """
-        logger.debug(f"Loading playlist from {'URL' if is_url else 'path'}: {path}")
         tmp_path = None
         try:
             if is_url:
-                logger.debug("Downloading playlist from URL")
-                response = requests.get(path)
+                response = requests.get(path, timeout=30)
                 response.raise_for_status()
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix=".m3u8"
                 ) as tmp_file:
                     tmp_file.write(response.content)
                     tmp_path = tmp_file.name
-                    logger.debug(f"Saved URL content to temporary file: {tmp_path}")
                 file_path = tmp_path
             else:
                 file_path = path
                 if not os.path.exists(file_path):
                     raise FileNotFoundError(f"Playlist file not found: {file_path}")
 
-            logger.debug("Parsing playlist file")
             self.playlist = M3UParser.parse(file_path)
-            logger.debug(f"Parsed {len(self.playlist.channels)} channels")
 
             self._update_categories()
             self._update_channel_list()
 
             # Save as last used playlist with is_url flag
-            logger.debug("Saving playlist settings to database")
             self.db.save_setting(
                 "last_playlist", path
             )  # Save original path/URL, not temporary file
@@ -651,7 +630,6 @@ class PlayerController:
                 "Playlist loaded successfully", NotificationType.SUCCESS
             )
         except Exception as e:
-            logger.error(f"Failed to load playlist: {str(e)}", exc_info=True)
             self.window.show_notification(
                 f"Failed to load playlist: {str(e)}", NotificationType.ERROR
             )
@@ -660,9 +638,8 @@ class PlayerController:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
-                    logger.debug(f"Cleaned up temporary file: {tmp_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup temporary file: {e}")
+                except Exception:
+                    pass
 
     def _cleanup_epg(self):
         """Clean up EPG resources."""
@@ -691,3 +668,7 @@ class PlayerController:
         else:
             self.fullscreen_window.close()
             self.fullscreen_window = None
+
+    def _on_fullscreen_closed(self):
+        """Handle cleanup when fullscreen window is closed."""
+        self.fullscreen_window = None
