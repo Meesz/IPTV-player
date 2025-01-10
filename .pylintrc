@@ -35,10 +35,7 @@ ignore-paths=
 
 [FORMAT]
 # Maximum number of characters on a single line
-max-line-length=88
-
-# Expected format of line ending
-expected-line-ending-format=CRLF
+max-line-length=120
 
 [BASIC]
 # Regular expression which should only match function or class names
@@ -111,4 +108,4 @@ valid-metaclass-classmethod-first-arg=mcs
 
 [EXCEPTIONS]
 # Exceptions that will emit a warning when caught
-overgeneral-exceptions=Exception
+overgeneral-exceptions=builtins.Exception
