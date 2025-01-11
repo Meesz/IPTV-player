@@ -6,63 +6,12 @@ which is responsible for displaying and controlling VLC media playback.
 import sys
 import logging
 
-# pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget, QApplication
 from PyQt6.QtCore import Qt
 from views.vlc_manager import VLCManager
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-
-class FullscreenWindow(QWidget):
-    """A window that displays the player widget in fullscreen mode."""
-
-    def __init__(self, player_widget):
-        """Initialize the FullscreenWindow.
-
-        Args:
-            player_widget: The player widget to display in fullscreen.
-        """
-        super().__init__()
-        self.player_widget = player_widget
-        self.player = player_widget.player  # Get the VLC player instance
-
-        # Make window resizable
-        self.setWindowFlags(Qt.WindowType.Window)
-
-        # Set black background
-        self.setStyleSheet("background-color: black;")
-
-        # Show window first
-        self.showFullScreen()
-
-        # Update VLC rendering target after window is shown
-        self._update_vlc_rendering_target()
-
-    def _update_vlc_rendering_target(self):
-        """Update VLC rendering target based on platform"""
-        if self.player_widget.vlc_available:
-            if sys.platform == "win32":
-                self.player.set_hwnd(self.winId())
-            elif sys.platform.startswith("linux"):
-                self.player.set_xwindow(self.winId())
-            elif sys.platform == "darwin":
-                self.player.set_nsobject(int(self.winId()))
-
-    def resize_event(self, event):
-        """Handle resize to update VLC rendering target"""
-        super().resizeEvent(event)
-        self._update_vlc_rendering_target()
-
-    def mouse_double_click_event(self):
-        """Handle double click to close the fullscreen window."""
-        self.close()
-
-    def key_press_event(self, event):
-        """Handle key press events to close the fullscreen window on ESC key."""
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
 
 
 class PlayerWidget(QFrame):
@@ -98,11 +47,16 @@ class PlayerWidget(QFrame):
         self.player = VLCManager.create_player()
         self._setup_player()
 
-        # Track fullscreen window
-        self.fullscreen_window = None
-
         # Enable mouse tracking
         self.setMouseTracking(True)
+
+        # Track fullscreen state
+        self.is_fullscreen = False
+        self.normal_geometry = None
+        self.normal_parent = None
+        self.normal_layout = None
+        self.normal_index = None
+        self.normal_stretch = None
 
     def _setup_player(self):
         """Configure the VLC player instance."""
@@ -237,49 +191,72 @@ class PlayerWidget(QFrame):
             logger.error("Unexpected error: %s", str(e))
             return False
 
-    def mouse_double_click_event(self):
-        """Handle double click for fullscreen toggle.
-
-        Args:
-            event (QMouseEvent): The mouse event that triggered the double click.
-        """
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click for fullscreen toggle."""
+        print("PlayerWidget: Double click detected")  # Debug
         if not self.vlc_available or not self.player.is_playing():
+            print("PlayerWidget: Double click - player not available or not playing")  # Debug
             return
 
-        if self.fullscreen_window is None:
-            self.fullscreen_window = FullscreenWindow(self)
-            self.fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
+        if not self.is_fullscreen:
+            print("PlayerWidget: Entering fullscreen")  # Debug
+            # Store current geometry and parent
+            self.normal_geometry = self.geometry()
+            self.normal_parent = self.parent()
+            self.normal_layout = self.parent().layout()
+            self.normal_index = self.normal_layout.indexOf(self)
+            self.normal_stretch = self.normal_layout.stretch(self.normal_index)
+            
+            # Remove from layout but keep parent
+            self.normal_layout.removeWidget(self)
+            
+            # Hide other UI elements
+            for widget in self.window().findChildren(QWidget):
+                if widget is not self and widget.isVisible():
+                    widget.hide()
+                    widget.setProperty("was_visible", True)
+            
+            # Make window fullscreen
+            self.window().setWindowState(Qt.WindowState.WindowFullScreen)
+            
+            # Reparent to main window and resize to fill it
+            self.setParent(self.window())
+            self.setGeometry(self.window().rect())
+            self.raise_()  # Bring to front
+            self.show()
+            
+            self.is_fullscreen = True
         else:
+            print("PlayerWidget: Exiting fullscreen")  # Debug
             self._exit_fullscreen()
 
     def _exit_fullscreen(self):
-        """Exit fullscreen mode and restore video to the main window."""
-        if self.fullscreen_window:
-            # Restore video to main window
-            if sys.platform == "win32":
-                self.player.set_hwnd(self.winId())
-            elif sys.platform.startswith("linux"):
-                self.player.set_xwindow(self.winId())
-            elif sys.platform == "darwin":
-                self.player.set_nsobject(int(self.winId()))
+        """Exit fullscreen mode."""
+        if self.is_fullscreen:
+            print("PlayerWidget: Restoring window state")  # Debug
+            
+            # Restore window state
+            self.window().setWindowState(Qt.WindowState.WindowNoState)
+            
+            # Restore widget to original parent and layout
+            self.setParent(self.normal_parent)
+            self.normal_layout.insertWidget(self.normal_index, self, stretch=self.normal_stretch)
+            self.setGeometry(self.normal_geometry)
+            
+            # Show previously visible widgets
+            for widget in self.window().findChildren(QWidget):
+                if widget is not self and widget.property("was_visible"):
+                    widget.show()
+                    widget.setProperty("was_visible", False)
+            
+            self.is_fullscreen = False
 
-            self.fullscreen_window.close()
-            self.fullscreen_window = None
-
-    def _on_fullscreen_closed(self):
-        """Callback for when the fullscreen window is closed."""
-        self._exit_fullscreen()
-
-    def key_press_event(self, event):
-        """Handle ESC key to exit fullscreen.
-
-        Args:
-            event: The key event that triggered the action.
-        """
-        if event.key() == Qt.Key.Key_Escape and self.fullscreen_window:
+    def keyPressEvent(self, event):
+        """Handle ESC key to exit fullscreen."""
+        if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
             self._exit_fullscreen()
 
-    def resize_event(self, event):
+    def resizeEvent(self, event):
         """Handle resize events.
 
         Args:

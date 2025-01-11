@@ -9,9 +9,59 @@ from PyQt6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
-
+import sys
 from views.vlc_manager import VLCManager
 from utils.themes import Themes
+
+
+class FullscreenPiP(QWidget):
+    """Fullscreen window for PiP mode"""
+    def __init__(self, pip_window):
+        super().__init__()
+        print("FullscreenPiP: Initializing")  # Debug
+        self.pip_window = pip_window
+        self.player = pip_window.player
+
+        # Make window fullscreen
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        self.setStyleSheet("background-color: black;")
+        
+        # Enable mouse tracking
+        self.setMouseTracking(True)
+        
+        print("FullscreenPiP: Showing fullscreen")  # Debug
+        self.showFullScreen()
+
+        # Update VLC rendering target
+        self._update_vlc_rendering_target()
+
+    def _update_vlc_rendering_target(self):
+        """Update VLC rendering target based on platform"""
+        print("FullscreenPiP: Updating VLC rendering target")  # Debug
+        if sys.platform == "win32":
+            self.player.set_hwnd(self.winId())
+        elif sys.platform.startswith("linux"):
+            self.player.set_xwindow(self.winId())
+        elif sys.platform == "darwin":
+            self.player.set_nsobject(int(self.winId()))
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click to exit fullscreen"""
+        print("FullscreenPiP: Double click detected")  # Debug
+        self.close()
+
+    def keyPressEvent(self, event):
+        """Handle ESC key to exit fullscreen"""
+        print("FullscreenPiP: Key press detected")  # Debug
+        if event.key() == Qt.Key.Key_Escape:
+            print("FullscreenPiP: ESC key pressed")  # Debug
+            self.close()
+
+    def resizeEvent(self, event):
+        """Handle resize to update VLC rendering target"""
+        super().resizeEvent(event)
+        print("FullscreenPiP: Resize event")  # Debug
+        self._update_vlc_rendering_target()
 
 
 class PiPWindow(QFrame):
@@ -39,6 +89,12 @@ class PiPWindow(QFrame):
         # Set minimum and default size
         self.setMinimumSize(320, 180)
         self.resize(480, 270)
+
+        # Track fullscreen window
+        self.fullscreen_window = None
+        
+        # Enable mouse tracking
+        self.setMouseTracking(True)
 
     def cleanup(self):
         """Clean up VLC resources"""
@@ -217,3 +273,51 @@ class PiPWindow(QFrame):
             delta = event.globalPosition().toPoint() - self.old_pos
             self.move(self.x() + delta.x(), self.y() + delta.y())
             self.old_pos = event.globalPosition().toPoint()
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click for fullscreen toggle"""
+        print("PiPWindow: Double click detected")  # Debug
+        
+        if not hasattr(self, 'player') or not self.player:
+            print("PiPWindow: No player available")  # Debug
+            return
+        
+        if not self.player.is_playing():
+            print("PiPWindow: Player is not playing")  # Debug
+            return
+
+        print(f"PiPWindow: Fullscreen window exists: {self.fullscreen_window is not None}")  # Debug
+        
+        if not self.fullscreen_window:
+            print("PiPWindow: Creating fullscreen window")  # Debug
+            self.fullscreen_window = FullscreenPiP(self)
+            self.fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
+        else:
+            print("PiPWindow: Exiting fullscreen")  # Debug
+            self._exit_fullscreen()
+
+    def _exit_fullscreen(self):
+        """Exit fullscreen mode and restore video to PiP window"""
+        print("PiPWindow: Executing _exit_fullscreen")  # Debug
+        if self.fullscreen_window:
+            print("PiPWindow: Restoring video to PiP window")  # Debug
+            # Restore video to PiP window
+            if sys.platform == "win32":
+                self.player.set_hwnd(self.video_container.winId())
+            elif sys.platform.startswith("linux"):
+                self.player.set_xwindow(self.video_container.winId())
+            elif sys.platform == "darwin":
+                self.player.set_nsobject(int(self.video_container.winId()))
+
+            print("PiPWindow: Closing fullscreen window")  # Debug
+            self.fullscreen_window.close()
+            self.fullscreen_window = None
+
+    def _on_fullscreen_closed(self):
+        """Callback for when the fullscreen window is closed"""
+        self._exit_fullscreen()
+
+    def keyPressEvent(self, event):
+        """Handle ESC key to exit fullscreen"""
+        if event.key() == Qt.Key.Key_Escape and self.fullscreen_window:
+            self._exit_fullscreen()
