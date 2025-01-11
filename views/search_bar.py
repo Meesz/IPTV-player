@@ -2,6 +2,7 @@
 Module containing the SearchBar widget for the IPTV Player.
 """
 
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import QLineEdit
 from utils.styles import SearchBarStyle
 

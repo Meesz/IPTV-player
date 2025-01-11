@@ -1,3 +1,9 @@
+"""
+Picture-in-Picture window for VLC playback.
+"""
+
+import sys
+
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -9,13 +15,13 @@ from PyQt6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
-import sys
 from views.vlc_manager import VLCManager
 from utils.themes import Themes
 
 
 class FullscreenPiP(QWidget):
     """Fullscreen window for PiP mode"""
+
     def __init__(self, pip_window):
         super().__init__()
         print("FullscreenPiP: Initializing")  # Debug
@@ -25,10 +31,10 @@ class FullscreenPiP(QWidget):
         # Make window fullscreen
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet("background-color: black;")
-        
+
         # Enable mouse tracking
         self.setMouseTracking(True)
-        
+
         print("FullscreenPiP: Showing fullscreen")  # Debug
         self.showFullScreen()
 
@@ -66,6 +72,7 @@ class FullscreenPiP(QWidget):
 
 class PiPWindow(QFrame):
     """Picture-in-Picture window"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
@@ -92,7 +99,7 @@ class PiPWindow(QFrame):
 
         # Track fullscreen window
         self.fullscreen_window = None
-        
+
         # Enable mouse tracking
         self.setMouseTracking(True)
 
@@ -277,17 +284,19 @@ class PiPWindow(QFrame):
     def mouseDoubleClickEvent(self, event):
         """Handle double click for fullscreen toggle"""
         print("PiPWindow: Double click detected")  # Debug
-        
-        if not hasattr(self, 'player') or not self.player:
+
+        if not hasattr(self, "player") or not self.player:
             print("PiPWindow: No player available")  # Debug
             return
-        
+
         if not self.player.is_playing():
             print("PiPWindow: Player is not playing")  # Debug
             return
 
-        print(f"PiPWindow: Fullscreen window exists: {self.fullscreen_window is not None}")  # Debug
-        
+        print(
+            f"PiPWindow: Fullscreen window exists: {self.fullscreen_window is not None}"
+        )  # Debug
+
         if not self.fullscreen_window:
             print("PiPWindow: Creating fullscreen window")  # Debug
             self.fullscreen_window = FullscreenPiP(self)

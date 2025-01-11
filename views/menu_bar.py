@@ -2,6 +2,7 @@
 Module containing the MenuBar widget for the application.
 """
 
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
     QMenuBar,
     QWidget,

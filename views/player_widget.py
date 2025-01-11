@@ -6,7 +6,8 @@ which is responsible for displaying and controlling VLC media playback.
 import sys
 import logging
 
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget, QApplication
+# pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
 from views.vlc_manager import VLCManager
 
@@ -195,7 +196,9 @@ class PlayerWidget(QFrame):
         """Handle double click for fullscreen toggle."""
         print("PlayerWidget: Double click detected")  # Debug
         if not self.vlc_available or not self.player.is_playing():
-            print("PlayerWidget: Double click - player not available or not playing")  # Debug
+            print(
+                "PlayerWidget: Double click - player not available or not playing"
+            )  # Debug
             return
 
         if not self.is_fullscreen:
@@ -206,25 +209,25 @@ class PlayerWidget(QFrame):
             self.normal_layout = self.parent().layout()
             self.normal_index = self.normal_layout.indexOf(self)
             self.normal_stretch = self.normal_layout.stretch(self.normal_index)
-            
+
             # Remove from layout but keep parent
             self.normal_layout.removeWidget(self)
-            
+
             # Hide other UI elements
             for widget in self.window().findChildren(QWidget):
                 if widget is not self and widget.isVisible():
                     widget.hide()
                     widget.setProperty("was_visible", True)
-            
+
             # Make window fullscreen
             self.window().setWindowState(Qt.WindowState.WindowFullScreen)
-            
+
             # Reparent to main window and resize to fill it
             self.setParent(self.window())
             self.setGeometry(self.window().rect())
             self.raise_()  # Bring to front
             self.show()
-            
+
             self.is_fullscreen = True
         else:
             print("PlayerWidget: Exiting fullscreen")  # Debug
@@ -234,21 +237,23 @@ class PlayerWidget(QFrame):
         """Exit fullscreen mode."""
         if self.is_fullscreen:
             print("PlayerWidget: Restoring window state")  # Debug
-            
+
             # Restore window state
             self.window().setWindowState(Qt.WindowState.WindowNoState)
-            
+
             # Restore widget to original parent and layout
             self.setParent(self.normal_parent)
-            self.normal_layout.insertWidget(self.normal_index, self, stretch=self.normal_stretch)
+            self.normal_layout.insertWidget(
+                self.normal_index, self, stretch=self.normal_stretch
+            )
             self.setGeometry(self.normal_geometry)
-            
+
             # Show previously visible widgets
             for widget in self.window().findChildren(QWidget):
                 if widget is not self and widget.property("was_visible"):
                     widget.show()
                     widget.setProperty("was_visible", False)
-            
+
             self.is_fullscreen = False
 
     def keyPressEvent(self, event):

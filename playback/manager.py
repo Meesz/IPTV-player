@@ -1,10 +1,20 @@
+"""
+Manages the playback of channels in Picture-in-Picture mode.
+"""
+
 from typing import Optional
+
+# pylint: disable=no-name-in-module
 from PyQt6.QtCore import QObject, pyqtSignal
 from views.vlc_manager import VLCManager
 from .pip_window import PiPWindow
 
 
 class PlaybackManager(QObject):
+    """
+    Manages the playback of channels in Picture-in-Picture mode.
+    """
+
     pip_started = pyqtSignal()
     pip_ended = pyqtSignal()
 
