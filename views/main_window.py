@@ -209,8 +209,3 @@ class MainWindow(QMainWindow):
         print("No current channel found in player controller")  # Debug
         return None
 
-    def play_channel(self, channel_name: str, url: str):
-        """Play a channel from history or other sources"""
-        # Implementation depends on how your channel playback is handled
-        # This should use your existing channel playback mechanism
-        pass
