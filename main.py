@@ -27,15 +27,16 @@ def main():
     logger.debug("Creating main window")
     main_window = MainWindow()
     logger.debug("Creating player controller")
-    controller = PlayerController(main_window)
+    player_controller = PlayerController(main_window)
+    main_window.player_controller = player_controller
 
     # Show the main window
     main_window.show()
 
     # Show playlist manager if needed
-    if not controller.playlist.channels:
+    if not player_controller.playlist.channels:
         logger.debug("No channels found, showing playlist manager")
-        controller.show_playlist_manager()
+        player_controller.show_playlist_manager()
 
     sys.exit(app.exec())
 
