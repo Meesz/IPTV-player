@@ -3,7 +3,14 @@ This module contains the main window of the Simple IPTV Player application.
 """
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QToolBar, QSplitter
+from PyQt6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QToolBar,
+    QSplitter,
+    QPushButton,
+)
 from PyQt6.QtCore import Qt
 from utils.themes import Themes
 from utils.styles import ToolbarStyle
@@ -12,6 +19,7 @@ from views.search_bar import SearchBar
 from views.left_panel import LeftPanel
 from views.right_panel import RightPanel
 from views.menu_bar import MenuBar
+from playback.manager import PlaybackManager
 
 
 class MainWindow(QMainWindow):
@@ -20,7 +28,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simple IPTV Player")
-        self.setMinimumSize(1024, 768)
+        self.setMinimumSize(1280, 720)
 
         # Initialize components
         self._init_ui()
@@ -33,6 +41,12 @@ class MainWindow(QMainWindow):
 
         # Create notification widget
         self.notification = NotificationWidget(self)
+
+        self.playback_manager = PlaybackManager(self)
+        self.setup_playback_features()
+
+        # Initialize player_controller to None - it will be set from main.py
+        self.player_controller = None
 
     # Menu bar properties
     @property
@@ -154,3 +168,43 @@ class MainWindow(QMainWindow):
     ):
         """Show a notification with the given message and type."""
         self.notification.show_message(message, notification_type)
+
+    def setup_playback_features(self):
+        # Add PiP button to player controls
+        self.pip_btn = QPushButton("PiP Mode")
+        self.pip_btn.clicked.connect(self.toggle_pip_mode)
+
+        # Add to right panel's controls
+        if hasattr(self.right_panel, "controls_layout"):
+            self.right_panel.controls_layout.addWidget(self.pip_btn)
+        else:
+            # Fallback to adding directly to right panel's layout
+            self.right_panel.layout().addWidget(self.pip_btn)
+
+    def toggle_pip_mode(self):
+        print("PiP button clicked")  # Debug
+        if not self.playback_manager.pip_window:
+            current_channel = self.get_current_channel()
+            print(f"Current channel: {current_channel}")  # Debug
+            if current_channel:
+                print(
+                    f"Starting PiP with: {current_channel.name}, {current_channel.url}"
+                )  # Debug
+                self.playback_manager.start_pip(
+                    current_channel.name, current_channel.url
+                )
+        else:
+            print("Stopping PiP")  # Debug
+            self.playback_manager.stop_pip()
+
+    def get_current_channel(self):
+        """Get the currently selected channel"""
+        # Get the currently playing channel from player controller
+        if self.player_controller and self.player_controller.current_channel:
+            print(
+                f"Found current channel: {self.player_controller.current_channel.name}"
+            )  # Debug
+            return self.player_controller.current_channel
+
+        print("No current channel found in player controller")  # Debug
+        return None

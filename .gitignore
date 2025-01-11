@@ -156,3 +156,7 @@ cython_debug/
 *.db-wal
 
 repomix-output.txt
+
+# History files
+.simple_iptv/
+*.json
