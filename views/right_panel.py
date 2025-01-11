@@ -1,15 +1,13 @@
 """
 Module containing the RightPanel widget for video playback and controls.
 """
-
+# pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
     QFrame,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
     QSlider,
-    QLabel,
-    QWidget,
 )
 from PyQt6.QtCore import Qt
 from views.player_widget import PlayerWidget

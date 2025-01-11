@@ -28,7 +28,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simple IPTV Player")
-        self.setMinimumSize(1024, 768)
+        self.setMinimumSize(1280, 720)
 
         # Initialize components
         self._init_ui()
@@ -208,4 +208,3 @@ class MainWindow(QMainWindow):
 
         print("No current channel found in player controller")  # Debug
         return None
-
