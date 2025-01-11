@@ -3,115 +3,15 @@ This module contains the main window of the Simple IPTV Player application.
 """
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QListWidget,
-    QSlider,
-    QComboBox,
-    QTabWidget,
-    QLabel,
-    QLineEdit,
-    QToolBar,
-    QWidgetAction,
-    QFrame,
-    QScrollArea,
-    QSplitter,
-)
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QToolBar, QSplitter
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
 from utils.themes import Themes
-from views.player_widget import PlayerWidget
+from utils.styles import ToolbarStyle
 from views.notification import NotificationWidget, NotificationType
-
-
-class SearchBar(QLineEdit):
-    """A custom search bar widget."""
-
-    def __init__(self):
-        super().__init__()
-        self.setPlaceholderText("🔍 Search channels...")
-        self.setStyleSheet(
-            """
-            QLineEdit {
-                padding: 8px 12px 8px 36px;
-                border-radius: 20px;
-                min-width: 250px;
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #666666;
-                background-color: #333333;
-            }
-            QLineEdit:hover {
-                background-color: #333333;
-            }
-        """
-        )
-
-
-class EPGWidget(QFrame):
-    """A widget to display the Electronic Program Guide (EPG)."""
-
-    def __init__(self):
-        super().__init__()
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        self.setFixedHeight(300)  # Fixed height for the entire EPG widget
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(5, 5, 5, 5)
-
-        # Create a scroll area for the content
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        scroll_layout.setSpacing(5)
-
-        # Current program
-        self.current_title = QLabel("No program information")
-        self.current_title.setStyleSheet("font-weight: bold;")
-        self.current_title.setWordWrap(True)
-        scroll_layout.addWidget(self.current_title)
-
-        self.current_time = QLabel()
-        scroll_layout.addWidget(self.current_time)
-
-        self.description = QLabel()
-        self.description.setWordWrap(True)
-        scroll_layout.addWidget(self.description)
-
-        # Upcoming programs
-        scroll_layout.addWidget(QLabel("Upcoming:"))
-        self.upcoming_list = QListWidget()
-        scroll_layout.addWidget(self.upcoming_list)
-
-        # Create scroll area and add the content
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(scroll_widget)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-
-        # Add scroll area to main layout
-        layout.addWidget(scroll_area)
-
-    def update_current_program(self, title: str, time_str: str, description: str):
-        """Update the current program information."""
-        self.current_title.setText(title)
-        self.current_time.setText(time_str)
-        self.description.setText(description)
-
-    def set_upcoming_programs(self, programs: list):
-        """Set the list of upcoming programs."""
-        self.upcoming_list.clear()
-        for prog in programs:
-            time_str = prog.start_time.strftime("%H:%M")
-            self.upcoming_list.addItem(f"{time_str} - {prog.title}")
+from views.search_bar import SearchBar
+from views.left_panel import LeftPanel
+from views.right_panel import RightPanel
+from views.menu_bar import MenuBar
 
 
 class MainWindow(QMainWindow):
@@ -122,125 +22,128 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Simple IPTV Player")
         self.setMinimumSize(1024, 768)
 
-        # Create menu bar
-        self._create_menu()
+        # Initialize components
+        self._init_ui()
+        self._setup_toolbar()
+        self.menu_bar = MenuBar(self)  # Store reference to menu bar
+        self.setMenuBar(self.menu_bar)
 
-        # Create central widget
+        # Apply theme
+        self.setStyleSheet(Themes.get_dark_theme())
+
+        # Create notification widget
+        self.notification = NotificationWidget(self)
+
+    # Menu bar properties
+    @property
+    def playlist_manager_action(self):
+        """Get the playlist manager action."""
+        return self.menu_bar.playlist_manager_action
+
+    @property
+    def load_epg_file_action(self):
+        """Get the load EPG file action."""
+        return self.menu_bar.load_epg_file_action
+
+    @property
+    def epg_url_input(self):
+        """Get the EPG URL input."""
+        return self.menu_bar.epg_url_input
+
+    @property
+    def load_epg_url_button(self):
+        """Get the load EPG URL button."""
+        return self.menu_bar.load_epg_url_button
+
+    # Add property getters for UI components
+    @property
+    def category_combo(self):
+        """Get the category combo box."""
+        return self.left_panel.category_combo
+
+    @property
+    def channel_list(self):
+        """Get the channel list widget."""
+        return self.left_panel.channel_list
+
+    @property
+    def favorites_list(self):
+        """Get the favorites list widget."""
+        return self.left_panel.favorites_list
+
+    @property
+    def play_button(self):
+        """Get the play button."""
+        return self.right_panel.play_button
+
+    @property
+    def stop_button(self):
+        """Get the stop button."""
+        return self.right_panel.stop_button
+
+    @property
+    def volume_slider(self):
+        """Get the volume slider."""
+        return self.right_panel.volume_slider
+
+    @property
+    def favorite_button(self):
+        """Get the favorite button."""
+        return self.right_panel.favorite_button
+
+    @property
+    def player_widget(self):
+        """Get the player widget."""
+        return self.right_panel.player_widget
+
+    def _init_ui(self):
+        """Initialize the main UI components."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Create toolbar and search bar first
+        # Create and setup splitter
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.left_panel = LeftPanel()
+        self.right_panel = RightPanel()
+
+        self.left_panel.setMinimumWidth(200)
+        self.right_panel.setMinimumWidth(400)
+
+        self.splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(self.right_panel)
+        self.splitter.setSizes([200, 800])
+        self.splitter.splitterMoved.connect(self._handle_splitter_moved)
+
+        main_layout.addWidget(self.splitter)
+
+    def _setup_toolbar(self):
+        """Setup the toolbar with search functionality."""
         self.toolbar = QToolBar()
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
-        self.toolbar.setStyleSheet(
-            """
-            QToolBar {
-                spacing: 10px;
-                padding: 5px 15px;
-                background: transparent;
-            }
-        """
-        )
-        self.addToolBar(self.toolbar)
+        self.toolbar.setStyleSheet(ToolbarStyle.TOOLBAR)
 
-        # Add search bar
         self.search_bar = SearchBar()
         self.toolbar.addWidget(self.search_bar)
 
-        # Create splitter for resizable panels
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.addToolBar(self.toolbar)
 
-        # Create left sidebar
-        self.left_panel = self._create_left_panel()
-        self.left_panel.setMinimumWidth(200)  # Set minimum width for left panel
+    def _handle_splitter_moved(self):
+        """Handle splitter movement to show/hide search bar."""
+        sizes = self.splitter.sizes()
+        if not sizes:
+            return
 
-        # Create right panel with player
-        right_panel = self._create_right_panel()
-        right_panel.setMinimumWidth(400)  # Set minimum width for player
-
-        # Add panels to splitter
-        self.splitter.addWidget(self.left_panel)
-        self.splitter.addWidget(right_panel)
-
-        # Set initial sizes (1:4 ratio)
-        self.splitter.setSizes([200, 800])
-
-        # Connect splitter moved signal
-        self.splitter.splitterMoved.connect(self._handle_splitter_moved)
-
-        # Add splitter to main layout
-        main_layout.addWidget(self.splitter)
-
-        # Create notification widget
-        self.notification = NotificationWidget(self)
-
-        # Apply dark theme
-        self.setStyleSheet(Themes.get_dark_theme())
-
-    def _create_left_panel(self):
-        """Create the left panel with category selector, tabs, and EPG widget."""
-        panel = QFrame()
-        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        layout = QVBoxLayout(panel)
-
-        # Add category selector
-        self.category_combo = QComboBox()
-        layout.addWidget(self.category_combo)
-
-        # Add tabs for channels and favorites
-        self.tabs = QTabWidget()
-        self.channel_list = QListWidget()
-        self.favorites_list = QListWidget()
-
-        self.tabs.addTab(self.channel_list, "Channels")
-        self.tabs.addTab(self.favorites_list, "Favorites")
-        layout.addWidget(self.tabs)
-
-        # Add EPG widget
-        self.epg_widget = EPGWidget()
-        layout.addWidget(self.epg_widget)
-
-        return panel
-
-    def _create_right_panel(self):
-        """Create the right panel with player widget and playback controls."""
-        panel = QFrame()
-        panel.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        layout = QVBoxLayout(panel)
-
-        # Add player widget
-        self.player_widget = PlayerWidget()
-        layout.addWidget(self.player_widget)
-
-        # Add playback controls
-        controls_layout = QHBoxLayout()
-
-        self.play_button = QPushButton("Play/Pause")
-        self.stop_button = QPushButton("Stop")
-        self.favorite_button = QPushButton("★")
-        self.favorite_button.setCheckable(True)
-
-        controls_layout.addWidget(self.play_button)
-        controls_layout.addWidget(self.stop_button)
-        controls_layout.addWidget(self.favorite_button)
-
-        # Add volume control
-        volume_layout = QHBoxLayout()
-        volume_layout.addWidget(QLabel("Volume:"))
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(100)
-        volume_layout.addWidget(self.volume_slider)
-
-        # Add controls to layout
-        layout.addLayout(controls_layout)
-        layout.addLayout(volume_layout)
-
-        return panel
+        left_panel_width = sizes[0]
+        if left_panel_width < 50:  # Collapsed
+            self.search_bar.hide()
+            self.toolbar.hide()
+        else:  # Expanded
+            self.search_bar.show()
+            self.toolbar.show()
 
     def apply_theme(self, theme: str):
         """Apply the given theme to the main window."""
@@ -251,66 +154,3 @@ class MainWindow(QMainWindow):
     ):
         """Show a notification with the given message and type."""
         self.notification.show_message(message, notification_type)
-
-    def _create_menu(self):
-        """Create the menu bar with file and EPG menus."""
-        menubar = self.menuBar()
-
-        # File menu
-        file_menu = menubar.addMenu("&File")
-
-        # Add Playlist Manager action
-        self.playlist_manager_action = QAction("&Playlist Manager", self)
-        self.playlist_manager_action.setShortcut("Ctrl+P")
-        self.playlist_manager_action.setStatusTip("Open playlist manager")
-        file_menu.addAction(self.playlist_manager_action)
-
-        # Add separator
-        file_menu.addSeparator()
-
-        # Add Exit action
-        exit_action = QAction("&Exit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.setStatusTip("Exit application")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # EPG menu
-        epg_menu = menubar.addMenu("&EPG")
-
-        # Add EPG actions
-        self.load_epg_file_action = QAction("Load from &File...", self)
-        self.load_epg_file_action.setStatusTip("Load EPG data from XML file")
-        epg_menu.addAction(self.load_epg_file_action)
-
-        # Add URL input
-        self.epg_url_input = QLineEdit()
-        self.epg_url_input.setPlaceholderText("Enter EPG URL...")
-        self.load_epg_url_button = QPushButton("Load")
-
-        url_widget = QWidget()
-        url_layout = QHBoxLayout(url_widget)
-        url_layout.setContentsMargins(8, 0, 8, 0)
-        url_layout.addWidget(self.epg_url_input)
-        url_layout.addWidget(self.load_epg_url_button)
-
-        url_action = QWidgetAction(epg_menu)
-        url_action.setDefaultWidget(url_widget)
-        epg_menu.addAction(url_action)
-
-    def _handle_splitter_moved(self):
-        """Handle splitter movement to show/hide search bar."""
-        # Get the width of the left panel (sidebar)
-        sizes = self.splitter.sizes()
-        if not sizes:
-            return
-
-        left_panel_width = sizes[0]
-
-        # Show/hide search bar based on sidebar width
-        if left_panel_width < 50:  # Collapsed
-            self.search_bar.hide()
-            self.toolbar.hide()
-        else:  # Expanded
-            self.search_bar.show()
-            self.toolbar.show()
