@@ -1,4 +1,5 @@
-from PyQt6.QtCore import Qt, QSize
+# pylint: disable=no-name-in-module
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -8,11 +9,13 @@ from PyQt6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
+
 from views.vlc_manager import VLCManager
 from utils.themes import Themes
 
 
 class PiPWindow(QFrame):
+    """Picture-in-Picture window"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
@@ -53,6 +56,7 @@ class PiPWindow(QFrame):
         super().closeEvent(event)
 
     def setup_ui(self):
+        """Setup UI elements"""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(2, 2, 2, 2)
         main_layout.setSpacing(2)
