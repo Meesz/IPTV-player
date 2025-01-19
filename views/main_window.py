@@ -25,7 +25,7 @@ from playback.manager import PlaybackManager
 class MainWindow(QMainWindow):
     """The main window of the Simple IPTV Player application."""
 
-    def __init__(self):
+    def __init__(self, playlist_data=None):
         super().__init__()
         self.setWindowTitle("Simple IPTV Player")
         self.setMinimumSize(1280, 720)
@@ -45,8 +45,13 @@ class MainWindow(QMainWindow):
         self.playback_manager = PlaybackManager(self)
         self.setup_playback_features()
 
-        # Initialize player_controller to None - it will be set from main.py
+        # Initialize controllers to None - they will be set from main.py
         self.player_controller = None
+        self.playlist_controller = None
+
+        # Load the selected playlist if provided
+        if playlist_data:
+            self.load_playlist(playlist_data)
 
     # Menu bar properties
     @property
@@ -208,3 +213,10 @@ class MainWindow(QMainWindow):
 
         print("No current channel found in player controller")  # Debug
         return None
+
+    def load_playlist(self, playlist_data):
+        """Load the selected playlist"""
+        path = playlist_data['path']
+        is_url = playlist_data['is_url']
+        # Use your playlist controller to load the playlist
+        self.playlist_controller.load_playlist(path, is_url)
