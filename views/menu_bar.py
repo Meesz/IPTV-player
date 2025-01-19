@@ -55,7 +55,8 @@ class MenuBar(QMenuBar):
         self.epg_url_input = QLineEdit()
         self.epg_url_input.setPlaceholderText("Enter EPG URL...")
         self.load_epg_url_button = QPushButton("Load")
-
+        self.load_epg_url_button.clicked.connect(self._load_epg_from_url)
+        
         url_widget = QWidget()
         url_layout = QHBoxLayout(url_widget)
         url_layout.setContentsMargins(8, 0, 8, 0)
@@ -65,3 +66,10 @@ class MenuBar(QMenuBar):
         url_action = QWidgetAction(epg_menu)
         url_action.setDefaultWidget(url_widget)
         epg_menu.addAction(url_action)
+
+    def _load_epg_from_url(self):
+        """Load EPG data from the URL in the input field."""
+        url = self.epg_url_input.text().strip()
+        if url:
+            # The EPG controller will be accessed through the main window
+            self.parent().epg_controller.load_epg_from_url(url)
