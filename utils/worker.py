@@ -4,12 +4,15 @@ Worker class for handling background tasks.
 
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 
+
 class WorkerSignals(QObject):
     """Defines the signals available from a running worker thread."""
+
     finished = pyqtSignal()
     error = pyqtSignal(tuple)
     result = pyqtSignal(object)
     progress = pyqtSignal(int)
+
 
 class Worker(QRunnable):
     """Worker thread for handling background tasks."""
@@ -30,4 +33,4 @@ class Worker(QRunnable):
         except Exception as e:
             self.signals.error.emit((e, None))
         finally:
-            self.signals.finished.emit() 
+            self.signals.finished.emit()

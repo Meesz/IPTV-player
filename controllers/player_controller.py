@@ -112,7 +112,9 @@ class PlayerController:
     def _favorite_selected(self, item):
         favorites = self.settings.db.get_favorites()
         self.current_channel = favorites[self.window.favorites_list.row(item)]
-        print(f"Selected favorite: {self.current_channel.name} - URL: {self.current_channel.url}")
+        print(
+            f"Selected favorite: {self.current_channel.name} - URL: {self.current_channel.url}"
+        )
         self._play_channel(self.current_channel)
         self.window.favorite_button.setChecked(True)
 

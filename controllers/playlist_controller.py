@@ -30,18 +30,20 @@ class PlaylistController:
     def load_playlist_from_path(self, path: str, is_url: bool = False) -> None:
         """Load a playlist from a file path or URL."""
         print(f"\n=== Loading playlist from {'URL' if is_url else 'file'}: {path} ===")
-        print(f"Called by: {__import__('traceback').extract_stack()[-2][2]}")  # Show caller
-        
+        print(
+            f"Called by: {__import__('traceback').extract_stack()[-2][2]}"
+        )  # Show caller
+
         # Show loading indicator
         self.window.show_notification("Loading playlist...", NotificationType.INFO)
-        
+
         # Create worker for loading playlist
         worker = Worker(self._load_playlist_worker, path, is_url)
-        
+
         # Connect signals
         worker.signals.result.connect(self._on_playlist_loaded)
         worker.signals.error.connect(self._on_playlist_error)
-        
+
         # Execute
         self.threadpool.start(worker)
 
@@ -54,7 +56,9 @@ class PlaylistController:
                 response = requests.get(path, timeout=Config.REQUEST_TIMEOUT)
                 response.raise_for_status()
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8") as tmp_file:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".m3u8"
+                ) as tmp_file:
                     tmp_file.write(response.content)
                     tmp_path = tmp_file.name
 
@@ -79,60 +83,56 @@ class PlaylistController:
     def _on_playlist_loaded(self, result):
         """Handle successful playlist loading."""
         success, data, path, is_url = result
-        
+
         if success:
             # Check if this is a duplicate load
-            if (hasattr(self, '_last_loaded_path') and 
-                self._last_loaded_path == path):
+            if hasattr(self, "_last_loaded_path") and self._last_loaded_path == path:
                 print("Skipping duplicate playlist load")
                 return
-            
+
             self._last_loaded_path = path
             self.playlist = data
             print(f"\nLoaded {len(self.playlist.channels)} channels")
-            
+
             # Save settings
             self.settings.save_setting("last_playlist", path)
             self.settings.save_setting("last_playlist_is_url", str(is_url).lower())
-            
+
             # Update UI
             self._update_ui_safely()
-            
+
         else:
             self.window.show_notification(
-                f"Failed to load playlist: {data}", 
-                NotificationType.ERROR
+                f"Failed to load playlist: {data}", NotificationType.ERROR
             )
 
     def _on_playlist_error(self, error_info):
         """Handle playlist loading error."""
         error, _ = error_info
         self.window.show_notification(
-            f"Error loading playlist: {str(error)}", 
-            NotificationType.ERROR
+            f"Error loading playlist: {str(error)}", NotificationType.ERROR
         )
 
     def _update_ui_safely(self):
         """Update UI elements after playlist changes with progress logging."""
         try:
             print("\n=== Starting UI update ===")
-            
+
             print("Updating categories...")
             self._update_categories()
-            
+
             print("Updating channel list...")
             self._update_channel_list()
-            
+
             print("=== UI update completed ===\n")
             self.window.show_notification(
                 f"Loaded {len(self.playlist.channels)} channels successfully",
-                NotificationType.SUCCESS
+                NotificationType.SUCCESS,
             )
         except Exception as e:
             print(f"Error during UI update: {str(e)}")
             self.window.show_notification(
-                f"Error updating UI: {str(e)}", 
-                NotificationType.ERROR
+                f"Error updating UI: {str(e)}", NotificationType.ERROR
             )
 
     def _update_categories(self):
@@ -142,11 +142,11 @@ class PlaylistController:
             self.window.category_combo.currentTextChanged.disconnect()
         except TypeError:
             pass  # Signal wasn't connected
-        
+
         self.window.category_combo.clear()
         self.window.category_combo.addItem("All")
         self.window.category_combo.addItems(self.playlist.categories)
-        
+
         # Reconnect the signal
         self.window.category_combo.currentTextChanged.connect(self.refresh_channels)
 
@@ -155,7 +155,7 @@ class PlaylistController:
         if self._is_updating:
             print("Channel list update already in progress, skipping...")
             return
-            
+
         self._is_updating = True
         try:
             category = self.window.category_combo.currentText()

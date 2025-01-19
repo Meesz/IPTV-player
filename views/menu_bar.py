@@ -56,7 +56,7 @@ class MenuBar(QMenuBar):
         self.epg_url_input.setPlaceholderText("Enter EPG URL...")
         self.load_epg_url_button = QPushButton("Load")
         self.load_epg_url_button.clicked.connect(self._load_epg_from_url)
-        
+
         url_widget = QWidget()
         url_layout = QHBoxLayout(url_widget)
         url_layout.setContentsMargins(8, 0, 8, 0)

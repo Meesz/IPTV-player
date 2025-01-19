@@ -16,6 +16,7 @@ from views.playlist_manager import PlaylistManagerDialog
 from controllers.settings_controller import SettingsController
 from controllers.playlist_controller import PlaylistController
 from config import Config
+from PyQt6.QtCore import QTimer
 
 
 def setup_logging() -> None:
@@ -26,10 +27,7 @@ def setup_logging() -> None:
     logging.basicConfig(
         level=Config.LOG_LEVEL,
         format=Config.LOG_FORMAT,
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
     )
 
 
@@ -37,7 +35,7 @@ def initialize_vlc() -> Tuple[bool, str]:
     """Initialize VLC and return status."""
     logger = logging.getLogger(__name__)
     logger.debug("Initializing VLC...")
-    
+
     try:
         success, error = VLCManager.initialize()
         if not success:
@@ -49,22 +47,21 @@ def initialize_vlc() -> Tuple[bool, str]:
 
 
 def load_initial_playlist(
-    playlist_controller: PlaylistController,
-    settings_controller: SettingsController
+    playlist_controller: PlaylistController, settings_controller: SettingsController
 ) -> bool:
     """Load initial playlist from playlist manager."""
     logger = logging.getLogger(__name__)
-    
+
     try:
         # Show playlist manager
         playlist_manager = PlaylistManagerDialog()
-        
+
         # Load playlists from settings database
         saved_playlists = settings_controller.db.get_playlists()
         playlist_manager.set_playlists(saved_playlists)
-        
+
         result = playlist_manager.exec()
-        
+
         # Handle playlist selection
         if result == PlaylistManagerDialog.DialogCode.Accepted:
             selected_playlist = playlist_manager.get_selected_playlist()
@@ -74,9 +71,9 @@ def load_initial_playlist(
                 if playlists:
                     settings_controller.db.save_playlists(playlists)
                 return True, selected_playlist
-                
+
         return False, None
-        
+
     except Exception as e:
         logger.exception("Error loading initial playlist")
         return False, None
@@ -85,7 +82,7 @@ def load_initial_playlist(
 def main() -> int:
     """
     Main application entry point.
-    
+
     Returns:
         int: Application exit code
     """
@@ -106,34 +103,31 @@ def main() -> int:
             QMessageBox.critical(None, "Error", f"Failed to initialize VLC:\n{vlc_error}")
             return 1
 
-        # Create controllers
-        settings_controller = SettingsController()
-        
-        # Load initial playlist
-        playlist_success, selected_playlist = load_initial_playlist(
-            None,  # playlist_controller not created yet
-            settings_controller
-        )
-        
-        if not playlist_success:
-            logger.info("No playlist selected, exiting")
-            return 0
-            
-        # Create main window and remaining controllers
+        # Create main window and controllers in the correct order
         main_window = MainWindow()
+        settings_controller = SettingsController()
         playlist_controller = PlaylistController(main_window, settings_controller)
         player_controller = PlayerController(main_window)
-        
+
         # Set controllers in main window
         main_window.player_controller = player_controller
         main_window.playlist_controller = playlist_controller
-        
-        # Load the selected playlist
-        playlist_controller.load_playlist_from_path(
-            selected_playlist['path'],
-            selected_playlist['is_url']
+
+        # Load initial playlist after all controllers are set up
+        playlist_success, selected_playlist = load_initial_playlist(
+            playlist_controller, settings_controller
         )
-        
+
+        if not playlist_success:
+            logger.info("No playlist selected, exiting")
+            return 0
+
+        # Load the selected playlist after everything is properly initialized
+        QTimer.singleShot(0, lambda: playlist_controller.load_playlist_from_path(
+            selected_playlist["path"], 
+            selected_playlist["is_url"]
+        ))
+
         # Show main window and start event loop
         main_window.show()
         return app.exec()

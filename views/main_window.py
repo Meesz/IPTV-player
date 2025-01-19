@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
 
     def load_playlist(self, playlist_data):
         """Load the selected playlist"""
-        path = playlist_data['path']
-        is_url = playlist_data['is_url']
+        path = playlist_data["path"]
+        is_url = playlist_data["is_url"]
         # Use your playlist controller to load the playlist
         self.playlist_controller.load_playlist(path, is_url)

@@ -33,21 +33,21 @@ class EPGController:
     def load_epg_from_file(self, file_path: str) -> None:
         """Load EPG data from a file."""
         self.window.show_notification("Loading EPG data...", NotificationType.INFO)
-        
+
         worker = Worker(self._load_epg_worker, file_path)
         worker.signals.result.connect(self._on_epg_loaded)
         worker.signals.error.connect(self._on_epg_error)
-        
+
         self.threadpool.start(worker)
 
     def load_epg_from_url(self, url: str) -> None:
         """Load EPG data from a URL."""
         self.window.show_notification("Downloading EPG data...", NotificationType.INFO)
-        
+
         worker = Worker(self._download_epg_worker, url)
         worker.signals.result.connect(self._on_epg_loaded)
         worker.signals.error.connect(self._on_epg_error)
-        
+
         self.threadpool.start(worker)
 
     def _load_epg_worker(self, file_path: str) -> tuple:
@@ -66,7 +66,7 @@ class EPGController:
             response.raise_for_status()
 
             cache_path = Config.get_cache_path(f"epg_{hash(url)}.xml")
-            with open(cache_path, 'wb') as f:
+            with open(cache_path, "wb") as f:
                 f.write(response.content)
                 tmp_path = str(cache_path)
 
@@ -86,27 +86,24 @@ class EPGController:
     def _on_epg_loaded(self, result):
         """Handle successful EPG loading."""
         success, data, path = result
-        
+
         if success:
             self.epg_guide = data
             self.settings.save_setting("last_epg", path)
             self._update_epg_display()
             self.window.show_notification(
-                "EPG data loaded successfully", 
-                NotificationType.SUCCESS
+                "EPG data loaded successfully", NotificationType.SUCCESS
             )
         else:
             self.window.show_notification(
-                f"Failed to load EPG: {data}", 
-                NotificationType.ERROR
+                f"Failed to load EPG: {data}", NotificationType.ERROR
             )
 
     def _on_epg_error(self, error_info):
         """Handle EPG loading error."""
         error, _ = error_info
         self.window.show_notification(
-            f"Error loading EPG: {str(error)}", 
-            NotificationType.ERROR
+            f"Error loading EPG: {str(error)}", NotificationType.ERROR
         )
 
     def _update_epg_display(self):

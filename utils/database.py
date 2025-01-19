@@ -4,224 +4,239 @@ It defines the Database class, which can handle database operations.
 """
 
 import sqlite3
-from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
-from models.playlist import Channel
+from contextlib import contextmanager
+from queue import Queue
+import threading
+import logging
 from models.epg import Program
+from config import Config
+
+
+class DatabaseConnectionPool:
+    """A thread-safe connection pool for SQLite database connections."""
+
+    def __init__(self, database_path: str, max_connections: int = 5):
+        """Initialize the connection pool."""
+        self.database_path = database_path
+        self.max_connections = max_connections
+        self.connections: Queue[sqlite3.Connection] = Queue(maxsize=max_connections)
+        self.lock = threading.Lock()
+        self.logger = logging.getLogger(__name__)
+
+        # Initialize connection pool
+        for _ in range(max_connections):
+            self.connections.put(self._create_connection())
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create a new database connection with proper configuration."""
+        connection = sqlite3.connect(
+            self.database_path,
+            timeout=Config.DB_TIMEOUT,
+            isolation_level=None,  # Enable autocommit mode
+        )
+        connection.row_factory = sqlite3.Row
+        # Enable foreign key support
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    @contextmanager
+    def get_connection(self):
+        """Get a connection from the pool."""
+        connection = None
+        try:
+            connection = self.connections.get(timeout=Config.DB_TIMEOUT)
+            yield connection
+        except Exception as e:
+            self.logger.error(f"Database connection error: {e}")
+            # If the connection is broken, create a new one
+            if connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+                connection = self._create_connection()
+            raise
+        finally:
+            if connection:
+                self.connections.put(connection)
 
 
 class Database:
-    """Handles database operations for the Simple IPTV Player."""
+    """Database management class with connection pooling."""
 
     def __init__(self):
-        """Initialize the database connection and create necessary tables."""
-        self.db_path = Path.home() / ".simple_iptv" / "database.db"
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"Database path: {self.db_path}")
-        self._connection = None
-        self.init_database()
+        """Initialize the database with connection pool."""
+        self.pool = DatabaseConnectionPool(
+            str(Config.DATABASE_PATH), max_connections=Config.DB_MAX_CONNECTIONS
+        )
+        self.logger = logging.getLogger(__name__)
+        self._initialize_database()
 
-    def _get_connection(self):
-        """Get a new connection if none exists."""
-        if self._connection is None:
-            self._connection = sqlite3.connect(
-                str(self.db_path)
-            )  # Ensure path is string
-            self._connection.row_factory = sqlite3.Row
-        return self._connection
-
-    def close(self):
-        """Close the database connection."""
-        if self._connection:
-            self._connection.close()
-            self._connection = None
-
-    def init_database(self):
-        """Initialize the database with required tables and settings."""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
-
-            # Enable WAL mode for better performance
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA cache_size=-2000")
-            conn.execute("PRAGMA temp_store=MEMORY")
-
-            # Create tables
+    def _initialize_database(self):
+        """Initialize database tables if they don't exist."""
+        with self.pool.get_connection() as conn:
             conn.executescript(
                 """
-                -- Create playlists table if not exists (don't drop it!)
-                CREATE TABLE IF NOT EXISTS playlists (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    is_url BOOLEAN NOT NULL DEFAULT 0
-                );
+                BEGIN;
                 
-                -- Create settings table if not exists
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 );
-                
-                -- Create EPG table if not exists
-                CREATE TABLE IF NOT EXISTS epg_data (
-                    channel_id TEXT,
-                    start_time INTEGER,
-                    end_time INTEGER,
-                    title TEXT,
-                    description TEXT,
-                    PRIMARY KEY (channel_id, start_time)
-                );
-                
-                -- Create favorites table if not exists
-                CREATE TABLE IF NOT EXISTS favorites (
+
+                CREATE TABLE IF NOT EXISTS playlists (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
-                    url TEXT NOT NULL UNIQUE,
-                    group_name TEXT,
-                    logo TEXT,
-                    epg_id TEXT
+                    path TEXT NOT NULL,
+                    is_url BOOLEAN NOT NULL DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS favorites (
+                    url TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    category TEXT,
+                    added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 
-                -- Add default settings
-                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
-                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
-                INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
-                INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
+                CREATE INDEX IF NOT EXISTS idx_favorites_category ON favorites(category);
+                
+                COMMIT;
             """
             )
 
-            conn.commit()
-            print("Database initialized successfully")
-
-            # Debug print table contents
-            cursor = conn.execute("SELECT COUNT(*) FROM playlists")
-            count = cursor.fetchone()[0]
-            print(f"Found {count} existing playlists in database")
-
-            if count > 0:
-                cursor = conn.execute("SELECT name, path, is_url FROM playlists")
-                for row in cursor:
-                    print(
-                        f"Existing playlist: {row['name']}, {row['path']}, {bool(row['is_url'])}"
-                    )
-
-        except sqlite3.Error as e:
-            print(f"Error initializing database: {e}")
-            if conn:
-                conn.rollback()
-        finally:
-            if conn:
-                conn.close()
-
-    def add_favorite(self, channel: Channel) -> bool:
-        """Add a channel to the favorites list.
-
-        Args:
-            channel (Channel): The channel to add to favorites.
-
-        Returns:
-            bool: True if the operation was successful, False otherwise.
-        """
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Get a setting value by key."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    """INSERT OR REPLACE INTO favorites 
-                       (name, url, group_name, logo) 
-                       VALUES (?, ?, ?, ?)""",
-                    (channel.name, channel.url, channel.group, channel.logo),
-                )
-                return True
-        except sqlite3.Error as e:
-            print(f"Database error: {str(e)}")
-            return False
-
-    def remove_favorite(self, url: str) -> bool:
-        """Remove a channel from the favorites list by its URL.
-
-        Args:
-            url (str): The URL of the channel to remove.
-
-        Returns:
-            bool: True if the operation was successful, False otherwise.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("DELETE FROM favorites WHERE url = ?", (url,))
-            return True
-        except sqlite3.Error:
-            return False
-
-    def get_favorites(self) -> List[Channel]:
-        """Retrieve the list of favorite channels.
-
-        Returns:
-            List[Channel]: A list of favorite channels.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("SELECT * FROM favorites")
-                return [Channel.from_db_row(row) for row in cursor.fetchall()]
-        except sqlite3.Error as e:
-            print(f"Database error: {str(e)}")
-            return []
-
-    def is_favorite(self, url: str) -> bool:
-        """Check if a channel is in the favorites list by its URL.
-
-        Args:
-            url (str): The URL of the channel to check.
-
-        Returns:
-            bool: True if the channel is a favorite, False otherwise.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("SELECT 1 FROM favorites WHERE url = ?", (url,))
-                return cursor.fetchone() is not None
-        except sqlite3.Error:
-            return False
-
-    def save_setting(self, key: str, value: str):
-        """Save a setting key-value pair to the database.
-
-        Args:
-            key (str): The setting key.
-            value (str): The setting value.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                    (key, value),
-                )
-        except sqlite3.Error:
-            pass
-
-    def get_setting(self, key: str, default: str = "") -> str:
-        """Retrieve a setting value by its key.
-
-        Args:
-            key (str): The setting key.
-            default (str, optional): The default value if the key is not found. Defaults to "".
-
-        Returns:
-            str: The setting value.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 cursor = conn.execute(
                     "SELECT value FROM settings WHERE key = ?", (key,)
                 )
                 result = cursor.fetchone()
                 return result[0] if result else default
-        except sqlite3.Error:
+        except Exception as e:
+            self.logger.error(f"Error getting setting {key}: {e}")
             return default
+
+    def save_setting(self, key: str, value: str) -> bool:
+        """Save a setting value."""
+        try:
+            with self.pool.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO settings (key, value)
+                    VALUES (?, ?)
+                """,
+                    (key, value),
+                )
+                return True
+        except Exception as e:
+            self.logger.error(f"Error saving setting {key}: {e}")
+            return False
+
+    def get_playlists(self) -> List[Dict[str, Any]]:
+        """Get all saved playlists."""
+        try:
+            with self.pool.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT id, name, path, is_url, last_updated
+                    FROM playlists
+                    ORDER BY last_updated DESC
+                """
+                )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            self.logger.error(f"Error getting playlists: {e}")
+            return []
+
+    def save_playlists(self, playlists: List[Dict[str, Any]]) -> bool:
+        """Save multiple playlists."""
+        try:
+            with self.pool.get_connection() as conn:
+                conn.execute("BEGIN")
+                conn.execute("DELETE FROM playlists")
+
+                conn.executemany(
+                    """
+                    INSERT INTO playlists (name, path, is_url)
+                    VALUES (:name, :path, :is_url)
+                """,
+                    playlists,
+                )
+
+                conn.execute("COMMIT")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error saving playlists: {e}")
+            return False
+
+    def add_favorite(self, channel_url: str, channel_name: str, category: str) -> bool:
+        """Add a channel to favorites."""
+        try:
+            with self.pool.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO favorites (url, name, category)
+                    VALUES (?, ?, ?)
+                """,
+                    (channel_url, channel_name, category),
+                )
+                return True
+        except Exception as e:
+            self.logger.error(f"Error adding favorite: {e}")
+            return False
+
+    def remove_favorite(self, channel_url: str) -> bool:
+        """Remove a channel from favorites."""
+        try:
+            with self.pool.get_connection() as conn:
+                conn.execute("DELETE FROM favorites WHERE url = ?", (channel_url,))
+                return True
+        except Exception as e:
+            self.logger.error(f"Error removing favorite: {e}")
+            return False
+
+    def get_favorites(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get favorite channels, optionally filtered by category."""
+        try:
+            with self.pool.get_connection() as conn:
+                if category and category != Config.DEFAULT_CATEGORY:
+                    cursor = conn.execute(
+                        """
+                        SELECT url, name, category, added_date
+                        FROM favorites
+                        WHERE category = ?
+                        ORDER BY name
+                    """,
+                        (category,),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """
+                        SELECT url, name, category, added_date
+                        FROM favorites
+                        ORDER BY name
+                    """
+                    )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            self.logger.error(f"Error getting favorites: {e}")
+            return []
+
+    def is_favorite(self, channel_url: str) -> bool:
+        """Check if a channel is in favorites."""
+        try:
+            with self.pool.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT 1 FROM favorites WHERE url = ?", (channel_url,)
+                )
+                return cursor.fetchone() is not None
+        except Exception as e:
+            self.logger.error(f"Error checking favorite status: {e}")
+            return False
 
     def save_epg_program(self, channel_id: str, program: Program):
         """Save an EPG program to the database.
@@ -231,7 +246,7 @@ class Database:
             program (Program): The EPG program to save.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO epg_data 
@@ -261,7 +276,7 @@ class Database:
         """
         try:
             current_time = int(datetime.now().timestamp())
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 cursor = conn.execute(
                     """
                     SELECT * FROM epg_data 
@@ -296,7 +311,7 @@ class Database:
         """
         try:
             current_time = int(datetime.now().timestamp())
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """
@@ -320,95 +335,6 @@ class Database:
                 ]
         except sqlite3.Error:
             return []
-
-    def save_playlists(self, playlists):
-        """Save a list of playlists to the database.
-
-        Args:
-            playlists (list): A list of (name, path, is_url) tuples representing playlists.
-        """
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
-
-            # Start transaction
-            conn.execute("BEGIN")
-
-            # Debug print current playlists before deletion
-            cursor = conn.execute("SELECT COUNT(*) FROM playlists")
-            count = cursor.fetchone()[0]
-            print(f"Current playlists in DB before deletion: {count}")
-
-            # Clear existing playlists
-            conn.execute("DELETE FROM playlists")
-
-            # Insert new playlists
-            for name, path, is_url in playlists:
-                print(f"Saving playlist: {name}, {path}, {is_url}")  # Debug print
-                conn.execute(
-                    "INSERT INTO playlists (name, path, is_url) VALUES (?, ?, ?)",
-                    (name, path, 1 if is_url else 0),
-                )
-
-            # Commit changes
-            conn.commit()
-
-            # Verify the save
-            cursor = conn.execute("SELECT COUNT(*) FROM playlists")
-            count = cursor.fetchone()[0]
-            print(f"Playlists in DB after save: {count}")
-
-            return True
-
-        except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            print(f"Error saving playlists: {e}")
-            return False
-
-        finally:
-            if conn:
-                conn.close()
-
-    def get_playlists(self):
-        """Retrieve the list of playlists from the database.
-
-        Returns:
-            list: A list of (name, path, is_url) tuples representing playlists.
-        """
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
-
-            # Debug print table info
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='playlists'"
-            )
-            if not cursor.fetchone():
-                print("Playlists table does not exist!")
-                return []
-
-            cursor = conn.execute("SELECT name, path, is_url FROM playlists")
-            rows = cursor.fetchall()
-            playlists = [
-                (row["name"], row["path"], bool(row["is_url"])) for row in rows
-            ]
-
-            print(f"Loaded {len(playlists)} playlists from database")
-            for name, path, is_url in playlists:
-                print(f"Loaded playlist: {name}, {path}, {is_url}")  # Debug print
-
-            return playlists
-
-        except sqlite3.Error as e:
-            print(f"Error loading playlists: {e}")
-            return []
-
-        finally:
-            if conn:
-                conn.close()
 
     def clear_setting(self, key: str):
         """Clear a setting from the database."""

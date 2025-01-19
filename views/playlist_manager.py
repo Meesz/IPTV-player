@@ -38,7 +38,7 @@ class PlaylistManagerDialog(QDialog):
         self._selected_playlist = None
         self.setWindowTitle("Playlist Manager")
         self.setMinimumSize(400, 300)
-        
+
         # Create layout
         layout = QVBoxLayout(self)
 
@@ -183,28 +183,35 @@ class PlaylistManagerDialog(QDialog):
         if current_item:
             data = current_item.data(Qt.ItemDataRole.UserRole)
             self._selected_playlist = {
-                'name': current_item.text(),
-                'path': data["path"],
-                'is_url': data["is_url"]
+                "name": current_item.text(),
+                "path": data["path"],
+                "is_url": data["is_url"],
             }
             self.accept()
 
     def get_playlists(self):
-        """Get all playlists as list of (name, path, is_url) tuples"""
+        """Get all playlists as list of dicts."""
         playlists = []
         for i in range(self.playlist_list.count()):
             item = self.playlist_list.item(i)
             data = item.data(Qt.ItemDataRole.UserRole)
-            playlists.append((item.text(), data["path"], data["is_url"]))
+            playlists.append({
+                'name': item.text(),
+                'path': data['path'],
+                'is_url': data['is_url']
+            })
         return playlists
 
     def set_playlists(self, playlists):
-        """Set playlists from list of (name, path, is_url) tuples"""
+        """Set playlists from database records."""
         self.playlist_list.clear()
-        for name, path, is_url in playlists:
-            item = QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
-            item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
+        for playlist in playlists:
+            item = QListWidgetItem(playlist['name'])
+            item.setData(Qt.ItemDataRole.UserRole, {
+                'path': playlist['path'],
+                'is_url': playlist['is_url']
+            })
+            item.setToolTip(f"{'URL' if playlist['is_url'] else 'File'}: {playlist['path']}")
             self.playlist_list.addItem(item)
 
     def _show_context_menu(self, position):
@@ -278,6 +285,6 @@ class PlaylistManagerDialog(QDialog):
 
     def load_saved_playlists(self):
         pass
-    
+
     def save_playlists(self):
         pass

@@ -2,7 +2,6 @@
 Central configuration for the Simple IPTV application.
 """
 
-import os
 from pathlib import Path
 import logging
 
@@ -13,12 +12,12 @@ class Config:
     # Application info
     APP_NAME = "Simple IPTV"
     APP_VERSION = "1.0.0"
-    
+
     # Paths
     BASE_DIR = Path(__file__).parent
     CACHE_DIR = BASE_DIR / "cache"
-    DATABASE_PATH = BASE_DIR / "data" / "settings.db"
-    
+    DATABASE_PATH = BASE_DIR / "data" / "database.db"
+
     # Create necessary directories
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +55,12 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+    # Database settings
+    DB_MAX_CONNECTIONS = 5
+    DB_TIMEOUT = 5  # seconds
+    DB_RETRY_ATTEMPTS = 3
+    DB_RETRY_DELAY = 0.1  # seconds
+
     @classmethod
     def get_cache_path(cls, filename: str) -> Path:
         """Get the full path for a cache file."""
@@ -69,4 +74,4 @@ class Config:
     @classmethod
     def is_valid_epg_file(cls, filename: str) -> bool:
         """Check if the file has a valid EPG extension."""
-        return any(filename.lower().endswith(ext) for ext in cls.EPG_EXTENSIONS) 
+        return any(filename.lower().endswith(ext) for ext in cls.EPG_EXTENSIONS)
