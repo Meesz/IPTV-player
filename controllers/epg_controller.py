@@ -13,6 +13,7 @@ from PyQt6.QtCore import QTimer, QThreadPool
 from utils.epg_parser import EPGParser
 from views.notification import NotificationType
 from utils.worker import Worker
+from config import Config
 
 
 class EPGController:
@@ -26,7 +27,7 @@ class EPGController:
 
         # Create timer for EPG updates
         self.epg_timer = QTimer()
-        self.epg_timer.setInterval(60000)  # Update every minute
+        self.epg_timer.setInterval(Config.EPG_UPDATE_INTERVAL)
         self.epg_timer.timeout.connect(self._update_epg_display)
 
     def load_epg_from_file(self, file_path: str) -> None:
@@ -61,12 +62,13 @@ class EPGController:
         """Worker function to download and load EPG in background."""
         tmp_path = None
         try:
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=Config.REQUEST_TIMEOUT)
             response.raise_for_status()
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xml") as tmp_file:
-                tmp_file.write(response.content)
-                tmp_path = tmp_file.name
+            cache_path = Config.get_cache_path(f"epg_{hash(url)}.xml")
+            with open(cache_path, 'wb') as f:
+                f.write(response.content)
+                tmp_path = str(cache_path)
 
             epg_guide = EPGParser.parse_xmltv(tmp_path)
             return (True, epg_guide, url)

@@ -15,6 +15,7 @@ from views.playlist_manager import PlaylistManagerDialog
 from controllers.playlist_controller import PlaylistController
 from controllers.epg_controller import EPGController
 from controllers.settings_controller import SettingsController
+from config import Config
 
 
 class PlayerController:
@@ -33,7 +34,7 @@ class PlayerController:
         # Create search timer for debouncing
         self.search_timer = QTimer()
         self.search_timer.setSingleShot(True)
-        self.search_timer.setInterval(300)
+        self.search_timer.setInterval(Config.SEARCH_DEBOUNCE_DELAY)
         self.search_timer.timeout.connect(self._perform_search)
 
         # Connect signals
@@ -66,7 +67,7 @@ class PlayerController:
     def _load_initial_state(self):
         """Load the initial application state."""
         # Load volume
-        volume = int(self.settings.get_setting("volume", "100"))
+        volume = int(self.settings.get_setting("volume", str(Config.DEFAULT_VOLUME)))
         self.window.volume_slider.setValue(volume)
         self.window.player_widget.set_volume(volume)
 

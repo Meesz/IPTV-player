@@ -12,6 +12,7 @@ from views.notification import NotificationType
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThreadPool
 from utils.worker import Worker
+from config import Config
 
 
 class PlaylistController:
@@ -50,7 +51,7 @@ class PlaylistController:
         try:
             if is_url:
                 print("Downloading playlist from URL...")
-                response = requests.get(path, timeout=30)
+                response = requests.get(path, timeout=Config.REQUEST_TIMEOUT)
                 response.raise_for_status()
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8") as tmp_file:
@@ -151,7 +152,6 @@ class PlaylistController:
 
     def _update_channel_list(self):
         """Update channel list based on selected category."""
-        # Prevent recursive updates
         if self._is_updating:
             print("Channel list update already in progress, skipping...")
             return
@@ -163,7 +163,7 @@ class PlaylistController:
 
             channels = (
                 self.playlist.channels
-                if category == "All"
+                if category == Config.DEFAULT_CATEGORY
                 else self.playlist.get_channels_by_category(category)
             )
 
