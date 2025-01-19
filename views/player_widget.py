@@ -146,7 +146,7 @@ class PlayerWidget(QFrame):
     def stop(self):
         """Stop media playback."""
         if self.vlc_available:
-            if self.fullscreen_window:
+            if self.is_fullscreen:
                 self._exit_fullscreen()
             self.player.stop()
             self.placeholder.show()
