@@ -6,6 +6,8 @@ which is responsible for managing the playlist manager dialog.
 import tempfile
 import os
 import requests
+import json
+from pathlib import Path
 
 # pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import (
@@ -33,9 +35,10 @@ class PlaylistManagerDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._selected_playlist = None
         self.setWindowTitle("Playlist Manager")
         self.setMinimumSize(400, 300)
-
+        
         # Create layout
         layout = QVBoxLayout(self)
 
@@ -156,9 +159,7 @@ class PlaylistManagerDialog(QDialog):
 
         if ok and name:
             item = QListWidgetItem(name)
-            # Store both path and type
             item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
-            # Add tooltip showing full path/URL
             item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
             self.playlist_list.addItem(item)
 
@@ -181,7 +182,11 @@ class PlaylistManagerDialog(QDialog):
         current_item = self.playlist_list.currentItem()
         if current_item:
             data = current_item.data(Qt.ItemDataRole.UserRole)
-            self.playlist_selected.emit(data["path"], data["is_url"])
+            self._selected_playlist = {
+                'name': current_item.text(),
+                'path': data["path"],
+                'is_url': data["is_url"]
+            }
             self.accept()
 
     def get_playlists(self):
@@ -266,3 +271,13 @@ class PlaylistManagerDialog(QDialog):
         """Handle window close button (X) click"""
         self.reject()
         event.accept()
+
+    def get_selected_playlist(self):
+        """Return the selected playlist data"""
+        return self._selected_playlist
+
+    def load_saved_playlists(self):
+        pass
+    
+    def save_playlists(self):
+        pass
