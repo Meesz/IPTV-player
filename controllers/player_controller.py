@@ -101,6 +101,7 @@ class PlayerController:
         for channel in channels:
             if channel.name == selected_name:
                 self.current_channel = channel
+                print(f"Selected channel: {channel.name} - URL: {channel.url}")
                 self._play_channel(channel)
                 self.window.favorite_button.setChecked(
                     self.settings.db.is_favorite(channel.url)
@@ -110,11 +111,13 @@ class PlayerController:
     def _favorite_selected(self, item):
         favorites = self.settings.db.get_favorites()
         self.current_channel = favorites[self.window.favorites_list.row(item)]
+        print(f"Selected favorite: {self.current_channel.name} - URL: {self.current_channel.url}")
         self._play_channel(self.current_channel)
         self.window.favorite_button.setChecked(True)
 
     def _play_channel(self, channel: Channel):
         try:
+            print(f"Playing channel: {channel.name} - URL: {channel.url}")
             self.window.player_widget.play(channel.url)
             self.current_channel = channel
             self.epg_controller.refresh_epg()
