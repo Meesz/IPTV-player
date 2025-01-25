@@ -33,12 +33,19 @@ class RightPanel(QFrame):
         # Controls layout
         self.controls_layout = QHBoxLayout()
 
-        # Add existing controls
+        # Add playback controls
         self.play_button = QPushButton("Play")
         self.stop_button = QPushButton("Stop")
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.favorite_button = QPushButton("Favorite")
+        self.favorite_button.setCheckable(True)
 
+        # Set volume slider range and default value
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(100)
+        self.volume_slider.setToolTip("Volume")
+
+        # Add all controls to layout
         self.controls_layout.addWidget(self.play_button)
         self.controls_layout.addWidget(self.stop_button)
         self.controls_layout.addWidget(self.volume_slider)
