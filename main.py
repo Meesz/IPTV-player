@@ -106,12 +106,23 @@ def main() -> int:
         # Create main window and controllers in the correct order
         main_window = MainWindow()
         settings_controller = SettingsController()
+        
+        # Create controllers in the right order to avoid circular dependencies
         playlist_controller = PlaylistController(main_window, settings_controller)
         player_controller = PlayerController(main_window)
+        
+        # Set up the relationships between controllers
+        player_controller.playlist_controller = playlist_controller
+        playlist_controller.player_controller = player_controller
 
         # Set controllers in main window
         main_window.player_controller = player_controller
         main_window.playlist_controller = playlist_controller
+
+        # Connect channel selection signal
+        main_window.left_panel.channel_list.itemClicked.connect(
+            lambda item: player_controller._channel_selected(item)
+        )
 
         # Load initial playlist after all controllers are set up
         playlist_success, selected_playlist = load_initial_playlist(
@@ -124,7 +135,7 @@ def main() -> int:
 
         # Load the selected playlist after everything is properly initialized
         QTimer.singleShot(0, lambda: playlist_controller.load_playlist_from_path(
-            selected_playlist["path"], 
+            selected_playlist["path"],
             selected_playlist["is_url"]
         ))
 
