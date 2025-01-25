@@ -1,75 +1,71 @@
 """
-This module contains the Playlist class, which manages a collection of TV channels.
+This module contains the Playlist class for managing IPTV playlists.
 """
 
-from dataclasses import dataclass
-from typing import List, Dict
+from dataclasses import dataclass, field
+from typing import List, Set, Dict
 from collections import defaultdict
+from models.channel import Channel
+from utils.m3u_parser import M3UParser
+import requests
+import tempfile
+import os
 
 
 @dataclass
-class Channel:
-    """Represents a TV channel with its associated metadata."""
-
-    name: str
-    url: str
-    group: str = ""
-    logo: str = ""
-    epg_id: str = ""
-    id: int = None
-
-    def __hash__(self):
-        """Generate a hash based on the channel's URL."""
-        return hash(self.url)  # Use URL as unique identifier
-
-    @staticmethod
-    def from_db_row(row):
-        """Create a Channel instance from a database row.
-
-        Args:
-            row (dict): A dictionary representing a database row with channel data.
-
-        Returns:
-            Channel: An instance of the Channel class.
-        """
-        return Channel(
-            name=row["name"],
-            url=row["url"],
-            group=row["group_name"],
-            logo=row["logo"],
-            epg_id=row["epg_id"],
-            id=row["id"],
-        )
-
-
 class Playlist:
-    """Manages a collection of TV channels and provides methods to interact with them."""
+    """Represents a collection of channels organized into categories."""
 
-    def __init__(self):
-        """Initialize the Playlist with empty data structures for channels and indexes."""
-        self.channels: List[Channel] = []
-        self._categories: Dict[str, List[Channel]] = defaultdict(list)
-        self._url_index: Dict[str, Channel] = {}  # Index for quick URL lookups
-        self._name_index: Dict[str, List[Channel]] = defaultdict(
-            list
-        )  # Index for quick name searches
+    channels: List[Channel] = field(default_factory=list)
+    _categories: Set[str] = field(default_factory=set)
+    _url_index: Dict[str, Channel] = field(default_factory=dict)
+    _name_index: Dict[str, List[Channel]] = field(default_factory=lambda: defaultdict(list))
 
-    def add_channel(self, channel: Channel):
-        """Add a channel to the playlist and update indexes.
+    @classmethod
+    def from_path(cls, path: str, is_url: bool = False) -> 'Playlist':
+        """Create a Playlist instance from a file path or URL."""
+        try:
+            # Create new playlist instance
+            playlist = cls()
+            
+            if is_url:
+                # Handle URL loading (implement URL loading logic)
+                response = requests.get(path, timeout=30)
+                response.raise_for_status()
+                
+                # Save content to temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.m3u8', delete=False) as tmp:
+                    tmp.write(response.text)
+                    tmp_path = tmp.name
+                
+                # Parse the temporary file
+                channels = M3UParser.parse(tmp_path)
+                os.unlink(tmp_path)  # Clean up temp file
+            else:
+                # Parse local file
+                channels = M3UParser.parse(path)
+            
+            # Add all channels to playlist
+            for channel in channels:
+                playlist.add_channel(channel)
+            
+            return playlist
+            
+        except Exception as e:
+            raise ValueError(f"Failed to load playlist: {str(e)}") from e
 
-        Args:
-            channel (Channel): The channel to add.
-        """
+    def add_channel(self, channel: Channel) -> None:
+        """Add a channel to the playlist and update categories."""
         self.channels.append(channel)
-        category = channel.group or "Uncategorized"
-        self._categories[category].append(channel)
+        if channel.group:
+            self._categories.add(channel.group)
 
         # Update indexes
         self._url_index[channel.url] = channel
         self._name_index[channel.name.lower()].append(channel)
 
-    def clear(self):
-        """Clear all channels and indexes from the playlist."""
+    def clear(self) -> None:
+        """Clear all channels and categories."""
         self.channels.clear()
         self._categories.clear()
         self._url_index.clear()
@@ -105,20 +101,9 @@ class Playlist:
 
     @property
     def categories(self) -> List[str]:
-        """Get a sorted list of channel categories.
-
-        Returns:
-            List[str]: A list of category names.
-        """
-        return sorted(self._categories.keys())
+        """Get sorted list of all categories."""
+        return sorted(self._categories)
 
     def get_channels_by_category(self, category: str) -> List[Channel]:
-        """Retrieve channels by category.
-
-        Args:
-            category (str): The category name.
-
-        Returns:
-            List[Channel]: A list of channels in the specified category.
-        """
-        return self._categories.get(category, [])
+        """Get all channels in a specific category."""
+        return [ch for ch in self.channels if ch.group == category]
