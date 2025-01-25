@@ -11,59 +11,68 @@ class Themes:
     def get_dark_theme() -> str:
         """Get the CSS for the dark theme."""
         return """
+            /* Main Window */
             QMainWindow, QWidget {
-                background-color: #1a1a1a;
-                color: #ffffff;
+                background-color: #1e1e2e;
+                color: #cdd6f4;
             }
             
+            /* Buttons */
             QPushButton {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
+                background-color: #313244;
+                border: 1px solid #45475a;
                 padding: 8px 16px;
-                border-radius: 4px;
-                color: #ffffff;
-                font-weight: 500;
+                border-radius: 6px;
+                color: #cdd6f4;
+                font-weight: 600;
                 min-width: 80px;
+                font-size: 13px;
             }
             
             QPushButton:hover {
-                background-color: #404040;
-                border: 1px solid #505050;
+                background-color: #45475a;
+                border: 1px solid #585b70;
             }
             
             QPushButton:pressed {
-                background-color: #505050;
+                background-color: #585b70;
+                transform: translateY(1px);
             }
             
             QPushButton:checked {
-                background-color: #404040;
-                border: 2px solid #666666;
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border: none;
             }
             
+            /* Search and Input Fields */
             QLineEdit {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
+                background-color: #313244;
+                border: 2px solid #45475a;
                 padding: 8px 12px;
-                border-radius: 4px;
-                color: #ffffff;
-                selection-background-color: #404040;
+                border-radius: 8px;
+                color: #cdd6f4;
+                selection-background-color: #45475a;
+                font-size: 13px;
             }
             
             QLineEdit:focus {
-                border: 2px solid #666666;
+                border: 2px solid #89b4fa;
             }
             
+            /* Dropdown */
             QComboBox {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
+                background-color: #313244;
+                border: 2px solid #45475a;
                 padding: 8px;
-                border-radius: 4px;
-                color: #ffffff;
-                min-width: 120px;
+                border-radius: 8px;
+                color: #cdd6f4;
+                min-width: 150px;
+                font-size: 13px;
             }
             
             QComboBox:hover {
-                border: 1px solid #505050;
+                border: 2px solid #89b4fa;
             }
             
             QComboBox::drop-down {
@@ -71,64 +80,147 @@ class Themes:
                 padding-right: 8px;
             }
             
+            /* Lists */
             QListWidget {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                border-radius: 4px;
-                color: #ffffff;
-                padding: 4px;
+                background-color: #313244;
+                border: 2px solid #45475a;
+                border-radius: 8px;
+                color: #cdd6f4;
+                padding: 8px;
+                font-size: 13px;
             }
             
             QListWidget::item {
-                padding: 8px;
-                border-radius: 2px;
+                padding: 10px;
+                border-radius: 4px;
+                margin: 2px;
             }
             
             QListWidget::item:hover {
-                background-color: #383838;
+                background-color: #45475a;
             }
             
             QListWidget::item:selected {
-                background-color: #404040;
+                background-color: #89b4fa;
+                color: #1e1e2e;
             }
             
+            /* Volume Slider */
             QSlider::groove:horizontal {
-                background-color: #404040;
-                height: 4px;
-                border-radius: 2px;
+                background-color: #45475a;
+                height: 6px;
+                border-radius: 3px;
             }
             
             QSlider::handle:horizontal {
-                background-color: #666666;
-                width: 16px;
-                height: 16px;
+                background-color: #89b4fa;
+                width: 18px;
+                height: 18px;
                 margin: -6px 0;
-                border-radius: 8px;
+                border-radius: 9px;
             }
             
             QSlider::handle:horizontal:hover {
-                background-color: #808080;
+                background-color: #b4befe;
             }
             
+            /* EPG Widget */
             QFrame#epg_widget {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                border-radius: 4px;
-                padding: 12px;
+                background-color: #313244;
+                border: 2px solid #45475a;
+                border-radius: 12px;
+                padding: 16px;
             }
             
+            /* Labels */
             QLabel {
                 padding: 4px;
+                font-size: 13px;
             }
             
             QLabel#current_title {
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
-                color: #ffffff;
+                color: #89b4fa;
             }
             
             QLabel#current_time {
-                color: #aaaaaa;
+                color: #bac2de;
+                font-size: 13px;
+            }
+            
+            /* Tabs */
+            QTabWidget::pane {
+                border: 2px solid #45475a;
+                border-radius: 8px;
+                background-color: #313244;
+            }
+            
+            QTabBar::tab {
+                background-color: #313244;
+                color: #cdd6f4;
+                padding: 8px 16px;
+                margin: 2px;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            
+            QTabBar::tab:selected {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+            }
+            
+            QTabBar::tab:hover:!selected {
+                background-color: #45475a;
+            }
+            
+            /* Scrollbars */
+            QScrollBar:vertical {
+                border: none;
+                background-color: #313244;
+                width: 12px;
+                border-radius: 6px;
+                margin: 0;
+            }
+
+            QScrollBar::handle:vertical {
+                background-color: #45475a;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background-color: #585b70;
+            }
+            
+            /* Menu Bar */
+            QMenuBar {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                padding: 4px;
+                font-size: 13px;
+            }
+            
+            QMenuBar::item:selected {
+                background-color: #313244;
+                border-radius: 4px;
+            }
+            
+            QMenu {
+                background-color: #313244;
+                border: 2px solid #45475a;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            
+            QMenu::item {
+                padding: 8px 24px;
+                border-radius: 4px;
+            }
+            
+            QMenu::item:selected {
+                background-color: #89b4fa;
+                color: #1e1e2e;
             }
         """
 
