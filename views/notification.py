@@ -2,6 +2,7 @@
 This module contains the NotificationWidget class, which is responsible for displaying notifications.
 """
 
+import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -9,6 +10,8 @@ from enum import Enum, auto
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QTimer
 
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class NotificationType(Enum):
     """Enumeration for different types of notifications."""
@@ -17,6 +20,15 @@ class NotificationType(Enum):
     SUCCESS = auto()
     WARNING = auto()
     ERROR = auto()
+
+    def to_log_level(self):
+        """Convert notification type to logging level."""
+        return {
+            NotificationType.INFO: logging.INFO,
+            NotificationType.SUCCESS: logging.INFO,
+            NotificationType.WARNING: logging.WARNING,
+            NotificationType.ERROR: logging.ERROR,
+        }[self]
 
 
 @dataclass
@@ -67,9 +79,12 @@ class NotificationWidget(QLabel):
 
         Args:
             message (str): The message to display.
-            type (NotificationType): The type of notification to determine the style.
+            notification_type (NotificationType): The type of notification to determine the style.
             duration (int): The duration in milliseconds for which the notification is displayed.
         """
+        # Log to console with appropriate level
+        logger.log(notification_type.to_log_level(), message)
+
         style = self.STYLES[notification_type]
         self.setStyleSheet(
             f"""
