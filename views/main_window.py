@@ -128,6 +128,17 @@ class MainWindow(QMainWindow):
         self.left_panel = LeftPanel()
         self.right_panel = RightPanel()
 
+        # Connect signals from right panel
+        self.right_panel.play_button.clicked.connect(self._on_play_clicked)
+        self.right_panel.stop_button.clicked.connect(self._on_stop_clicked)
+        self.right_panel.volume_slider.valueChanged.connect(self._on_volume_changed)
+        self.right_panel.favorite_button.clicked.connect(self._on_favorite_clicked)
+
+        # Connect signals from left panel
+        self.left_panel.channel_list.itemClicked.connect(self._on_channel_selected)
+        self.left_panel.favorites_list.itemClicked.connect(self._on_favorite_selected)
+        self.left_panel.category_combo.currentTextChanged.connect(self._on_category_changed)
+
         self.left_panel.setMinimumWidth(200)
         self.right_panel.setMinimumWidth(400)
 
@@ -146,6 +157,7 @@ class MainWindow(QMainWindow):
         self.toolbar.setStyleSheet(ToolbarStyle.TOOLBAR)
 
         self.search_bar = SearchBar()
+        self.search_bar.textChanged.connect(self._on_search_text_changed)
         self.toolbar.addWidget(self.search_bar)
 
         self.addToolBar(self.toolbar)
@@ -220,3 +232,44 @@ class MainWindow(QMainWindow):
         is_url = playlist_data["is_url"]
         # Use your playlist controller to load the playlist
         self.playlist_controller.load_playlist(path, is_url)
+
+    def _on_play_clicked(self):
+        """Handle play button click."""
+        if self.player_controller:
+            self.player_controller.toggle_playback()
+
+    def _on_stop_clicked(self):
+        """Handle stop button click."""
+        if self.player_controller:
+            self.player_controller.stop_playback()
+
+    def _on_volume_changed(self, value):
+        """Handle volume slider change."""
+        if self.player_controller:
+            self.player_controller.volume_changed(value)
+
+    def _on_favorite_clicked(self):
+        """Handle favorite button click."""
+        if self.player_controller:
+            self.player_controller._toggle_favorite()
+
+    def _on_channel_selected(self, item):
+        """Handle channel selection."""
+        if self.player_controller:
+            self.player_controller._channel_selected(item)
+
+    def _on_favorite_selected(self, item):
+        """Handle favorite channel selection."""
+        if self.player_controller:
+            self.player_controller._favorite_selected(item)
+
+    def _on_category_changed(self, category):
+        """Handle category change."""
+        if self.player_controller:
+            self.player_controller._category_changed(category)
+
+    def _on_search_text_changed(self, text):
+        """Handle search text change."""
+        if self.player_controller:
+            # Start the search timer to debounce input
+            self.player_controller.search_timer.start()
