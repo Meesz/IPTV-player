@@ -88,26 +88,24 @@ class PlayerController:
         self.settings.save_setting("last_category", category)
 
     def _channel_selected(self, item):
-        if not item:
-            return
-
-        selected_name = item.text()
-        category = self.window.category_combo.currentText()
-        channels = (
-            self.playlist_controller.playlist.channels
-            if category == "All"
-            else self.playlist_controller.playlist.get_channels_by_category(category)
-        )
-
-        for channel in channels:
-            if channel.name == selected_name:
-                self.current_channel = channel
-                print(f"Selected channel: {channel.name} - URL: {channel.url}")
+        """Handle channel selection."""
+        try:
+            category = self.window.category_combo.currentText()
+            channels = (
+                self.playlist_controller.playlist.channels
+                if category == "All"
+                else self.playlist_controller.playlist.get_channels_by_category(category)
+            )
+            
+            selected_index = self.window.channel_list.row(item)
+            if 0 <= selected_index < len(channels):
+                channel = channels[selected_index]
                 self._play_channel(channel)
-                self.window.favorite_button.setChecked(
-                    self.settings.db.is_favorite(channel.url)
-                )
-                break
+                
+        except Exception as e:
+            self.window.show_notification(
+                f"Error playing channel: {str(e)}", NotificationType.ERROR
+            )
 
     def _favorite_selected(self, item):
         favorites = self.settings.db.get_favorites()
@@ -293,3 +291,12 @@ class PlayerController:
             self.window.show_notification(
                 f"Error showing playlist manager: {str(e)}", NotificationType.ERROR
             )
+
+    def on_playlist_changed(self):
+        """Handle playlist changes."""
+        # Stop current playback
+        self.stop_playback()
+        # Reset current channel
+        self.current_channel = None
+        # Update favorites list
+        self._load_favorites()
