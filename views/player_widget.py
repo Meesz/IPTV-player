@@ -5,14 +5,63 @@ which is responsible for displaying and controlling VLC media playback.
 
 import sys
 import logging
+import time
+import threading
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget, QMessageBox
+from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from views.vlc_manager import VLCManager
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+
+class MediaEventHandler(QObject):
+    """Handler for VLC media events with Qt signals."""
+    
+    error_occurred = pyqtSignal(str)
+    media_playing = pyqtSignal()
+    media_stopped = pyqtSignal()
+    media_buffering = pyqtSignal(float)
+    
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+        self.vlc = VLCManager.get_vlc()
+        self._setup_events()
+        
+    def _setup_events(self):
+        """Set up event handlers for VLC media events."""
+        if not self.player:
+            return
+            
+        events = self.player.event_manager()
+        events.event_attach(self.vlc.EventType.MediaPlayerPlaying, self._on_playing)
+        events.event_attach(self.vlc.EventType.MediaPlayerStopped, self._on_stopped)
+        events.event_attach(self.vlc.EventType.MediaPlayerEncounteredError, self._on_error)
+        events.event_attach(self.vlc.EventType.MediaPlayerBuffering, self._on_buffering)
+    
+    def _on_playing(self, event):
+        """Handle MediaPlayerPlaying event."""
+        logger.info("Media playback started")
+        self.media_playing.emit()
+    
+    def _on_stopped(self, event):
+        """Handle MediaPlayerStopped event."""
+        logger.info("Media playback stopped")
+        self.media_stopped.emit()
+    
+    def _on_error(self, event):
+        """Handle MediaPlayerEncounteredError event."""
+        error_msg = "Media playback failed"
+        logger.error(error_msg)
+        self.error_occurred.emit(error_msg)
+    
+    def _on_buffering(self, event):
+        """Handle MediaPlayerBuffering event."""
+        cache_percentage = event.u.new_cache if hasattr(event, 'u') else 0
+        self.media_buffering.emit(cache_percentage)
 
 
 class PlayerWidget(QFrame):
@@ -32,6 +81,13 @@ class PlayerWidget(QFrame):
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(self.placeholder)
 
+        # Create status overlay
+        self.status_overlay = QLabel()
+        self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128); color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
+        self.status_overlay.hide()
+        self.layout.addWidget(self.status_overlay)
+
         # Initialize VLC
         success, error = VLCManager.initialize()
         self.vlc_available = success
@@ -46,6 +102,14 @@ class PlayerWidget(QFrame):
 
         # Create player
         self.player = VLCManager.create_player()
+        
+        # Create event handler
+        self.event_handler = MediaEventHandler(self.player)
+        self.event_handler.error_occurred.connect(self._handle_playback_error)
+        self.event_handler.media_playing.connect(self._on_media_playing)
+        self.event_handler.media_stopped.connect(self._on_media_stopped)
+        self.event_handler.media_buffering.connect(self._on_media_buffering)
+        
         self._setup_player()
 
         # Enable mouse tracking
@@ -58,6 +122,15 @@ class PlayerWidget(QFrame):
         self.normal_layout = None
         self.normal_index = None
         self.normal_stretch = None
+        
+        # Track current media
+        self.current_url = None
+        self.fullscreen_window = None
+        
+        # Setup reconnection mechanism
+        self.reconnect_timer = threading.Timer(0, lambda: None)
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5
 
     def _setup_player(self):
         """Configure the VLC player instance."""
@@ -73,24 +146,39 @@ class PlayerWidget(QFrame):
             self.player.set_nsobject(int(self.winId()))
 
         # Set optimized media options
-
         self.player.video_set_key_input(False)
         self.player.video_set_mouse_input(False)
 
     def cleanup_vlc(self):
         """Clean up VLC resources before application shutdown"""
         if self.vlc_available:
-            if self.fullscreen_window:
+            if hasattr(self, 'fullscreen_window') and self.fullscreen_window:
                 self._exit_fullscreen()
             self.player.stop()
             self.player.release()
             self.instance.release()
             self.vlc_available = False
+            
+            # Cancel any pending reconnect
+            self.reconnect_timer.cancel()
 
     def close_event(self, event):
         """Handle cleanup when widget is closed"""
         self.cleanup_vlc()
         super().close_event(event)
+        
+    def _show_status(self, message, duration=2000):
+        """Show a temporary status message overlay."""
+        self.status_overlay.setText(message)
+        self.status_overlay.show()
+        
+        # Hide after duration
+        def hide_status():
+            self.status_overlay.hide()
+            
+        timer = threading.Timer(duration/1000, hide_status)
+        timer.daemon = True
+        timer.start()
 
     def play(self, url: str):
         """Play media from the given URL.
@@ -100,25 +188,40 @@ class PlayerWidget(QFrame):
         """
         if not self.vlc_available:
             return
+            
+        # Cancel any pending reconnect
+        self.reconnect_timer.cancel()
+        self.reconnect_attempts = 0
+        self.current_url = url
 
         try:
+            logger.info(f"Attempting to play: {url}")
+            self._show_status("Connecting to stream...")
+            
             # Create media with optimized options
             media = self.instance.media_new(url)
-            media.add_option("network-caching=1000")
+            
+            # Configure network caching based on protocol
+            if url.startswith(("rtmp://", "rtsp://")):
+                # Use larger cache for RTMP/RTSP
+                media.add_option("network-caching=1500")
+            elif url.startswith("http"):
+                # Less cache for HTTP/HLS to reduce latency
+                media.add_option("network-caching=1000")
+            else:
+                # Default cache
+                media.add_option("network-caching=1000")
+                
+            # Add common options for better playback
             media.add_option("clock-jitter=0")
             media.add_option("clock-synchro=0")
             media.add_option("no-audio-time-stretch")
-
-            # Add event manager to detect when media starts playing
-            events = self.player.event_manager()
-            events.event_attach(
-                self.vlc.EventType.MediaPlayerPlaying,
-                lambda x: self.placeholder.hide(),  # Hide placeholder when playing starts
-            )
-            events.event_attach(
-                self.vlc.EventType.MediaPlayerEncounteredError,
-                lambda x: self._handle_playback_error(),
-            )
+            
+            # Add adaptive streaming options for HLS/DASH
+            if url.endswith((".m3u8", ".mpd")):
+                media.add_option(":adaptive-logic=highest")
+                media.add_option(":adaptive-maxwidth=1920")
+                media.add_option(":adaptive-maxheight=1080")
 
             self.player.set_media(media)
             result = self.player.play()
@@ -129,6 +232,7 @@ class PlayerWidget(QFrame):
                 self.placeholder.setText(error_msg)
                 self.placeholder.show()
                 raise RuntimeError(error_msg)
+                
         except Exception as e:
             error_msg = f"Playback error: {str(e)}"
             logger.error(error_msg)
@@ -136,20 +240,66 @@ class PlayerWidget(QFrame):
             self.placeholder.show()
             raise e
 
-    def _handle_playback_error(self):
-        """Handle VLC playback errors"""
-        error_msg = "Stream playback failed - please check the URL and try again"
-        logger.error(error_msg)
+    def _on_media_playing(self):
+        """Handle when media starts playing."""
+        self.placeholder.hide()
+        self.status_overlay.hide()
+        self.reconnect_attempts = 0  # Reset reconnect counter on success
+
+    def _on_media_stopped(self):
+        """Handle when media is stopped."""
+        self.placeholder.show()
+        
+    def _on_media_buffering(self, cache_percentage):
+        """Handle buffering events."""
+        if cache_percentage < 100:
+            self._show_status(f"Buffering: {int(cache_percentage)}%")
+        else:
+            self.status_overlay.hide()
+
+    def _handle_playback_error(self, error_msg):
+        """Handle VLC playback errors with auto-reconnect"""
         self.placeholder.setText(error_msg)
         self.placeholder.show()
+        
+        # Try to reconnect if we have a current URL and haven't exceeded max attempts
+        if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
+            self.reconnect_attempts += 1
+            delay = min(2 ** self.reconnect_attempts, 30)  # Exponential backoff with max 30s
+            
+            reconnect_msg = f"Stream connection failed. Reconnecting in {delay}s... (Attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})"
+            logger.warning(reconnect_msg)
+            self._show_status(reconnect_msg, duration=delay*1000)
+            
+            # Schedule reconnect
+            self.reconnect_timer.cancel()
+            self.reconnect_timer = threading.Timer(delay, self._reconnect)
+            self.reconnect_timer.daemon = True
+            self.reconnect_timer.start()
+        else:
+            logger.error(f"Stream playback failed after {self.reconnect_attempts} attempts")
+            self._show_status("Stream unavailable", duration=5000)
+    
+    def _reconnect(self):
+        """Attempt to reconnect to the current stream."""
+        if self.current_url:
+            logger.info(f"Attempting to reconnect to: {self.current_url}")
+            try:
+                self.play(self.current_url)
+            except Exception as e:
+                logger.error(f"Reconnection failed: {str(e)}")
 
     def stop(self):
         """Stop media playback."""
         if self.vlc_available:
-            if self.fullscreen_window:
+            if hasattr(self, 'fullscreen_window') and self.fullscreen_window:
                 self._exit_fullscreen()
             self.player.stop()
             self.placeholder.show()
+            
+            # Cancel any pending reconnect
+            self.reconnect_timer.cancel()
+            self.reconnect_attempts = 0
 
     def pause(self):
         """Pause media playback."""

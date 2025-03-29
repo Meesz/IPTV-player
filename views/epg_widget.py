@@ -2,6 +2,7 @@
 Module containing the EPG (Electronic Program Guide) widget.
 """
 
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QFrame,
     QVBoxLayout,
@@ -59,14 +60,74 @@ class EPGWidget(QFrame):
 
         layout.addWidget(scroll_area)
 
+    def clear(self):
+        """Clear all EPG information."""
+        self.clear_current_program()
+        self.clear_upcoming_programs()
+
+    def set_current_program(self, title, start_time, end_time, description=""):
+        """Set the current program information.
+        
+        Args:
+            title: Program title
+            start_time: Start time (datetime)
+            end_time: End time (datetime)
+            description: Program description
+        """
+        if not title:
+            self.clear_current_program()
+            return
+            
+        # Format the time string
+        time_str = f"{start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}"
+        
+        # Update the UI components
+        self.current_title.setText(title)
+        self.current_time.setText(time_str)
+        self.description.setText(description or "")
+
+    def clear_current_program(self):
+        """Clear the current program information."""
+        self.current_title.setText("No program information")
+        self.current_time.setText("")
+        self.description.setText("")
+
+    def add_upcoming_program(self, title, start_time, end_time, description=""):
+        """Add an upcoming program to the list.
+        
+        Args:
+            title: Program title
+            start_time: Start time (datetime)
+            end_time: End time (datetime)
+            description: Program description (unused in list view)
+        """
+        if not title:
+            return
+            
+        time_str = start_time.strftime("%H:%M")
+        self.upcoming_list.addItem(f"{time_str} - {title}")
+
+    def clear_upcoming_programs(self):
+        """Clear the list of upcoming programs."""
+        self.upcoming_list.clear()
+
     def update_current_program(self, title: str, time_str: str, description: str):
-        """Update the current program information."""
+        """Update the current program information.
+        
+        Legacy method for backward compatibility.
+        """
         self.current_title.setText(title)
         self.current_time.setText(time_str)
         self.description.setText(description)
 
     def set_upcoming_programs(self, programs: list):
-        """Set the list of upcoming programs."""
+        """Set the list of upcoming programs.
+        
+        Legacy method for backward compatibility.
+        
+        Args:
+            programs: List of Program objects
+        """
         self.upcoming_list.clear()
         for prog in programs:
             time_str = prog.start_time.strftime("%H:%M")

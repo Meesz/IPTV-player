@@ -7,14 +7,17 @@ The PlayerController class interacts with the main window, database, and other u
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMessageBox, QDialog
+import logging
 
-from models.playlist import Channel
+from models.playlist import Channel, Playlist
 from views.main_window import MainWindow
 from views.notification import NotificationType
 from views.playlist_manager import PlaylistManagerDialog
 from controllers.playlist_controller import PlaylistController
 from controllers.epg_controller import EPGController
 from controllers.settings_controller import SettingsController
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerController:
@@ -28,7 +31,8 @@ class PlayerController:
         # Initialize sub-controllers
         self.settings = SettingsController()
         self.playlist_controller = PlaylistController(main_window, self.settings)
-        self.epg_controller = EPGController(main_window, self.settings)
+        # Initialize EPGController with config that includes the main window for UI updates
+        self.epg_controller = EPGController(config={'window': main_window, 'settings': self.settings})
 
         # Create search timer for debouncing
         self.search_timer = QTimer()
@@ -62,6 +66,11 @@ class PlayerController:
         self.window.playlist_manager_action.triggered.connect(
             self.show_playlist_manager
         )
+        
+        # Connect to playlist loaded signal to map channels to EPG
+        if hasattr(self.playlist_controller, 'playlist_loaded'):
+            logger.debug("Connecting to playlist_loaded signal")
+            self.playlist_controller.playlist_loaded.connect(self._on_playlist_loaded)
 
     def _load_initial_state(self):
         """Load the initial application state."""
@@ -80,7 +89,42 @@ class PlayerController:
         # Load last EPG
         last_epg = self.settings.get_setting("last_epg")
         if last_epg:
-            self.epg_controller.load_epg_from_file(last_epg)
+            self.epg_controller.load_epg(last_epg)
+            
+            # Auto-map channels to EPG if both are loaded
+            if self.playlist_controller.playlist and self.playlist_controller.playlist.channels:
+                self._map_channels_to_epg(self.playlist_controller.playlist)
+
+    def _on_playlist_loaded(self, playlist: Playlist):
+        """Handle playlist loaded event.
+        
+        Args:
+            playlist: The loaded playlist
+        """
+        logger.debug(f"Playlist loaded with {len(playlist.channels)} channels")
+        if playlist and playlist.channels:
+            self._map_channels_to_epg(playlist)
+    
+    def _map_channels_to_epg(self, playlist: Playlist):
+        """Map channels from the playlist to EPG data.
+        
+        Args:
+            playlist: The playlist containing channels to map
+        """
+        if not self.epg_controller.epg:
+            logger.debug("No EPG loaded, cannot map channels")
+            return
+            
+        # Auto-map channels to EPG
+        mapped_count = self.epg_controller.auto_map_channels(playlist.channels)
+        
+        if mapped_count > 0:
+            self.window.show_notification(
+                f"Mapped {mapped_count} of {len(playlist.channels)} channels to EPG",
+                NotificationType.INFO
+            )
+        else:
+            logger.debug("No channels could be automatically mapped to EPG")
 
     def _category_changed(self, category: str):
         self.playlist_controller.refresh_channels()
@@ -117,13 +161,43 @@ class PlayerController:
         try:
             self.window.player_widget.play(channel.url)
             self.current_channel = channel
-            self.epg_controller.refresh_epg()
+            self._update_epg_display()
             self.window.show_notification(
                 f"Playing: {channel.name}", NotificationType.INFO
             )
         except Exception as e:
             self.window.show_notification(
                 f"Failed to play channel: {str(e)}", NotificationType.ERROR
+            )
+
+    def _update_epg_display(self):
+        """Update the EPG display for the current channel."""
+        if not self.current_channel:
+            self.window.epg_widget.clear()
+            return
+            
+        # Get the current program for this channel
+        current_program = self.epg_controller.get_current_program(self.current_channel)
+        upcoming_programs = self.epg_controller.get_upcoming_programs(self.current_channel, hours=24)
+        
+        # Update the EPG widget
+        if current_program:
+            self.window.epg_widget.set_current_program(
+                current_program.title,
+                current_program.start_time,
+                current_program.end_time,
+                current_program.description,
+            )
+        else:
+            self.window.epg_widget.clear_current_program()
+            
+        self.window.epg_widget.clear_upcoming_programs()
+        for program in upcoming_programs:
+            self.window.epg_widget.add_upcoming_program(
+                program.title,
+                program.start_time,
+                program.end_time,
+                program.description,
             )
 
     def _toggle_favorite(self, checked: bool):
