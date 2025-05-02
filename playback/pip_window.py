@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 from views.vlc_manager import VLCManager
+from views.vlc_resource_manager import VLCResourceManager
 from utils.themes import Themes
 
 
@@ -86,6 +87,7 @@ class PiPWindow(QFrame):
         self.dragging = False
         self.player = None
         self.instance = None
+        self.resource_manager = None
 
         # Apply theme
         self.setStyleSheet(Themes.get_dark_theme())
@@ -105,12 +107,10 @@ class PiPWindow(QFrame):
 
     def cleanup(self):
         """Clean up VLC resources"""
-        if hasattr(self, "player") and self.player:
-            self.player.stop()
-            self.player.release()
+        if hasattr(self, "resource_manager") and self.resource_manager:
+            self.resource_manager.release()
+            self.resource_manager = None
             self.player = None
-        if hasattr(self, "instance") and self.instance:
-            self.instance.release()
             self.instance = None
 
     def closeEvent(self, event):
@@ -247,6 +247,9 @@ class PiPWindow(QFrame):
         if vlc:
             self.instance = vlc.Instance()
             self.player = self.instance.media_player_new()
+            
+            # Create resource manager
+            self.resource_manager = VLCResourceManager(self.player, self.instance)
 
             if self.video_container.winId():
                 print(f"PiPWindow: Window ID: {self.video_container.winId()}")  # Debug

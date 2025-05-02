@@ -7,11 +7,13 @@ import sys
 import logging
 import time
 import threading
+import random
 
 # pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget, QMessageBox
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from views.vlc_manager import VLCManager
+from views.vlc_resource_manager import VLCResourceManager
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -103,6 +105,9 @@ class PlayerWidget(QFrame):
         # Create player
         self.player = VLCManager.create_player()
         
+        # Create resource manager
+        self.resource_manager = VLCResourceManager(self.player, self.instance)
+        
         # Create event handler
         self.event_handler = MediaEventHandler(self.player)
         self.event_handler.error_occurred.connect(self._handle_playback_error)
@@ -131,6 +136,12 @@ class PlayerWidget(QFrame):
         self.reconnect_timer = threading.Timer(0, lambda: None)
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 5
+        self.reconnect_delay = 2  # Base delay in seconds
+        self.max_reconnect_delay = 30  # Maximum delay in seconds
+        self.last_error_time = 0
+        self.error_count = 0
+        self.max_error_count = 3
+        self.error_window = 60  # Error window in seconds
 
     def _setup_player(self):
         """Configure the VLC player instance."""
@@ -141,7 +152,7 @@ class PlayerWidget(QFrame):
         if sys.platform == "win32":
             self.player.set_hwnd(self.winId())
         elif sys.platform.startswith("linux"):
-            self.player.set_xwindow(self.winId())
+            self.player.set_xwindow(int(self.winId()))
         elif sys.platform == "darwin":
             self.player.set_nsobject(int(self.winId()))
 
@@ -154,18 +165,20 @@ class PlayerWidget(QFrame):
         if self.vlc_available:
             if hasattr(self, 'fullscreen_window') and self.fullscreen_window:
                 self._exit_fullscreen()
-            self.player.stop()
-            self.player.release()
-            self.instance.release()
-            self.vlc_available = False
             
             # Cancel any pending reconnect
             self.reconnect_timer.cancel()
+            
+            # Release VLC resources
+            if hasattr(self, 'resource_manager'):
+                self.resource_manager.release()
+            
+            self.vlc_available = False
 
-    def close_event(self, event):
+    def closeEvent(self, event):
         """Handle cleanup when widget is closed"""
         self.cleanup_vlc()
-        super().close_event(event)
+        super().closeEvent(event)
         
     def _show_status(self, message, duration=2000):
         """Show a temporary status message overlay."""
@@ -205,6 +218,7 @@ class PlayerWidget(QFrame):
             if url.startswith(("rtmp://", "rtsp://")):
                 # Use larger cache for RTMP/RTSP
                 media.add_option("network-caching=1500")
+                media.add_option(":rtsp-tcp")  # Force TCP for RTSP
             elif url.startswith("http"):
                 # Less cache for HTTP/HLS to reduce latency
                 media.add_option("network-caching=1000")
@@ -222,6 +236,7 @@ class PlayerWidget(QFrame):
                 media.add_option(":adaptive-logic=highest")
                 media.add_option(":adaptive-maxwidth=1920")
                 media.add_option(":adaptive-maxheight=1080")
+                media.add_option(":adaptive-maxbitrate=5000")
 
             self.player.set_media(media)
             result = self.player.play()
@@ -238,13 +253,75 @@ class PlayerWidget(QFrame):
             logger.error(error_msg)
             self.placeholder.setText(error_msg)
             self.placeholder.show()
-            raise e
+            self._handle_playback_error(error_msg)
+
+    def _handle_playback_error(self, error_msg: str):
+        """Handle VLC playback errors with auto-reconnect."""
+        current_time = time.time()
+        
+        # Update error tracking
+        if current_time - self.last_error_time > self.error_window:
+            self.error_count = 0
+        self.error_count += 1
+        self.last_error_time = current_time
+        
+        self.placeholder.setText(error_msg)
+        self.placeholder.show()
+        
+        # Check if we should attempt reconnection
+        if (self.current_url and 
+            self.reconnect_attempts < self.max_reconnect_attempts and
+            self.error_count <= self.max_error_count):
+            
+            # Calculate delay with exponential backoff and jitter
+            delay = min(self.reconnect_delay * (2 ** self.reconnect_attempts), self.max_reconnect_delay)
+            jitter = random.uniform(0.5, 1.5)  # Add random jitter
+            delay = delay * jitter
+            
+            self.reconnect_attempts += 1
+            
+            reconnect_msg = (
+                f"Stream connection failed. Reconnecting in {delay:.1f}s... "
+                f"(Attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})"
+            )
+            logger.warning(reconnect_msg)
+            self._show_status(reconnect_msg, duration=int(delay*1000))
+            
+            # Schedule reconnect
+            self.reconnect_timer.cancel()
+            self.reconnect_timer = threading.Timer(delay, self._reconnect)
+            self.reconnect_timer.daemon = True
+            self.reconnect_timer.start()
+        else:
+            if self.error_count > self.max_error_count:
+                final_msg = "Too many errors in a short time. Please check your connection."
+            else:
+                final_msg = f"Stream playback failed after {self.reconnect_attempts} attempts"
+            
+            logger.error(final_msg)
+            self._show_status(final_msg, duration=5000)
+            self.reconnect_attempts = 0
+            self.error_count = 0
+    
+    def _reconnect(self):
+        """Attempt to reconnect to the current stream."""
+        if self.current_url:
+            logger.info(f"Attempting to reconnect to: {self.current_url}")
+            try:
+                # Reset player state before reconnecting
+                self.player.stop()
+                time.sleep(0.1)  # Small delay to ensure clean state
+                self.play(self.current_url)
+            except Exception as e:
+                logger.error(f"Reconnection failed: {str(e)}")
+                self._handle_playback_error(str(e))
 
     def _on_media_playing(self):
         """Handle when media starts playing."""
         self.placeholder.hide()
         self.status_overlay.hide()
         self.reconnect_attempts = 0  # Reset reconnect counter on success
+        self.error_count = 0  # Reset error count on success
 
     def _on_media_stopped(self):
         """Handle when media is stopped."""
@@ -256,38 +333,6 @@ class PlayerWidget(QFrame):
             self._show_status(f"Buffering: {int(cache_percentage)}%")
         else:
             self.status_overlay.hide()
-
-    def _handle_playback_error(self, error_msg):
-        """Handle VLC playback errors with auto-reconnect"""
-        self.placeholder.setText(error_msg)
-        self.placeholder.show()
-        
-        # Try to reconnect if we have a current URL and haven't exceeded max attempts
-        if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
-            self.reconnect_attempts += 1
-            delay = min(2 ** self.reconnect_attempts, 30)  # Exponential backoff with max 30s
-            
-            reconnect_msg = f"Stream connection failed. Reconnecting in {delay}s... (Attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})"
-            logger.warning(reconnect_msg)
-            self._show_status(reconnect_msg, duration=delay*1000)
-            
-            # Schedule reconnect
-            self.reconnect_timer.cancel()
-            self.reconnect_timer = threading.Timer(delay, self._reconnect)
-            self.reconnect_timer.daemon = True
-            self.reconnect_timer.start()
-        else:
-            logger.error(f"Stream playback failed after {self.reconnect_attempts} attempts")
-            self._show_status("Stream unavailable", duration=5000)
-    
-    def _reconnect(self):
-        """Attempt to reconnect to the current stream."""
-        if self.current_url:
-            logger.info(f"Attempting to reconnect to: {self.current_url}")
-            try:
-                self.play(self.current_url)
-            except Exception as e:
-                logger.error(f"Reconnection failed: {str(e)}")
 
     def stop(self):
         """Stop media playback."""

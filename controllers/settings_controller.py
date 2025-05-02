@@ -117,7 +117,18 @@ class SettingsController:
             default = self.DEFAULT_SETTINGS[key]
             
         return self.db.get_setting(key, default)
+    
+    def set_setting(self, key: str, value: str):
+        """Set a setting value.
+        
+        Args:
+            key: The setting key.
+            value: The setting value.
+        """
+        self.save_setting(key, value)
+        logger.debug(f"Set setting {key}: {value}")
 
+        
     def get_bool_setting(self, key: str, default: bool = None) -> bool:
         """Get a boolean setting value.
         

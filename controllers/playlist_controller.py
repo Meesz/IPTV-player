@@ -11,6 +11,7 @@ import logging
 from PyQt6.QtCore import QObject, pyqtSignal
 from models.playlist import Playlist
 from utils.m3u_parser import M3UParser
+from utils.xtream_parser import XTREAMParser
 from views.notification import NotificationType
 
 # Configure logger
@@ -39,6 +40,10 @@ class PlaylistController(QObject):
         Returns:
             bool: True if loading succeeded, False otherwise.
         """
+        # Check if this is an XTREAM URL
+        if is_url and self._is_xtream_url(path):
+            return self._load_xtream_playlist(path)
+            
         tmp_path = None
         try:
             if is_url:
@@ -119,6 +124,68 @@ class PlaylistController(QObject):
                 except Exception as e:
                     logger.warning(f"Failed to remove temporary file: {str(e)}")
 
+    def _is_xtream_url(self, url: str) -> bool:
+        """Check if the URL is an XTREAM service URL.
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            bool: True if the URL is an XTREAM service URL
+        """
+        return "/player_api.php" in url or "/get.php" in url
+
+    def _load_xtream_playlist(self, url: str) -> bool:
+        """Load a playlist from an XTREAM service.
+        
+        Args:
+            url: The XTREAM service URL
+            
+        Returns:
+            bool: True if loading succeeded, False otherwise
+        """
+        try:
+            # Extract credentials from URL
+            base_url = url.split("/player_api.php")[0]
+            username = self.settings.get_setting("xtream_username", "")
+            password = self.settings.get_setting("xtream_password", "")
+            
+            if not username or not password:
+                # Show dialog to get credentials
+                from views.xtream_dialog import XTREAMDialog
+                dialog = XTREAMDialog(self.window)
+                if dialog.exec():
+                    username = dialog.username
+                    password = dialog.password
+                    # Save credentials
+                    self.settings.save_setting("xtream_username", username)
+                    self.settings.save_setting("xtream_password", password)
+                else:
+                    return False
+            
+            # Create and use XTREAM parser
+            parser = XTREAMParser(base_url, username, password)
+            self.playlist = parser.parse()
+            
+            # Save settings
+            self.settings.save_setting("last_playlist", url)
+            self.settings.save_setting("last_playlist_is_url", "true")
+            
+            logger.info(f"Loaded XTREAM playlist with {len(self.playlist.channels)} channels")
+            self._update_ui()
+            
+            # Emit the playlist_loaded signal
+            logger.debug("Emitting playlist_loaded signal")
+            self.playlist_loaded.emit(self.playlist)
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to load XTREAM playlist: {str(e)}"
+            logger.error(error_msg)
+            self.window.show_notification(error_msg, NotificationType.ERROR)
+            return False
+
     def _update_ui(self):
         """Update UI elements after playlist changes."""
         self._update_categories()
@@ -147,3 +214,93 @@ class PlaylistController(QObject):
     def refresh_channels(self):
         """Update the channel list display based on current category and filters."""
         self._update_channel_list()
+
+    def save_playlist(self, path: str, is_url: bool = False) -> bool:
+        """Save a playlist to the settings.
+        
+        Args:
+            path: The path or URL of the playlist
+            is_url: Whether the path is a URL
+            
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        try:
+            # Get existing playlists
+            playlists = self.settings.get_setting("saved_playlists", [])
+            
+            # Add new playlist
+            playlists.append({
+                "path": path,
+                "is_url": is_url
+            })
+            
+            # Save back to settings
+            self.settings.save_setting("saved_playlists", playlists)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save playlist: {str(e)}")
+            return False
+
+    def get_saved_playlists(self) -> list:
+        """Get all saved playlists.
+        
+        Returns:
+            list: List of dictionaries containing path and is_url
+        """
+        return self.settings.get_setting("saved_playlists", [])
+
+    def remove_playlist(self, path: str, is_url: bool = False) -> bool:
+        """Remove a playlist from the settings.
+        
+        Args:
+            path: The path or URL of the playlist
+            is_url: Whether the path is a URL
+            
+        Returns:
+            bool: True if removed successfully, False otherwise
+        """
+        try:
+            # Get existing playlists
+            playlists = self.settings.get_setting("saved_playlists", [])
+            
+            # Remove the playlist
+            playlists = [p for p in playlists if p["path"] != path or p.get("is_url", False) != is_url]
+            
+            # Save back to settings
+            self.settings.save_setting("saved_playlists", playlists)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to remove playlist: {str(e)}")
+            return False
+
+    def update_playlist(self, old_path: str, new_path: str, is_url: bool = False) -> bool:
+        """Update a playlist in the settings.
+        
+        Args:
+            old_path: The old path or URL of the playlist
+            new_path: The new path or URL of the playlist
+            is_url: Whether the path is a URL
+            
+        Returns:
+            bool: True if updated successfully, False otherwise
+        """
+        try:
+            # Get existing playlists
+            playlists = self.settings.get_setting("saved_playlists", [])
+            
+            # Update the playlist
+            for playlist in playlists:
+                if playlist["path"] == old_path and playlist.get("is_url", False) == is_url:
+                    playlist["path"] = new_path
+                    break
+            
+            # Save back to settings
+            self.settings.save_setting("saved_playlists", playlists)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update playlist: {str(e)}")
+            return False
