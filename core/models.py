@@ -1,0 +1,123 @@
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Set, Optional, Any
+from pathlib import Path
+
+@dataclass
+class Channel:
+    """Represents a TV channel with its properties."""
+    name: str
+    url: str
+    group: str = ""
+    logo: str = ""
+    epg_id: str = ""
+    channel_number: int = 0
+    time_shift: int = 0
+    id: Optional[int] = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Channel):
+            return False
+        return self.url == other.url
+
+    def __hash__(self) -> int:
+        return hash(self.url)
+
+@dataclass
+class Playlist:
+    """Represents a collection of channels from an M3U/M3U8 playlist."""
+    name: str = "Unnamed Playlist"
+    source_path: str = ""
+    source_hash: str = ""
+    channels: List[Channel] = field(default_factory=list)
+    last_updated: Optional[int] = None
+    
+    # Internal indexes for faster lookups
+    _categories: Dict[str, List[Channel]] = field(default_factory=dict)
+    _categories_set: Set[str] = field(default_factory=set)
+    _url_index: Dict[str, Channel] = field(default_factory=dict)
+    _name_index: Dict[str, List[Channel]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self._rebuild_indexes()
+
+    def add_channel(self, channel: Channel) -> None:
+        self.channels.append(channel)
+        self._update_indexes(channel)
+
+    def _update_indexes(self, channel: Channel) -> None:
+        category = channel.group or "Uncategorized"
+        if category not in self._categories:
+            self._categories[category] = []
+        self._categories[category].append(channel)
+        self._categories_set.add(category)
+        
+        self._url_index[channel.url] = channel
+        
+        if channel.name not in self._name_index:
+            self._name_index[channel.name] = []
+        self._name_index[channel.name].append(channel)
+
+    def _rebuild_indexes(self) -> None:
+        self._categories.clear()
+        self._categories_set.clear()
+        self._url_index.clear()
+        self._name_index.clear()
+        for channel in self.channels:
+            self._update_indexes(channel)
+
+    @property
+    def categories(self) -> List[str]:
+        return sorted(self._categories_set)
+
+    def get_channels_by_category(self, category: str) -> List[Channel]:
+        return self._categories.get(category, [])
+
+    def get_channel_by_url(self, url: str) -> Optional[Channel]:
+        return self._url_index.get(url)
+
+@dataclass
+class Program:
+    """Represents a TV program with its details."""
+    title: str
+    start_time: datetime
+    end_time: datetime
+    description: str = ""
+    category: str = ""
+
+    @property
+    def duration_minutes(self) -> int:
+        return int((self.end_time - self.start_time).total_seconds() / 60)
+
+@dataclass
+class EPGChannel:
+    """Holds EPG data for a specific channel."""
+    channel_id: str
+    programs: List[Program] = field(default_factory=list)
+
+    def get_current_program(self, current_time: Optional[datetime] = None) -> Optional[Program]:
+        if current_time is None:
+            current_time = datetime.now()
+        for program in self.programs:
+            if program.start_time <= current_time < program.end_time:
+                return program
+        return None
+
+    def get_upcoming_programs(self, current_time: Optional[datetime] = None, limit: int = 5) -> List[Program]:
+        if current_time is None:
+            current_time = datetime.now()
+        upcoming = [p for p in self.programs if p.start_time > current_time]
+        upcoming.sort(key=lambda p: p.start_time)
+        return upcoming[:limit]
+
+@dataclass
+class Settings:
+    """Application settings."""
+    theme: str = "dark"
+    volume: int = 100
+    last_playlist_path: Optional[str] = None
+    last_channel_url: Optional[str] = None
+    window_width: int = 1280
+    window_height: int = 720
+    is_maximized: bool = False
+    is_muted: bool = False

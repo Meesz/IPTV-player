@@ -1,0 +1,2852 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    pylint.yml
+app/
+  __init__.py
+  main.py
+core/
+  services/
+    __init__.py
+    epg_service.py
+    favorites_service.py
+    playlist_service.py
+    settings_service.py
+  __init__.py
+  models.py
+infra/
+  db/
+    __init__.py
+    epg_repository.py
+    favorites_repository.py
+    playlist_repository.py
+    settings_repository.py
+    sqlite_connection.py
+  parsers/
+    __init__.py
+    epg_parser.py
+    m3u_parser.py
+  playback/
+    __init__.py
+    vlc_backend.py
+  __init__.py
+tests/
+  test_imports.py
+ui/
+  controllers/
+    __init__.py
+    epg_controller.py
+    main_controller.py
+    playlist_controller.py
+    settings_controller.py
+  dialogs/
+    __init__.py
+    playlist_manager_dialog.py
+  styles/
+    __init__.py
+    styles.py
+    themes.py
+  widgets/
+    __init__.py
+    epg_widget.py
+    left_panel.py
+    menu_bar.py
+    notification.py
+    player_widget.py
+    right_panel.py
+    search_bar.py
+  windows/
+    __init__.py
+    main_window.py
+  __init__.py
+.gitignore
+.pylintrc
+MANIFEST.in
+README.md
+requirements.txt
+walkthrough.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="app/main.py">
+import sys
+import logging
+from PyQt6.QtWidgets import QApplication
+from infra.db.sqlite_connection import SQLiteConnection
+from infra.db.playlist_repository import PlaylistRepository
+from infra.db.settings_repository import SettingsRepository
+from infra.db.favorites_repository import FavoritesRepository
+from infra.db.epg_repository import EPGRepository
+from core.services.playlist_service import PlaylistService
+from core.services.epg_service import EPGService
+from core.services.settings_service import SettingsService
+from core.services.favorites_service import FavoritesService
+from ui.controllers.playlist_controller import PlaylistController
+from ui.controllers.epg_controller import EPGController
+from ui.controllers.settings_controller import SettingsController
+from ui.controllers.main_controller import MainController
+from ui.windows.main_window import MainWindow
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("iptv_player.log")
+    ]
+)
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Simple IPTV Player")
+
+    # Infrastructure
+    db_connection = SQLiteConnection()
+    playlist_repo = PlaylistRepository(db_connection)
+    settings_repo = SettingsRepository(db_connection)
+    favorites_repo = FavoritesRepository(db_connection)
+    epg_repo = EPGRepository(db_connection)
+
+    # Services
+    playlist_service = PlaylistService(playlist_repo)
+    epg_service = EPGService(epg_repo)
+    settings_service = SettingsService(settings_repo)
+    favorites_service = FavoritesService(favorites_repo)
+
+    # Controllers
+    playlist_controller = PlaylistController(playlist_service)
+    epg_controller = EPGController(epg_service)
+    settings_controller = SettingsController(settings_service)
+    main_controller = MainController(playlist_controller, epg_controller, settings_controller)
+
+    # UI
+    window = MainWindow(main_controller, playlist_controller, epg_controller, settings_controller)
+    window.show()
+
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="core/services/epg_service.py">
+import logging
+from typing import Optional, List, Dict
+from datetime import datetime
+from core.models import Program, EPGChannel
+from infra.parsers.epg_parser import EPGParser
+from infra.db.epg_repository import EPGRepository
+
+logger = logging.getLogger(__name__)
+
+class EPGService:
+    def __init__(self, repository: EPGRepository):
+        self.repository = repository
+        self._channels: Dict[str, EPGChannel] = {}
+
+    def load_epg(self, path: str) -> None:
+        """Load EPG data from a file."""
+        logger.info(f"Loading EPG from: {path}")
+        self._channels = EPGParser.parse(path)
+        # Optionally persist to DB? The requirements say "Provide EPG current/upcoming programs"
+        # and "EPGRepository" exists.
+        # If we load from XML, we might want to cache it in DB or just keep in memory.
+        # The existing implementation seemed to parse XML on load.
+        # Let's keep it in memory for now, but also allow saving to DB if needed.
+        
+    def get_program_for_channel(self, channel_id: str, current_time: Optional[datetime] = None) -> Optional[Program]:
+        if channel_id in self._channels:
+            return self._channels[channel_id].get_current_program(current_time)
+        # Fallback to DB if not in memory?
+        return self.repository.get_current_program(channel_id)
+
+    def get_upcoming_programs(self, channel_id: str, limit: int = 5) -> List[Program]:
+        if channel_id in self._channels:
+            return self._channels[channel_id].get_upcoming_programs(limit=limit)
+        return self.repository.get_upcoming_programs(channel_id, limit)
+</file>
+
+<file path="core/services/favorites_service.py">
+from typing import List
+from core.models import Channel
+from infra.db.favorites_repository import FavoritesRepository
+
+class FavoritesService:
+    def __init__(self, repository: FavoritesRepository):
+        self.repository = repository
+
+    def add_favorite(self, channel: Channel) -> bool:
+        return self.repository.add_favorite(channel)
+
+    def remove_favorite(self, url: str) -> bool:
+        return self.repository.remove_favorite(url)
+
+    def get_favorites(self) -> List[Channel]:
+        return self.repository.get_favorites()
+
+    def is_favorite(self, url: str) -> bool:
+        return self.repository.is_favorite(url)
+</file>
+
+<file path="core/services/playlist_service.py">
+import os
+import tempfile
+import logging
+import requests
+from requests.exceptions import RequestException, Timeout
+from typing import Optional, List, Tuple
+from core.models import Playlist
+from infra.parsers.m3u_parser import M3UParser
+from infra.db.playlist_repository import PlaylistRepository
+
+logger = logging.getLogger(__name__)
+
+class PlaylistService:
+    def __init__(self, repository: PlaylistRepository):
+        self.repository = repository
+        self._current_playlist: Optional[Playlist] = None
+
+    @property
+    def current_playlist(self) -> Optional[Playlist]:
+        return self._current_playlist
+
+    def load_playlist(self, path: str, is_url: bool = False, max_retries: int = 3) -> Playlist:
+        """Load a playlist from a file path or URL."""
+        if is_url:
+            self._current_playlist = self._download_and_parse_playlist(path, max_retries)
+        else:
+            logger.info(f"Loading playlist from local file: {path}")
+            self._current_playlist = M3UParser.parse(path)
+        
+        return self._current_playlist
+
+    def _download_and_parse_playlist(self, url: str, max_retries: int) -> Playlist:
+        logger.info(f"Downloading playlist from URL: {url}")
+        content = self._download_with_retries(url, max_retries)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8") as tmp_file:
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+
+        try:
+            logger.info("Parsing downloaded playlist")
+            return M3UParser.parse(tmp_path)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary file: {str(e)}")
+
+    def _download_with_retries(self, url: str, max_retries: int) -> bytes:
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"Download attempt {attempt + 1}/{max_retries}")
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                return response.content
+            except Timeout:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Timeout, retrying ({attempt + 1}/{max_retries})")
+                    continue
+                raise TimeoutError(f"Timed out downloading playlist after {max_retries} attempts")
+            except RequestException as e:
+                raise RuntimeError(f"Error downloading playlist: {str(e)}")
+        raise RuntimeError("Unexpected error in download retry logic")
+
+    def save_playlist_ref(self, name: str, path: str, is_url: bool):
+        """Save a reference to the playlist in the DB."""
+        # This is a bit simplistic, assuming we just append or overwrite.
+        # For now, let's just use the repository to save the current list.
+        # But wait, the repository saves a list of playlists.
+        # We need to fetch existing, add/update, and save back.
+        playlists = self.repository.get_playlists()
+        # Remove existing if same path
+        playlists = [p for p in playlists if p[1] != path]
+        playlists.append((name, path, is_url))
+        self.repository.save_playlists(playlists)
+
+    def get_saved_playlists(self) -> List[Tuple[str, str, bool]]:
+        return self.repository.get_playlists()
+</file>
+
+<file path="core/services/settings_service.py">
+from typing import Any
+from core.models import Settings
+from infra.db.settings_repository import SettingsRepository
+
+class SettingsService:
+    def __init__(self, repository: SettingsRepository):
+        self.repository = repository
+        self._settings = Settings()
+        self.load_settings()
+
+    def load_settings(self):
+        self._settings.theme = self.repository.get_setting("theme", "dark")
+        self._settings.volume = int(self.repository.get_setting("volume", "100"))
+        self._settings.last_playlist_path = self.repository.get_setting("last_playlist", "")
+        self._settings.last_channel_url = self.repository.get_setting("last_channel_url", "")
+        # ... load other settings
+
+    def get_setting(self, key: str) -> Any:
+        return getattr(self._settings, key, None)
+
+    def save_setting(self, key: str, value: Any):
+        setattr(self._settings, key, value)
+        self.repository.save_setting(key, str(value))
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+</file>
+
+<file path="core/models.py">
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Set, Optional, Any
+from pathlib import Path
+
+@dataclass
+class Channel:
+    """Represents a TV channel with its properties."""
+    name: str
+    url: str
+    group: str = ""
+    logo: str = ""
+    epg_id: str = ""
+    channel_number: int = 0
+    time_shift: int = 0
+    id: Optional[int] = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Channel):
+            return False
+        return self.url == other.url
+
+    def __hash__(self) -> int:
+        return hash(self.url)
+
+@dataclass
+class Playlist:
+    """Represents a collection of channels from an M3U/M3U8 playlist."""
+    name: str = "Unnamed Playlist"
+    source_path: str = ""
+    source_hash: str = ""
+    channels: List[Channel] = field(default_factory=list)
+    last_updated: Optional[int] = None
+    
+    # Internal indexes for faster lookups
+    _categories: Dict[str, List[Channel]] = field(default_factory=dict)
+    _categories_set: Set[str] = field(default_factory=set)
+    _url_index: Dict[str, Channel] = field(default_factory=dict)
+    _name_index: Dict[str, List[Channel]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self._rebuild_indexes()
+
+    def add_channel(self, channel: Channel) -> None:
+        self.channels.append(channel)
+        self._update_indexes(channel)
+
+    def _update_indexes(self, channel: Channel) -> None:
+        category = channel.group or "Uncategorized"
+        if category not in self._categories:
+            self._categories[category] = []
+        self._categories[category].append(channel)
+        self._categories_set.add(category)
+        
+        self._url_index[channel.url] = channel
+        
+        if channel.name not in self._name_index:
+            self._name_index[channel.name] = []
+        self._name_index[channel.name].append(channel)
+
+    def _rebuild_indexes(self) -> None:
+        self._categories.clear()
+        self._categories_set.clear()
+        self._url_index.clear()
+        self._name_index.clear()
+        for channel in self.channels:
+            self._update_indexes(channel)
+
+    @property
+    def categories(self) -> List[str]:
+        return sorted(self._categories_set)
+
+    def get_channels_by_category(self, category: str) -> List[Channel]:
+        return self._categories.get(category, [])
+
+    def get_channel_by_url(self, url: str) -> Optional[Channel]:
+        return self._url_index.get(url)
+
+@dataclass
+class Program:
+    """Represents a TV program with its details."""
+    title: str
+    start_time: datetime
+    end_time: datetime
+    description: str = ""
+    category: str = ""
+
+    @property
+    def duration_minutes(self) -> int:
+        return int((self.end_time - self.start_time).total_seconds() / 60)
+
+@dataclass
+class EPGChannel:
+    """Holds EPG data for a specific channel."""
+    channel_id: str
+    programs: List[Program] = field(default_factory=list)
+
+    def get_current_program(self, current_time: Optional[datetime] = None) -> Optional[Program]:
+        if current_time is None:
+            current_time = datetime.now()
+        for program in self.programs:
+            if program.start_time <= current_time < program.end_time:
+                return program
+        return None
+
+    def get_upcoming_programs(self, current_time: Optional[datetime] = None, limit: int = 5) -> List[Program]:
+        if current_time is None:
+            current_time = datetime.now()
+        upcoming = [p for p in self.programs if p.start_time > current_time]
+        upcoming.sort(key=lambda p: p.start_time)
+        return upcoming[:limit]
+
+@dataclass
+class Settings:
+    """Application settings."""
+    theme: str = "dark"
+    volume: int = 100
+    last_playlist_path: Optional[str] = None
+    last_channel_url: Optional[str] = None
+    window_width: int = 1280
+    window_height: int = 720
+    is_maximized: bool = False
+    is_muted: bool = False
+</file>
+
+<file path="infra/db/epg_repository.py">
+from typing import List, Optional
+from datetime import datetime
+from infra.db.sqlite_connection import SQLiteConnection
+from core.models import Program
+
+class EPGRepository:
+    def __init__(self, db: SQLiteConnection):
+        self.db = db
+
+    def save_program(self, channel_id: str, program: Program) -> bool:
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO epg_data 
+                    (channel_id, start_time, end_time, title, description)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        channel_id,
+                        int(program.start_time.timestamp()),
+                        int(program.end_time.timestamp()),
+                        program.title,
+                        program.description,
+                    ),
+                )
+            return True
+        except Exception:
+            return False
+
+    def get_current_program(self, channel_id: str) -> Optional[Program]:
+        try:
+            current_time = int(datetime.now().timestamp())
+            with self.db.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM epg_data 
+                    WHERE channel_id = ? 
+                    AND start_time <= ? 
+                    AND end_time > ?
+                    """,
+                    (channel_id, current_time, current_time),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return Program(
+                        title=row["title"],
+                        start_time=datetime.fromtimestamp(row["start_time"]),
+                        end_time=datetime.fromtimestamp(row["end_time"]),
+                        description=row["description"],
+                    )
+            return None
+        except Exception:
+            return None
+
+    def get_upcoming_programs(self, channel_id: str, limit: int = 5) -> List[Program]:
+        try:
+            current_time = int(datetime.now().timestamp())
+            with self.db.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM epg_data 
+                    WHERE channel_id = ? 
+                    AND end_time > ?
+                    ORDER BY start_time
+                    LIMIT ?
+                    """,
+                    (channel_id, current_time, limit),
+                )
+                return [
+                    Program(
+                        title=row["title"],
+                        start_time=datetime.fromtimestamp(row["start_time"]),
+                        end_time=datetime.fromtimestamp(row["end_time"]),
+                        description=row["description"],
+                    )
+                    for row in cursor.fetchall()
+                ]
+        except Exception:
+            return []
+</file>
+
+<file path="infra/db/favorites_repository.py">
+from typing import List
+from infra.db.sqlite_connection import SQLiteConnection
+from core.models import Channel
+
+class FavoritesRepository:
+    def __init__(self, db: SQLiteConnection):
+        self.db = db
+
+    def add_favorite(self, channel: Channel) -> bool:
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO favorites 
+                       (name, url, group_name, logo, epg_id) 
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (channel.name, channel.url, channel.group, channel.logo, channel.epg_id)
+                )
+            return True
+        except Exception:
+            return False
+
+    def remove_favorite(self, url: str) -> bool:
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute("DELETE FROM favorites WHERE url = ?", (url,))
+            return True
+        except Exception:
+            return False
+
+    def get_favorites(self) -> List[Channel]:
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("SELECT * FROM favorites")
+                return [Channel(
+                    name=row["name"],
+                    url=row["url"],
+                    group=row["group_name"],
+                    logo=row["logo"],
+                    epg_id=row["epg_id"]
+                ) for row in cursor.fetchall()]
+        except Exception:
+            return []
+
+    def is_favorite(self, url: str) -> bool:
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("SELECT 1 FROM favorites WHERE url = ?", (url,))
+                return cursor.fetchone() is not None
+        except Exception:
+            return False
+</file>
+
+<file path="infra/db/playlist_repository.py">
+from typing import List, Tuple
+from infra.db.sqlite_connection import SQLiteConnection
+
+class PlaylistRepository:
+    def __init__(self, db: SQLiteConnection):
+        self.db = db
+
+    def save_playlists(self, playlists: List[Tuple[str, str, bool]]) -> bool:
+        """Save a list of playlists (name, path, is_url)."""
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute("DELETE FROM playlists")
+                for name, path, is_url in playlists:
+                    conn.execute(
+                        "INSERT INTO playlists (name, path, is_url) VALUES (?, ?, ?)",
+                        (name, path, 1 if is_url else 0)
+                    )
+            return True
+        except Exception:
+            return False
+
+    def get_playlists(self) -> List[Tuple[str, str, bool]]:
+        """Retrieve all playlists."""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("SELECT name, path, is_url FROM playlists")
+                return [(row["name"], row["path"], bool(row["is_url"])) for row in cursor.fetchall()]
+        except Exception:
+            return []
+</file>
+
+<file path="infra/db/settings_repository.py">
+from infra.db.sqlite_connection import SQLiteConnection
+
+class SettingsRepository:
+    def __init__(self, db: SQLiteConnection):
+        self.db = db
+
+    def save_setting(self, key: str, value: str) -> None:
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    (key, value)
+                )
+        except Exception:
+            pass
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                return row["value"] if row else default
+        except Exception:
+            return default
+</file>
+
+<file path="infra/db/sqlite_connection.py">
+import sqlite3
+import logging
+from pathlib import Path
+from typing import Optional, Generator
+from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
+
+class SQLiteConnection:
+    """Manages SQLite database connection and initialization."""
+
+    def __init__(self, db_path: Optional[Path] = None):
+        if db_path is None:
+            self.db_path = Path.home() / ".simple_iptv" / "database.db"
+        else:
+            self.db_path = db_path
+        
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_database()
+
+    @contextmanager
+    def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Get a database connection context manager."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        finally:
+            conn.close()
+
+    def _init_database(self):
+        """Initialize the database with required tables."""
+        try:
+            with self.get_connection() as conn:
+                # Enable WAL mode
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=-2000")
+                conn.execute("PRAGMA temp_store=MEMORY")
+
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS playlists (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        is_url BOOLEAN NOT NULL DEFAULT 0
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS epg_data (
+                        channel_id TEXT,
+                        start_time INTEGER,
+                        end_time INTEGER,
+                        title TEXT,
+                        description TEXT,
+                        PRIMARY KEY (channel_id, start_time)
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS favorites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        url TEXT NOT NULL UNIQUE,
+                        group_name TEXT,
+                        logo TEXT,
+                        epg_id TEXT
+                    );
+                    
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
+                """)
+                logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+</file>
+
+<file path="infra/parsers/epg_parser.py">
+import os
+import logging
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from typing import Dict
+from core.models import Program, EPGChannel
+
+logger = logging.getLogger(__name__)
+
+class EPGParser:
+    """Utility class for parsing EPG data from XMLTV files."""
+
+    @staticmethod
+    def parse_date(date_str: str) -> datetime:
+        """Parse various EPG date formats into a datetime object."""
+        date_str = date_str.split("+")[0].split("-")[0]
+        date_str = date_str.replace(" ", "").replace("T", "")
+
+        try:
+            return datetime.strptime(date_str, "%Y%m%d%H%M%S")
+        except ValueError:
+            try:
+                return datetime.strptime(date_str, "%Y%m%d%H%M")
+            except ValueError as exc:
+                raise ValueError(f"Unsupported date format: {date_str}") from exc
+
+    @staticmethod
+    def parse(file_path: str) -> Dict[str, EPGChannel]:
+        """Parse an XMLTV file and return a dictionary of EPGChannels."""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"EPG file not found: {file_path}")
+
+        if not os.path.getsize(file_path):
+            raise ValueError("EPG file is empty")
+
+        try:
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+
+            if root.tag != "tv":
+                raise ValueError("Invalid XMLTV format: missing root 'tv' element")
+
+            epg_data: Dict[str, EPGChannel] = {}
+            program_count = 0
+
+            for program in root.findall(".//programme"):
+                channel_id = program.get("channel")
+                if not channel_id:
+                    continue
+
+                try:
+                    start_time = EPGParser.parse_date(program.get("start", ""))
+                    end_time = EPGParser.parse_date(program.get("stop", ""))
+                except ValueError as e:
+                    logger.warning(f"Skipping program due to invalid date: {e}")
+                    continue
+
+                title = program.find("title")
+                title_text = title.text if title is not None else "No Title"
+
+                desc = program.find("desc")
+                desc_text = desc.text if desc is not None else ""
+
+                category = program.find("category")
+                category_text = category.text if category is not None else ""
+
+                prog = Program(
+                    title=title_text,
+                    start_time=start_time,
+                    end_time=end_time,
+                    description=desc_text,
+                    category=category_text,
+                )
+
+                if channel_id not in epg_data:
+                    epg_data[channel_id] = EPGChannel(channel_id=channel_id)
+                
+                epg_data[channel_id].programs.append(prog)
+                program_count += 1
+
+            logger.info(f"EPG loaded: {len(epg_data)} channels, {program_count} programs")
+            return epg_data
+
+        except Exception as e:
+            raise ValueError(f"Failed to parse EPG file: {str(e)}") from e
+</file>
+
+<file path="infra/parsers/m3u_parser.py">
+import re
+import logging
+import hashlib
+from pathlib import Path
+from typing import TextIO, Dict, Optional, List
+from core.models import Channel, Playlist
+
+logger = logging.getLogger(__name__)
+
+class M3UParser:
+    """Utility class for parsing M3U/M3U8 playlist files."""
+
+    EXTINF_REGEX = re.compile(
+        r"#EXTINF:-1"
+        r'(?:.*?tvg-id="(.*?)")?'
+        r'(?:.*?tvg-name="(.*?)")?'
+        r'(?:.*?group-title="(.*?)")?'
+        r'(?:.*?tvg-logo="(.*?)")?'
+        r'(?:.*?tvg-chno="(.*?)")?'
+        r'(?:.*?tvg-shift="(.*?)")?'
+        r",(.+)$"
+    )
+
+    @staticmethod
+    def parse(file_path: str | Path) -> Playlist:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"M3U file not found: {file_path}")
+
+        playlist = Playlist()
+        playlist.source_path = str(file_path)
+        
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+                playlist.source_hash = hashlib.md5(content).hexdigest()
+        except Exception as e:
+            logger.warning(f"Could not calculate source hash: {e}")
+            playlist.source_hash = ""
+
+        try:
+            # Try UTF-8 first
+            with open(file_path, "r", encoding="utf-8") as f:
+                M3UParser._validate_header(f)
+                channels = M3UParser._parse_channels(f)
+                for channel in channels:
+                    playlist.add_channel(channel)
+            return playlist
+
+        except UnicodeDecodeError:
+            logger.warning(f"UTF-8 decode failed for {file_path}, trying ISO-8859-1")
+            try:
+                with open(file_path, "r", encoding="ISO-8859-1") as f:
+                    M3UParser._validate_header(f)
+                    channels = M3UParser._parse_channels(f)
+                    for channel in channels:
+                        playlist.add_channel(channel)
+                return playlist
+            except Exception as e:
+                raise ValueError(f"Failed to parse playlist with multiple encodings") from e
+        except Exception as e:
+            raise ValueError(f"Error parsing M3U file: {str(e)}") from e
+
+    @staticmethod
+    def _validate_header(file: TextIO) -> None:
+        first_line = file.readline().strip()
+        if not first_line:
+            raise ValueError("Empty M3U file")
+        if not first_line.startswith("#EXTM3U"):
+            raise ValueError("Invalid M3U file format - missing #EXTM3U header")
+
+    @staticmethod
+    def _parse_channels(file: TextIO) -> List[Channel]:
+        channels: List[Channel] = []
+        current_channel: Optional[Dict[str, str]] = None
+
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("#EXTINF"):
+                match = M3UParser.EXTINF_REGEX.match(line)
+                if match:
+                    epg_id = match.group(1) or ""
+                    name = match.group(2) or match.group(7) or "Unknown Channel"
+                    group = match.group(3) or "Uncategorized"
+                    logo = match.group(4) or ""
+                    channel_number = match.group(5) or ""
+                    time_shift = match.group(6) or "0"
+                    
+                    current_channel = {
+                        "name": name,
+                        "group": group,
+                        "logo": logo,
+                        "epg_id": epg_id,
+                        "channel_number": channel_number,
+                        "time_shift": time_shift
+                    }
+            elif not line.startswith("#") and current_channel is not None:
+                try:
+                    channel_data = dict(current_channel)
+                    
+                    channel = Channel(
+                        name=channel_data.get("name", "Unknown"),
+                        url=line,
+                        group=channel_data.get("group", "Uncategorized"),
+                        logo=channel_data.get("logo", ""),
+                        epg_id=channel_data.get("epg_id", ""),
+                    )
+                    
+                    if "channel_number" in channel_data and channel_data["channel_number"]:
+                        try:
+                            channel.channel_number = int(channel_data["channel_number"])
+                        except ValueError:
+                            pass
+                            
+                    if "time_shift" in channel_data and channel_data["time_shift"]:
+                        try:
+                            channel.time_shift = int(channel_data["time_shift"])
+                        except ValueError:
+                            pass
+                    
+                    channels.append(channel)
+                except Exception:
+                    pass
+                    
+                current_channel = None
+
+        return channels
+</file>
+
+<file path="infra/playback/vlc_backend.py">
+import os
+import sys
+import logging
+from typing import Optional, Tuple, Any
+
+logger = logging.getLogger(__name__)
+
+class VLCBackend:
+    """Manages VLC initialization and provides a clean interface for media playback."""
+
+    _instance = None
+    _vlc = None
+
+    @classmethod
+    def initialize(cls) -> Tuple[bool, Optional[str]]:
+        """Initialize VLC environment before application starts."""
+        try:
+            # Try to determine Python architecture
+            is_64bits = sys.maxsize > 2**32
+
+            # Set up Windows environment first
+            if sys.platform == "win32":
+                vlc_path = (
+                    "C:\\Program Files\\VideoLAN\\VLC"
+                    if is_64bits
+                    else "C:\\Program Files (x86)\\VideoLAN\\VLC"
+                )
+                if not os.path.exists(vlc_path):
+                    error_msg = (
+                        f"Error: VLC not found in {vlc_path}\n"
+                        f"Please install {'64' if is_64bits else '32'}-bit VLC"
+                    )
+                    return False, error_msg
+
+                os.environ["PATH"] = vlc_path + ";" + os.environ["PATH"]
+                os.add_dll_directory(vlc_path)
+
+            # Now try to import VLC
+            try:
+                import vlc
+                cls._vlc = vlc
+                # Add some default options?
+                cls._instance = cls._vlc.Instance()
+                return True, None
+            except ImportError as e:
+                error_msg = f"Failed to import VLC: {str(e)}"
+                logger.error(error_msg)
+                return False, error_msg
+
+        except Exception as e:
+            error_msg = f"Failed to initialize VLC: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    @classmethod
+    def get_instance(cls) -> Any:
+        """Get the VLC instance."""
+        return cls._instance
+
+    @classmethod
+    def get_vlc(cls) -> Any:
+        """Get the VLC module."""
+        return cls._vlc
+
+    @classmethod
+    def create_player(cls) -> Any:
+        """Create a new media player instance."""
+        if not cls._instance:
+            raise RuntimeError("VLC not initialized. Call initialize() first.")
+        return cls._instance.media_player_new()
+</file>
+
+<file path="tests/test_imports.py">
+import sys
+import os
+
+# Add current directory to path
+sys.path.append(os.getcwd())
+
+try:
+    from core.models import Channel, Playlist, Settings
+    print("Core models imported")
+    
+    from core.services.playlist_service import PlaylistService
+    print("PlaylistService imported")
+    
+    from infra.db.sqlite_connection import SQLiteConnection
+    print("SQLiteConnection imported")
+    
+    from infra.parsers.m3u_parser import M3UParser
+    print("M3UParser imported")
+    
+    from ui.controllers.main_controller import MainController
+    print("MainController imported")
+    
+    print("All imports successful")
+except Exception as e:
+    print(f"Import failed: {e}")
+    sys.exit(1)
+</file>
+
+<file path="ui/controllers/epg_controller.py">
+from PyQt6.QtCore import QObject, pyqtSignal
+from core.models import Program
+from core.services.epg_service import EPGService
+
+class EPGController(QObject):
+    program_updated = pyqtSignal(Program)
+
+    def __init__(self, service: EPGService):
+        super().__init__()
+        self.service = service
+
+    def load_epg(self, path: str):
+        try:
+            self.service.load_epg(path)
+        except Exception:
+            pass # Handle error
+
+    def get_current_program(self, channel_id: str):
+        return self.service.get_program_for_channel(channel_id)
+
+    def get_upcoming_programs(self, channel_id: str):
+        return self.service.get_upcoming_programs(channel_id)
+</file>
+
+<file path="ui/controllers/main_controller.py">
+from PyQt6.QtCore import QObject
+from ui.controllers.playlist_controller import PlaylistController
+from ui.controllers.epg_controller import EPGController
+from ui.controllers.settings_controller import SettingsController
+
+class MainController(QObject):
+    def __init__(self, 
+                 playlist_controller: PlaylistController,
+                 epg_controller: EPGController,
+                 settings_controller: SettingsController):
+        super().__init__()
+        self.playlist_controller = playlist_controller
+        self.epg_controller = epg_controller
+        self.settings_controller = settings_controller
+
+    def start(self):
+        # Load last playlist if available
+        last_playlist = self.settings_controller.get_setting("last_playlist")
+        is_url = self.settings_controller.get_setting("last_playlist_is_url") == "True"
+        
+        if last_playlist:
+            self.playlist_controller.load_playlist(last_playlist, is_url)
+</file>
+
+<file path="ui/controllers/playlist_controller.py">
+from PyQt6.QtCore import QObject, pyqtSignal
+from core.models import Playlist, Channel
+from core.services.playlist_service import PlaylistService
+
+class PlaylistController(QObject):
+    playlist_loaded = pyqtSignal(Playlist)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, service: PlaylistService):
+        super().__init__()
+        self.service = service
+
+    def load_playlist(self, path: str, is_url: bool = False):
+        try:
+            playlist = self.service.load_playlist(path, is_url)
+            self.playlist_loaded.emit(playlist)
+            return True
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+            return False
+
+    def get_current_playlist(self) -> Playlist:
+        return self.service.current_playlist
+
+    def get_channels_by_category(self, category: str):
+        if self.service.current_playlist:
+            if category == "All":
+                return self.service.current_playlist.channels
+            return self.service.current_playlist.get_channels_by_category(category)
+        return []
+
+    def search_channels(self, query: str):
+        if self.service.current_playlist:
+            # Simple search implementation
+            query = query.lower()
+            return [c for c in self.service.current_playlist.channels if query in c.name.lower()]
+        return []
+
+    def save_playlist_ref(self, name: str, path: str, is_url: bool):
+        self.service.save_playlist_ref(name, path, is_url)
+
+    def get_saved_playlists(self):
+        return self.service.get_saved_playlists()
+</file>
+
+<file path="ui/controllers/settings_controller.py">
+from PyQt6.QtCore import QObject
+from core.services.settings_service import SettingsService
+
+class SettingsController(QObject):
+    def __init__(self, settings_service: SettingsService):
+        super().__init__()
+        self.service = settings_service
+
+    def get_setting(self, key: str, default=None):
+        val = self.service.get_setting(key)
+        return val if val is not None else default
+
+    def save_setting(self, key: str, value):
+        self.service.save_setting(key, value)
+
+    @property
+    def settings(self):
+        return self.service.settings
+</file>
+
+<file path="ui/dialogs/playlist_manager_dialog.py">
+import os
+import requests
+import tempfile
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QInputDialog,
+    QMessageBox,
+    QFileDialog,
+    QMenu,
+)
+from PyQt6.QtCore import Qt, pyqtSignal
+
+class PlaylistManagerDialog(QDialog):
+    """Dialog for managing playlists."""
+
+    playlist_selected = pyqtSignal(str, bool)  # Emits (path, is_url)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Playlist Manager")
+        self.setMinimumSize(400, 300)
+        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        header = QLabel("Your Playlists")
+        header.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        self.playlist_list = QListWidget()
+        self.playlist_list.itemSelectionChanged.connect(self._selection_changed)
+        self.playlist_list.itemDoubleClicked.connect(self._edit_playlist)
+        self.playlist_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.playlist_list.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self.playlist_list)
+
+        button_layout = QHBoxLayout()
+
+        self.add_button = QPushButton("Add Playlist")
+        self.add_menu = QMenu(self)
+        self.add_menu.addAction("From File...", self._add_playlist_file)
+        self.add_menu.addAction("From URL...", self._add_playlist_url)
+        self.add_button.setMenu(self.add_menu)
+
+        self.edit_button = QPushButton("Edit")
+        self.edit_button.setEnabled(False)
+        self.edit_button.clicked.connect(self._edit_playlist)
+
+        self.remove_button = QPushButton("Remove")
+        self.remove_button.setEnabled(False)
+        self.remove_button.clicked.connect(self._remove_playlist)
+
+        self.select_button = QPushButton("Select")
+        self.select_button.setEnabled(False)
+        self.select_button.clicked.connect(self._select_playlist)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.edit_button)
+        button_layout.addWidget(self.remove_button)
+        button_layout.addWidget(self.select_button)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _selection_changed(self):
+        has_selection = bool(self.playlist_list.selectedItems())
+        self.remove_button.setEnabled(has_selection)
+        self.select_button.setEnabled(has_selection)
+        self.edit_button.setEnabled(has_selection)
+
+    def _add_playlist_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open M3U Playlist", "", "M3U Files (*.m3u *.m3u8)"
+        )
+        if file_path:
+            self._add_playlist_entry(file_path)
+
+    def _add_playlist_url(self):
+        url, ok = QInputDialog.getText(
+            self, "Add Playlist URL", "Enter the M3U playlist URL:", text="http://"
+        )
+        if ok and url:
+            try:
+                # Verify URL validity by a quick HEAD request or similar if desired
+                # For now just add it
+                self._add_playlist_entry(url, is_url=True)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to add playlist: {str(e)}")
+
+    def _add_playlist_entry(self, path: str, is_url: bool = False):
+        name, ok = QInputDialog.getText(
+            self,
+            "Playlist Name",
+            "Enter a name for this playlist:",
+            text=os.path.basename(path) if not is_url else "URL Playlist",
+        )
+
+        if ok and name:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
+            item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
+            self.playlist_list.addItem(item)
+
+    def _remove_playlist(self):
+        current_item = self.playlist_list.currentItem()
+        if current_item:
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Removal",
+                f"Are you sure you want to remove '{current_item.text()}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if confirm == QMessageBox.StandardButton.Yes:
+                self.playlist_list.takeItem(self.playlist_list.row(current_item))
+
+    def _select_playlist(self):
+        current_item = self.playlist_list.currentItem()
+        if current_item:
+            data = current_item.data(Qt.ItemDataRole.UserRole)
+            self.playlist_selected.emit(data["path"], data["is_url"])
+            self.accept()
+
+    def _edit_playlist(self):
+        current_item = self.playlist_list.currentItem()
+        if not current_item:
+            return
+
+        data = current_item.data(Qt.ItemDataRole.UserRole)
+        is_url = data["is_url"]
+
+        name, ok = QInputDialog.getText(
+            self, "Edit Playlist Name", "Enter new name:", text=current_item.text()
+        )
+        if not ok:
+            return
+
+        if is_url:
+            path, ok = QInputDialog.getText(
+                self, "Edit Playlist URL", "Enter new URL:", text=data["path"]
+            )
+        else:
+            path, ok = QFileDialog.getOpenFileName(
+                self, "Select New Playlist File", data["path"], "M3U Files (*.m3u *.m3u8)"
+            )
+
+        if ok and path:
+            current_item.setText(name)
+            current_item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
+            current_item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
+
+    def _show_context_menu(self, position):
+        item = self.playlist_list.itemAt(position)
+        if item:
+            menu = QMenu()
+            edit_action = menu.addAction("Edit")
+            remove_action = menu.addAction("Remove")
+            action = menu.exec(self.playlist_list.mapToGlobal(position))
+            
+            if action == edit_action:
+                self._edit_playlist()
+            elif action == remove_action:
+                self._remove_playlist()
+
+    def get_playlists(self):
+        playlists = []
+        for i in range(self.playlist_list.count()):
+            item = self.playlist_list.item(i)
+            data = item.data(Qt.ItemDataRole.UserRole)
+            playlists.append((item.text(), data["path"], data["is_url"]))
+        return playlists
+
+    def set_playlists(self, playlists):
+        self.playlist_list.clear()
+        for name, path, is_url in playlists:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, {"path": path, "is_url": is_url})
+            item.setToolTip(f"{'URL' if is_url else 'File'}: {path}")
+            self.playlist_list.addItem(item)
+</file>
+
+<file path="ui/styles/styles.py">
+class SearchBarStyle:
+    """Styles for the search bar widget."""
+
+    SEARCH_BAR = """
+        QLineEdit {
+            padding: 8px 12px 8px 36px;
+            border-radius: 20px;
+            min-width: 250px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            font-size: 13px;
+        }
+        QLineEdit:focus {
+            border: 1px solid #666666;
+            background-color: #333333;
+        }
+        QLineEdit:hover {
+            background-color: #333333;
+        }
+    """
+
+
+class ToolbarStyle:
+    """Styles for the toolbar."""
+
+    TOOLBAR = """
+        QToolBar {
+            spacing: 10px;
+            padding: 5px 15px;
+            background: transparent;
+        }
+    """
+</file>
+
+<file path="ui/styles/themes.py">
+class Themes:
+    """Utility class for managing themes."""
+
+    @staticmethod
+    def get_dark_theme() -> str:
+        """Get the CSS for the dark theme."""
+        return """
+            QMainWindow, QWidget {
+                background-color: #1a1a1a;
+                color: #ffffff;
+            }
+            
+            QPushButton {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                padding: 8px 16px;
+                border-radius: 4px;
+                color: #ffffff;
+                font-weight: 500;
+                min-width: 80px;
+            }
+            
+            QPushButton:hover {
+                background-color: #404040;
+                border: 1px solid #505050;
+            }
+            
+            QPushButton:pressed {
+                background-color: #505050;
+            }
+            
+            QPushButton:checked {
+                background-color: #404040;
+                border: 2px solid #666666;
+            }
+            
+            QLineEdit {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                padding: 8px 12px;
+                border-radius: 4px;
+                color: #ffffff;
+                selection-background-color: #404040;
+            }
+            
+            QLineEdit:focus {
+                border: 2px solid #666666;
+            }
+            
+            QComboBox {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                padding: 8px;
+                border-radius: 4px;
+                color: #ffffff;
+                min-width: 120px;
+            }
+            
+            QComboBox:hover {
+                border: 1px solid #505050;
+            }
+            
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 8px;
+            }
+            
+            QListWidget {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                color: #ffffff;
+                padding: 4px;
+            }
+            
+            QListWidget::item {
+                padding: 8px;
+                border-radius: 2px;
+            }
+            
+            QListWidget::item:hover {
+                background-color: #383838;
+            }
+            
+            QListWidget::item:selected {
+                background-color: #404040;
+            }
+            
+            QSlider::groove:horizontal {
+                background-color: #404040;
+                height: 4px;
+                border-radius: 2px;
+            }
+            
+            QSlider::handle:horizontal {
+                background-color: #666666;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
+            }
+            
+            QSlider::handle:horizontal:hover {
+                background-color: #808080;
+            }
+            
+            QFrame#epg_widget {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                padding: 12px;
+            }
+            
+            QLabel {
+                padding: 4px;
+            }
+            
+            QLabel#current_title {
+                font-size: 14px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            
+            QLabel#current_time {
+                color: #aaaaaa;
+            }
+        """
+
+    @staticmethod
+    def get_light_theme() -> str:
+        """Get the CSS for the light theme."""
+        return """
+            QMainWindow, QWidget {
+                background-color: #f5f5f5;
+                color: #333333;
+            }
+            
+            QPushButton {
+                background-color: #ffffff;
+                border: 1px solid #dddddd;
+                padding: 8px 16px;
+                border-radius: 4px;
+                color: #333333;
+                font-weight: 500;
+                min-width: 80px;
+            }
+            
+            QPushButton:hover {
+                background-color: #f0f0f0;
+                border: 1px solid #cccccc;
+            }
+            
+            QPushButton:pressed {
+                background-color: #e0e0e0;
+            }
+            
+            QPushButton:checked {
+                background-color: #e0e0e0;
+                border: 2px solid #999999;
+            }
+            
+            QLineEdit {
+                background-color: #ffffff;
+                border: 1px solid #dddddd;
+                padding: 8px 12px;
+                border-radius: 4px;
+                color: #333333;
+                selection-background-color: #e0e0e0;
+            }
+            
+            QLineEdit:focus {
+                border: 2px solid #999999;
+            }
+            
+            QComboBox {
+                background-color: #ffffff;
+                border: 1px solid #dddddd;
+                padding: 8px;
+                border-radius: 4px;
+                color: #333333;
+                min-width: 120px;
+            }
+            
+            QComboBox:hover {
+                border: 1px solid #cccccc;
+            }
+            
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 8px;
+            }
+            
+            QListWidget {
+                background-color: #ffffff;
+                border: 1px solid #dddddd;
+                border-radius: 4px;
+                color: #333333;
+                padding: 4px;
+            }
+            
+            QListWidget::item {
+                padding: 8px;
+                border-radius: 2px;
+            }
+            
+            QListWidget::item:hover {
+                background-color: #f5f5f5;
+            }
+            
+            QListWidget::item:selected {
+                background-color: #e0e0e0;
+            }
+            
+            QSlider::groove:horizontal {
+                background-color: #dddddd;
+                height: 4px;
+                border-radius: 2px;
+            }
+            
+            QSlider::handle:horizontal {
+                background-color: #ffffff;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
+                border: 1px solid #cccccc;
+            }
+            
+            QSlider::handle:horizontal:hover {
+                background-color: #f0f0f0;
+                border: 1px solid #bbbbbb;
+            }
+            
+            QFrame#epg_widget {
+                background-color: #ffffff;
+                border: 1px solid #dddddd;
+                border-radius: 4px;
+                padding: 12px;
+            }
+            
+            QLabel {
+                padding: 4px;
+            }
+            
+            QLabel#current_title {
+                font-size: 14px;
+                font-weight: bold;
+                color: #333333;
+            }
+            
+            QLabel#current_time {
+                color: #666666;
+            }
+        """
+</file>
+
+<file path="ui/widgets/epg_widget.py">
+from datetime import datetime
+from PyQt6.QtWidgets import (
+    QFrame,
+    QVBoxLayout,
+    QWidget,
+    QLabel,
+    QListWidget,
+    QScrollArea,
+)
+from PyQt6.QtCore import Qt
+from core.models import Program
+
+class EPGWidget(QFrame):
+    """A widget to display the Electronic Program Guide (EPG)."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("epg_widget")
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        self.setFixedHeight(300)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(5)
+
+        # Current program
+        self.current_title = QLabel("No program information")
+        self.current_title.setObjectName("current_title")
+        self.current_title.setWordWrap(True)
+        scroll_layout.addWidget(self.current_title)
+
+        self.current_time = QLabel()
+        self.current_time.setObjectName("current_time")
+        scroll_layout.addWidget(self.current_time)
+
+        self.description = QLabel()
+        self.description.setWordWrap(True)
+        scroll_layout.addWidget(self.description)
+
+        # Upcoming programs
+        scroll_layout.addWidget(QLabel("Upcoming:"))
+        self.upcoming_list = QListWidget()
+        scroll_layout.addWidget(self.upcoming_list)
+
+        # Create scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        layout.addWidget(scroll_area)
+
+    def clear(self):
+        self.current_title.setText("No program information")
+        self.current_time.setText("")
+        self.description.setText("")
+        self.upcoming_list.clear()
+
+    def set_current_program(self, program: Program):
+        if not program:
+            self.clear()
+            return
+            
+        time_str = f"{program.start_time.strftime('%H:%M')} - {program.end_time.strftime('%H:%M')}"
+        self.current_title.setText(program.title)
+        self.current_time.setText(time_str)
+        self.description.setText(program.description or "")
+
+    def set_upcoming_programs(self, programs: list[Program]):
+        self.upcoming_list.clear()
+        for prog in programs:
+            time_str = prog.start_time.strftime("%H:%M")
+            self.upcoming_list.addItem(f"{time_str} - {prog.title}")
+</file>
+
+<file path="ui/widgets/left_panel.py">
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QComboBox, QTabWidget, QListWidget
+from ui.widgets.epg_widget import EPGWidget
+from ui.widgets.search_bar import SearchBar
+
+class LeftPanel(QFrame):
+    """A panel containing channel categories, lists, and EPG information."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        self.setFixedWidth(300)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Search Bar
+        self.search_bar = SearchBar()
+        layout.addWidget(self.search_bar)
+
+        # Add category selector
+        self.category_combo = QComboBox()
+        layout.addWidget(self.category_combo)
+
+        # Add tabs for channels and favorites
+        self.tabs = QTabWidget()
+        self.channel_list = QListWidget()
+        self.favorites_list = QListWidget()
+
+        self.tabs.addTab(self.channel_list, "Channels")
+        self.tabs.addTab(self.favorites_list, "Favorites")
+        layout.addWidget(self.tabs)
+
+        # Add EPG widget
+        self.epg_widget = EPGWidget()
+        layout.addWidget(self.epg_widget)
+</file>
+
+<file path="ui/widgets/menu_bar.py">
+from PyQt6.QtWidgets import (
+    QMenuBar,
+    QLineEdit,
+    QPushButton,
+)
+from PyQt6.QtGui import QAction
+
+class MenuBar(QMenuBar):
+    """The main menu bar for the application."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_file_menu()
+        self._init_epg_menu()
+
+    def _init_file_menu(self):
+        file_menu = self.addMenu("&File")
+
+        self.playlist_manager_action = QAction("&Playlist Manager", self)
+        self.playlist_manager_action.setShortcut("Ctrl+P")
+        file_menu.addAction(self.playlist_manager_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("&Exit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(lambda: self.parent().close() if self.parent() else None)
+        file_menu.addAction(exit_action)
+
+    def _init_epg_menu(self):
+        epg_menu = self.addMenu("&EPG")
+
+        self.load_epg_file_action = QAction("Load from &File...", self)
+        epg_menu.addAction(self.load_epg_file_action)
+
+        self.epg_url_input = QLineEdit()
+        self.epg_url_input.setPlaceholderText("Enter EPG URL...")
+        self.load_epg_url_button = QPushButton("Load")
+</file>
+
+<file path="ui/widgets/notification.py">
+from dataclasses import dataclass
+from enum import Enum, auto
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtCore import Qt, QTimer
+
+class NotificationType(Enum):
+    INFO = auto()
+    SUCCESS = auto()
+    WARNING = auto()
+    ERROR = auto()
+
+@dataclass
+class NotificationStyle:
+    background: str
+    border: str
+    text_color: str
+
+class NotificationWidget(QLabel):
+    STYLES = {
+        NotificationType.INFO: NotificationStyle("#2196F3", "#1976D2", "#FFFFFF"),
+        NotificationType.SUCCESS: NotificationStyle("#4CAF50", "#388E3C", "#FFFFFF"),
+        NotificationType.WARNING: NotificationStyle("#FFC107", "#FFA000", "#000000"),
+        NotificationType.ERROR: NotificationStyle("#F44336", "#D32F2F", "#FFFFFF"),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("""
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        """)
+        self.hide()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.hide)
+
+    def show_message(self, message: str, notification_type: NotificationType, duration: int = 3000):
+        style = self.STYLES[notification_type]
+        self.setStyleSheet(f"""
+            background-color: {style.background};
+            border: 1px solid {style.border};
+            color: {style.text_color};
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        """)
+
+        self.setText(message)
+        self.adjustSize()
+        self.show()
+
+        parent = self.parent()
+        if parent:
+            parent_rect = parent.rect()
+            self.move((parent_rect.width() - self.width()) // 2, 20)
+
+        self.timer.start(duration)
+</file>
+
+<file path="ui/widgets/player_widget.py">
+import sys
+import logging
+from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+from infra.playback.vlc_backend import VLCBackend
+
+logger = logging.getLogger(__name__)
+
+class MediaEventHandler(QObject):
+    """Handler for VLC media events with Qt signals."""
+    
+    error_occurred = pyqtSignal(str)
+    media_playing = pyqtSignal()
+    media_stopped = pyqtSignal()
+    media_buffering = pyqtSignal(float)
+    
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+        self.vlc = VLCBackend.get_vlc()
+        self._setup_events()
+        
+    def _setup_events(self):
+        if not self.player:
+            return
+            
+        events = self.player.event_manager()
+        events.event_attach(self.vlc.EventType.MediaPlayerPlaying, self._on_playing)
+        events.event_attach(self.vlc.EventType.MediaPlayerStopped, self._on_stopped)
+        events.event_attach(self.vlc.EventType.MediaPlayerEncounteredError, self._on_error)
+        events.event_attach(self.vlc.EventType.MediaPlayerBuffering, self._on_buffering)
+    
+    def _on_playing(self, event):
+        self.media_playing.emit()
+    
+    def _on_stopped(self, event):
+        self.media_stopped.emit()
+    
+    def _on_error(self, event):
+        self.error_occurred.emit("Media playback failed")
+    
+    def _on_buffering(self, event):
+        cache_percentage = event.u.new_cache if hasattr(event, 'u') else 0
+        self.media_buffering.emit(cache_percentage)
+
+class PlayerWidget(QFrame):
+    """A widget that displays and controls VLC media playback."""
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(400, 300)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+        self.placeholder = QLabel("No media playing")
+        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(self.placeholder)
+
+        self.status_overlay = QLabel()
+        self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128); color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
+        self.status_overlay.hide()
+        self.layout.addWidget(self.status_overlay)
+
+        success, error = VLCBackend.initialize()
+        self.vlc_available = success
+        if not success:
+            self.placeholder.setText(error)
+            return
+
+        self.vlc = VLCBackend.get_vlc()
+        self.instance = VLCBackend.get_instance()
+        self.player = VLCBackend.create_player()
+        
+        self.event_handler = MediaEventHandler(self.player)
+        self.event_handler.error_occurred.connect(self._handle_playback_error)
+        self.event_handler.media_playing.connect(self._on_media_playing)
+        self.event_handler.media_stopped.connect(self._on_media_stopped)
+        self.event_handler.media_buffering.connect(self._on_media_buffering)
+        
+        self._setup_player()
+
+        self.setMouseTracking(True)
+        self.is_fullscreen = False
+        self.current_url = None
+        
+        self.reconnect_timer = QTimer(self)
+        self.reconnect_timer.setSingleShot(True)
+        self.reconnect_timer.timeout.connect(self._reconnect)
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5
+
+    def _setup_player(self):
+        if not self.vlc_available:
+            return
+
+        if sys.platform == "win32":
+            self.player.set_hwnd(self.winId())
+        elif sys.platform.startswith("linux"):
+            try:
+                window_id = int(self.winId())
+                self.player.set_xwindow(window_id)
+            except Exception:
+                try:
+                    import sip
+                    window_id = sip.unwrapinstance(self.winId())
+                    self.player.set_xwindow(window_id)
+                except Exception:
+                    pass # Log error
+        elif sys.platform == "darwin":
+            self.player.set_nsobject(int(self.winId()))
+
+        self.player.video_set_key_input(False)
+        self.player.video_set_mouse_input(False)
+
+    def play(self, url: str):
+        if not self.vlc_available:
+            return
+            
+        self.reconnect_timer.stop()
+        self.reconnect_attempts = 0
+        self.current_url = url
+
+        try:
+            self._show_status("Connecting to stream...")
+            media = self.instance.media_new(url)
+            
+            if url.startswith(("rtmp://", "rtsp://")):
+                media.add_option("network-caching=1500")
+            else:
+                media.add_option("network-caching=1000")
+                
+            media.add_option("clock-jitter=0")
+            media.add_option("clock-synchro=0")
+            
+            self.player.set_media(media)
+            self.player.play()
+        except Exception as e:
+            self._handle_playback_error(str(e))
+
+    def stop(self):
+        if self.vlc_available:
+            if self.is_fullscreen:
+                self._exit_fullscreen()
+            self.player.stop()
+            self.placeholder.show()
+            self.reconnect_timer.stop()
+
+    def pause(self):
+        if self.vlc_available:
+            self.player.pause()
+
+    def set_volume(self, volume: int):
+        if self.vlc_available:
+            self.player.audio_set_volume(max(0, min(100, volume)))
+
+    def _show_status(self, message, duration=2000):
+        self.status_overlay.setText(message)
+        self.status_overlay.show()
+        QTimer.singleShot(duration, self.status_overlay.hide)
+
+    def _on_media_playing(self):
+        self.placeholder.hide()
+        self.status_overlay.hide()
+        self.reconnect_attempts = 0
+
+    def _on_media_stopped(self):
+        self.placeholder.show()
+
+    def _on_media_buffering(self, cache_percentage):
+        if cache_percentage < 100:
+            self._show_status(f"Buffering: {int(cache_percentage)}%")
+        else:
+            self.status_overlay.hide()
+
+    def _handle_playback_error(self, error_msg):
+        self.placeholder.setText(error_msg)
+        self.placeholder.show()
+        
+        if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
+            self.reconnect_attempts += 1
+            delay = min(2 ** self.reconnect_attempts, 30)
+            self._show_status(f"Reconnecting in {delay}s...", duration=delay*1000)
+            self.reconnect_timer.start(int(delay * 1000))
+
+    def _reconnect(self):
+        if self.current_url:
+            self.play(self.current_url)
+
+    def mouseDoubleClickEvent(self, event):
+        if not self.vlc_available or not self.player.is_playing():
+            return
+
+        if not self.is_fullscreen:
+            self._enter_fullscreen()
+        else:
+            self._exit_fullscreen()
+
+    def _enter_fullscreen(self):
+        self.normal_geometry = self.geometry()
+        self.normal_parent = self.parent()
+        self.normal_layout = self.parent().layout() if self.parent() else None
+        if self.normal_layout:
+            self.normal_index = self.normal_layout.indexOf(self)
+            self.normal_stretch = self.normal_layout.stretch(self.normal_index)
+            self.normal_layout.removeWidget(self)
+
+        for widget in self.window().findChildren(QWidget):
+            if widget is not self and widget.isVisible():
+                widget.hide()
+                widget.setProperty("was_visible", True)
+
+        self.window().setWindowState(Qt.WindowState.WindowFullScreen)
+        self.setParent(self.window())
+        self.setGeometry(self.window().rect())
+        self.raise_()
+        self.show()
+        self.is_fullscreen = True
+
+    def _exit_fullscreen(self):
+        self.window().setWindowState(Qt.WindowState.WindowNoState)
+        self.setParent(self.normal_parent)
+        if self.normal_layout and self.normal_index is not None:
+            self.normal_layout.insertWidget(self.normal_index, self, stretch=self.normal_stretch)
+        self.setGeometry(self.normal_geometry)
+
+        for widget in self.window().findChildren(QWidget):
+            if widget is not self and widget.property("was_visible"):
+                widget.show()
+                widget.setProperty("was_visible", False)
+
+        self.is_fullscreen = False
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
+            self._exit_fullscreen()
+</file>
+
+<file path="ui/widgets/right_panel.py">
+from PyQt6.QtWidgets import (
+    QFrame,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QSlider,
+)
+from PyQt6.QtCore import Qt
+from ui.widgets.player_widget import PlayerWidget
+
+class RightPanel(QFrame):
+    """A panel containing the video player and playback controls."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # Player widget
+        self.player_widget = PlayerWidget()
+        layout.addWidget(self.player_widget)
+
+        # Controls layout
+        self.controls_layout = QHBoxLayout()
+
+        self.play_button = QPushButton("Play")
+        self.stop_button = QPushButton("Stop")
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.favorite_button = QPushButton("Favorite")
+
+        self.controls_layout.addWidget(self.play_button)
+        self.controls_layout.addWidget(self.stop_button)
+        self.volume_slider.setRange(0, 100)
+        self.controls_layout.addWidget(self.volume_slider)
+        self.controls_layout.addWidget(self.favorite_button)
+
+        layout.addLayout(self.controls_layout)
+</file>
+
+<file path="ui/widgets/search_bar.py">
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtCore import pyqtSignal
+from ui.styles.styles import SearchBarStyle
+
+class SearchBar(QLineEdit):
+    """Custom search bar widget with modern styling."""
+    
+    search_changed = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Search channels...")
+        self.setStyleSheet(SearchBarStyle.SEARCH_BAR)
+        self.textChanged.connect(self.search_changed.emit)
+</file>
+
+<file path="ui/windows/main_window.py">
+from PyQt6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QToolBar,
+    QSplitter,
+    QMessageBox,
+    QFileDialog,
+    QListWidgetItem,
+)
+from PyQt6.QtCore import Qt
+from ui.widgets.left_panel import LeftPanel
+from ui.widgets.right_panel import RightPanel
+from ui.widgets.menu_bar import MenuBar
+from ui.widgets.notification import NotificationWidget, NotificationType
+from ui.widgets.search_bar import SearchBar
+from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
+from ui.styles.themes import Themes
+from ui.styles.styles import ToolbarStyle
+from ui.controllers.main_controller import MainController
+from ui.controllers.playlist_controller import PlaylistController
+from ui.controllers.epg_controller import EPGController
+from ui.controllers.settings_controller import SettingsController
+
+class MainWindow(QMainWindow):
+    def __init__(self, 
+                 main_controller: MainController,
+                 playlist_controller: PlaylistController,
+                 epg_controller: EPGController,
+                 settings_controller: SettingsController):
+        super().__init__()
+        self.main_controller = main_controller
+        self.playlist_controller = playlist_controller
+        self.epg_controller = epg_controller
+        self.settings_controller = settings_controller
+
+        self.setWindowTitle("Simple IPTV Player")
+        self.setMinimumSize(1280, 720)
+
+        self._init_ui()
+        self._connect_signals()
+        
+        # Apply theme
+        theme = self.settings_controller.get_setting("theme", "dark")
+        if theme == "dark":
+            self.setStyleSheet(Themes.get_dark_theme())
+        else:
+            self.setStyleSheet(Themes.get_light_theme())
+            
+        # Start application logic
+        self.main_controller.start()
+
+    def _init_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.menu_bar = MenuBar(self)
+        self.setMenuBar(self.menu_bar)
+
+        self._setup_toolbar()
+
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.left_panel = LeftPanel()
+        self.right_panel = RightPanel()
+
+        self.splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(self.right_panel)
+        self.splitter.setSizes([300, 980])
+        
+        main_layout.addWidget(self.splitter)
+
+        self.notification = NotificationWidget(self)
+
+    def _setup_toolbar(self):
+        self.toolbar = QToolBar()
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setStyleSheet(ToolbarStyle.TOOLBAR)
+
+        # We can use the search bar from the left panel or create a new one.
+        # The original design had a search bar in the toolbar.
+        # But LeftPanel also has one. Let's use the one in LeftPanel for now, 
+        # or if we want it in the toolbar, we should hide the one in LeftPanel.
+        # The requirement says `ui/widgets/search_bar.py`.
+        # Let's keep the toolbar search bar as the primary one.
+        self.search_bar = SearchBar()
+        self.toolbar.addWidget(self.search_bar)
+        
+        self.toolbar.addSeparator()
+        
+        epg_widget = QWidget()
+        epg_layout = QHBoxLayout(epg_widget)
+        epg_layout.setContentsMargins(8, 0, 8, 0)
+        epg_layout.addWidget(self.menu_bar.epg_url_input)
+        epg_layout.addWidget(self.menu_bar.load_epg_url_button)
+        self.toolbar.addWidget(epg_widget)
+
+        self.addToolBar(self.toolbar)
+
+    def _connect_signals(self):
+        # Playlist signals
+        self.playlist_controller.playlist_loaded.connect(self._on_playlist_loaded)
+        self.playlist_controller.error_occurred.connect(self._on_error)
+
+        # UI signals
+        self.menu_bar.playlist_manager_action.triggered.connect(self._open_playlist_manager)
+        self.menu_bar.load_epg_file_action.triggered.connect(self._load_epg_file)
+        self.menu_bar.load_epg_url_button.clicked.connect(self._load_epg_url)
+        
+        self.left_panel.category_combo.currentTextChanged.connect(self._on_category_changed)
+        self.left_panel.channel_list.itemDoubleClicked.connect(self._on_channel_selected)
+        self.search_bar.search_changed.connect(self._on_search)
+        
+        # Player controls
+        self.right_panel.play_button.clicked.connect(lambda: self.right_panel.player_widget.play(self.right_panel.player_widget.current_url) if self.right_panel.player_widget.current_url else None)
+        self.right_panel.stop_button.clicked.connect(self.right_panel.player_widget.stop)
+        self.right_panel.volume_slider.valueChanged.connect(self.right_panel.player_widget.set_volume)
+
+    def _on_playlist_loaded(self, playlist):
+        self.left_panel.category_combo.clear()
+        self.left_panel.category_combo.addItem("All")
+        self.left_panel.category_combo.addItems(playlist.categories)
+        self._update_channel_list(playlist.channels)
+        self.show_notification(f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS)
+
+    def _update_channel_list(self, channels):
+        self.left_panel.channel_list.clear()
+        for channel in channels:
+            item = QListWidgetItem(channel.name)
+            item.setData(Qt.ItemDataRole.UserRole, channel)
+            self.left_panel.channel_list.addItem(item)
+
+    def _on_category_changed(self, category):
+        channels = self.playlist_controller.get_channels_by_category(category)
+        self._update_channel_list(channels)
+
+    def _on_channel_selected(self, item):
+        channel = item.data(Qt.ItemDataRole.UserRole)
+        if channel:
+            self.right_panel.player_widget.play(channel.url)
+            # Update EPG
+            program = self.epg_controller.get_current_program(channel.epg_id)
+            self.left_panel.epg_widget.set_current_program(program)
+            upcoming = self.epg_controller.get_upcoming_programs(channel.epg_id)
+            self.left_panel.epg_widget.set_upcoming_programs(upcoming)
+        
+    def _on_search(self, query):
+        channels = self.playlist_controller.search_channels(query)
+        self._update_channel_list(channels)
+
+    def _open_playlist_manager(self):
+        dialog = PlaylistManagerDialog(self)
+        dialog.set_playlists(self.playlist_controller.get_saved_playlists())
+        dialog.playlist_selected.connect(self._on_playlist_selected_from_manager)
+        dialog.exec()
+
+    def _on_playlist_selected_from_manager(self, path, is_url):
+        self.playlist_controller.load_playlist(path, is_url)
+        self.playlist_controller.save_playlist_ref(path, path, is_url) # Name?
+
+    def _load_epg_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open EPG File", "", "XMLTV Files (*.xml)")
+        if path:
+            self.epg_controller.load_epg(path)
+
+    def _load_epg_url(self):
+        url = self.menu_bar.epg_url_input.text()
+        if url:
+            # EPG service needs to support URL loading
+            pass
+
+    def _on_error(self, message):
+        self.show_notification(message, NotificationType.ERROR)
+
+    def show_notification(self, message, type=NotificationType.INFO):
+        self.notification.show_message(message, type)
+</file>
+
+<file path="README.md">
+# Simple IPTV Player
+
+Simple IPTV Player is a desktop application built using PyQt6 that allows users to load and play IPTV playlists and Electronic Program Guide (EPG) data. The application provides a user-friendly interface for managing channels, viewing program information, and customizing the viewing experience with themes.
+
+## Features
+
+- **Load and Play IPTV Playlists**: Supports M3U and M3U8 playlist formats.
+- **EPG Support**: Load EPG data from XMLTV files or URLs to view current and upcoming program information.
+- **Favorites Management**: Add and remove channels from favorites.
+- **Search Functionality**: Search for channels within the current category.
+- **Theme Customization**: Switch between light and dark themes.
+- **Volume Control**: Adjust the playback volume.
+- **Notifications**: Display notifications for various actions and events.
+
+## Installation
+
+1. **Clone the repository**:
+
+   ```bash
+   git clone https://github.com/yourusername/simple-iptv-player.git
+   cd simple-iptv-player
+   ```
+
+2. **Install dependencies**:
+   Ensure you have Python 3.8+ and pip installed. Then, run:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Install VLC**:
+   The application requires VLC to be installed on your system. Ensure VLC is installed and accessible in your system's PATH.
+
+## Usage
+
+1. **Run the application**:
+
+   ```bash
+   python simple_iptv/main.py
+   ```
+
+2. **Load a Playlist**:
+
+   - Click on "Load Playlist" and select an M3U file to load channels.
+
+3. **Load EPG Data**:
+
+   - Load EPG data from a file or URL using the "Load EPG" button.
+
+4. **Manage Favorites**:
+
+   - Add channels to favorites by clicking the star button next to the channel name.
+
+5. **Search Channels**:
+
+   - Use the search bar to find channels within the current category.
+
+6. **Change Theme**:
+   - Switch between light and dark themes using the settings menu.
+
+## Code Structure
+
+- **Main Application**: `simple_iptv/main.py`
+- **Views**: Located in `simple_iptv/views/`, including `main_window.py`, `player_widget.py`, and more.
+- **Controllers**: Located in `simple_iptv/controllers/`, including `player_controller.py`.
+- **Models**: Located in `simple_iptv/models/`, including `playlist.py` and `epg.py`.
+- **Utilities**: Located in `simple_iptv/utils/`, including `database.py`, `m3u_parser.py`, and `epg_parser.py`.
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request for any improvements or bug fixes.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- PyQt6 for the GUI framework.
+- VLC for media playback capabilities.
+</file>
+
+<file path="walkthrough.md">
+# IPTV Player v2 Refactoring Walkthrough
+
+## Overview
+The IPTV Player has been refactored to a clean v2 architecture, separating concerns into Domain (`core`), Infrastructure (`infra`), and UI (`ui`) layers.
+
+## Directory Structure
+- **app/**: Application entry point (`main.py`).
+- **core/**: Domain logic.
+  - **models.py**: Data models (`Channel`, `Playlist`, `Settings`, etc.).
+  - **services/**: Business logic (`PlaylistService`, `EPGService`, etc.).
+- **infra/**: Infrastructure and side effects.
+  - **db/**: Database repositories (`PlaylistRepository`, `SQLiteConnection`, etc.).
+  - **parsers/**: File parsers (`M3UParser`, `EPGParser`).
+  - **playback/**: VLC backend (`VLCBackend`).
+- **ui/**: User Interface (Qt).
+  - **windows/**: Main window (`MainWindow`).
+  - **widgets/**: Reusable widgets (`PlayerWidget`, `EPGWidget`, etc.).
+  - **dialogs/**: Dialogs (`PlaylistManagerDialog`).
+  - **controllers/**: UI logic (`MainController`, `PlaylistController`, etc.).
+  - **styles/**: Themes and styles.
+
+## Key Changes
+1. **Separation of Concerns**: UI code no longer accesses the database or VLC directly. It uses Controllers, which use Services, which use Repositories/Parsers.
+2. **Dependency Injection**: Dependencies are injected from `app/main.py`.
+3. **Unified Playback**: `VLCBackend` provides a clean interface for VLC, and `PlayerWidget` handles the UI aspect.
+4. **Standardized Parsers**: `M3UParser` and `EPGParser` are now in `infra/parsers` and return domain models.
+
+## How to Run
+1. Ensure you have the dependencies installed (including `python-vlc` and VLC media player).
+2. Run the application from the root directory:
+   ```bash
+   python -m app.main
+   ```
+
+## Verification
+- **Imports**: Verified that all modules can be imported without errors.
+- **Database**: Verified that the database initializes correctly.
+- **UI**: The UI structure is in place, connecting controllers and widgets.
+</file>
+
+<file path=".gitignore">
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+simple_iptv/controllers/__pycache__/
+simple_iptv/models/__pycache__/
+simple_iptv/utils/__pycache__/
+simple_iptv/views/__pycache__/
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+# According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+# However, in case you do not want to do that, uncomment the following line to ignore it.
+# Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# VS Code
+.vscode/
+
+# Local environment variables
+.env.local
+.env.development
+.env.test
+.env.production
+
+# PyCharm
+.idea/
+
+# End Generation Here
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+repomix-output.txt
+
+# History files
+.simple_iptv/
+*.json
+</file>
+
+<file path=".pylintrc">
+[MASTER]
+# Python code files to analyze
+init-hook='import sys; sys.path.append(".")'
+ignore=CVS
+ignore-patterns=
+persistent=yes
+load-plugins=
+
+# Use multiple processes to speed up Pylint (use "0" to auto-detect)
+jobs=0
+
+# List of plugins to load
+extension-pkg-whitelist=PyQt6
+
+[MESSAGES CONTROL]
+# Disable specific warnings
+disable=C0111,  # missing-docstring
+        C0103,  # invalid-name (for Qt-style names)
+        R0903,  # too-few-public-methods
+        R0913,  # too-many-arguments
+        R0914,  # too-many-locals
+        W0511,  # fixme
+        W0703,  # broad-except
+        C0301   # line-too-long
+
+[REPORTS]
+# Set the output format
+output-format=text
+
+# Include a brief explanation of each error
+msg-template={path}:{line}: [{msg_id}({symbol}), {obj}] {msg}
+
+# Files or directories to exclude
+ignore-paths=
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=120
+
+[BASIC]
+# Regular expression which should only match function or class names
+function-rgx=[a-z_][a-z0-9_]{2,50}$
+class-rgx=[A-Z_][a-zA-Z0-9]+$
+
+# Regular expression which should only match correct variable names
+variable-rgx=[a-z_][a-z0-9_]{2,30}$
+
+# Good variable names which should always be accepted
+good-names=i,j,k,ex,Run,_,id,qt,db
+
+[VARIABLES]
+# A regular expression matching the name of dummy variables
+dummy-variables-rgx=_$|dummy
+
+# List of additional names to consider as builtins
+additional-builtins=
+
+[SIMILARITIES]
+# Minimum lines number of a similarity
+min-similarity-lines=4
+
+# Ignore imports when computing similarities
+ignore-imports=yes
+
+[TYPECHECK]
+# List of module names for which member attributes should not be checked
+ignored-modules=numpy,PyQt6,vlc
+
+# List of classes names for which member attributes should not be checked
+ignored-classes=SQLObject,vlc.Instance,vlc.MediaPlayer
+
+[MISCELLANEOUS]
+# List of note tags to take into consideration
+notes=FIXME,XXX,TODO
+
+[IMPORTS]
+# Allow wildcard imports from modules that define __all__
+allow-wildcard-with-all=no
+
+# Analyse import fallback blocks
+analyse-fallback-blocks=no
+
+[DESIGN]
+# Maximum number of arguments for function / method
+max-args=10
+
+# Maximum number of locals for function / method
+max-locals=20
+
+# Maximum number of return / yield for function / method
+max-returns=6
+
+# Maximum number of statements in function / method
+max-statements=50
+
+# Maximum number of parents for a class
+max-parents=7
+
+[CLASSES]
+# List of method names used to declare (i.e. assign) instance attributes
+defining-attr-methods=__init__,__new__,setUp
+
+# List of valid names for the first argument in a class method
+valid-classmethod-first-arg=cls
+
+# List of valid names for the first argument in a metaclass class method
+valid-metaclass-classmethod-first-arg=mcs
+
+[EXCEPTIONS]
+# Exceptions that will emit a warning when caught
+overgeneral-exceptions=builtins.Exception
+</file>
+
+<file path="MANIFEST.in">
+include README.md
+include simple_iptv/playback/*.py
+</file>
+
+<file path="requirements.txt">
+altgraph==0.17.4
+astroid==3.3.8
+black==24.10.0
+certifi==2024.12.14
+charset-normalizer==3.4.1
+click==8.1.8
+colorama==0.4.6
+dill==0.3.9
+idna==3.10
+isort==5.13.2
+macholib==1.16.3
+mccabe==0.7.0
+modulegraph==0.19.6
+mypy-extensions==1.0.0
+packaging==24.2
+pathspec==0.12.1
+platformdirs==4.3.6
+py2app==0.28.8
+pylint==3.3.3
+PyQt5==5.15.9
+PyQt5-Qt5==5.15.2
+PyQt5_sip==12.11.0
+PyQt6==6.8.0
+PyQt6-Qt6==6.8.1
+PyQt6_sip==13.9.1
+python-vlc==3.0.21203
+requests==2.32.3
+setuptools==75.8.0
+tomlkit==0.13.2
+urllib3==2.3.0
+</file>
+
+<file path=".github/workflows/pylint.yml">
+name: Pylint
+
+on: [pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+          pip install -r requirements.txt
+      - name: Analysing the code with pylint
+        run: |
+          pylint --fail-under=9.5 $(git ls-files '*.py')
+</file>
+
+</files>
