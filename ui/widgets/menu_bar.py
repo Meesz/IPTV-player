@@ -55,3 +55,8 @@ class MenuBar(QMenuBar):
         self.show_now_playing_action = QAction("Show Current Program in Lists", self)
         self.show_now_playing_action.setCheckable(True)
         view_menu.addAction(self.show_now_playing_action)
+
+        self.show_library_panel_action = QAction("Show Library Panel", self)
+        self.show_library_panel_action.setCheckable(True)
+        self.show_library_panel_action.setChecked(True)
+        view_menu.addAction(self.show_library_panel_action)
