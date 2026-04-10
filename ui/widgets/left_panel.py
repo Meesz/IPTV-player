@@ -104,8 +104,8 @@ class LeftPanel(QFrame):
         *,
         current_programs: dict[str, Program] | None = None,
         show_now_playing: bool = True,
-        favorites: set[str] | None = None,
-        current_channel_url: str = "",
+        favorites: set[tuple[str, str]] | None = None,
+        current_channel_key: tuple[str, str] | None = None,
     ) -> None:
         self._populate_list(
             self.channel_list,
@@ -113,7 +113,7 @@ class LeftPanel(QFrame):
             current_programs=current_programs,
             show_now_playing=show_now_playing,
             favorites=favorites,
-            current_channel_url=current_channel_url,
+            current_channel_key=current_channel_key,
             empty_message="Load a playlist to browse channels.",
         )
 
@@ -123,15 +123,15 @@ class LeftPanel(QFrame):
         *,
         current_programs: dict[str, Program] | None = None,
         show_now_playing: bool = True,
-        current_channel_url: str = "",
+        current_channel_key: tuple[str, str] | None = None,
     ) -> None:
         self._populate_list(
             self.favorites_list,
             channels,
             current_programs=current_programs,
             show_now_playing=show_now_playing,
-            favorites={channel.url for channel in channels},
-            current_channel_url=current_channel_url,
+            favorites={channel.identity_key() for channel in channels},
+            current_channel_key=current_channel_key,
             empty_message="Favorite channels appear here.",
         )
 
@@ -141,8 +141,8 @@ class LeftPanel(QFrame):
         *,
         current_programs: dict[str, Program] | None = None,
         show_now_playing: bool = True,
-        favorites: set[str] | None = None,
-        current_channel_url: str = "",
+        favorites: set[tuple[str, str]] | None = None,
+        current_channel_key: tuple[str, str] | None = None,
     ) -> None:
         self._populate_list(
             self.recent_list,
@@ -150,7 +150,7 @@ class LeftPanel(QFrame):
             current_programs=current_programs,
             show_now_playing=show_now_playing,
             favorites=favorites,
-            current_channel_url=current_channel_url,
+            current_channel_key=current_channel_key,
             empty_message="Recently played channels appear here.",
         )
 
@@ -162,9 +162,9 @@ class LeftPanel(QFrame):
         if index >= 0:
             self.sort_combo.setCurrentIndex(index)
 
-    def highlight_channel(self, channel_url: str) -> None:
+    def highlight_channel(self, channel: Channel) -> None:
         for widget in (self.channel_list, self.favorites_list, self.recent_list):
-            self._select_channel(widget, channel_url)
+            self._select_channel(widget, channel.identity_key())
 
     def _populate_list(
         self,
@@ -173,8 +173,8 @@ class LeftPanel(QFrame):
         *,
         current_programs: dict[str, Program] | None,
         show_now_playing: bool,
-        favorites: set[str] | None,
-        current_channel_url: str,
+        favorites: set[tuple[str, str]] | None,
+        current_channel_key: tuple[str, str] | None,
         empty_message: str,
     ) -> None:
         widget.clear()
@@ -190,13 +190,13 @@ class LeftPanel(QFrame):
                 channel,
                 program=program,
                 show_now_playing=show_now_playing,
-                is_favorite=channel.url in favorites,
-                is_current=channel.url == current_channel_url,
+                is_favorite=channel.identity_key() in favorites,
+                is_current=channel.identity_key() == current_channel_key,
             )
             widget.addItem(item)
 
-        if current_channel_url:
-            self._select_channel(widget, current_channel_url)
+        if current_channel_key:
+            self._select_channel(widget, current_channel_key)
 
     @staticmethod
     def _channel_item(
@@ -248,13 +248,13 @@ class LeftPanel(QFrame):
         return item
 
     @staticmethod
-    def _select_channel(widget: QListWidget, channel_url: str) -> None:
-        if not channel_url:
+    def _select_channel(widget: QListWidget, channel_key: tuple[str, str] | None) -> None:
+        if not channel_key:
             widget.clearSelection()
             return
         for index in range(widget.count()):
             item = widget.item(index)
             data = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(data, Channel) and data.url == channel_url:
+            if isinstance(data, Channel) and data.identity_key() == channel_key:
                 widget.setCurrentRow(index)
                 return
