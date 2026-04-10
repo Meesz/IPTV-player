@@ -1,17 +1,28 @@
 import gzip
+import logging
 import os
 import pathlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import requests
 from requests.exceptions import Timeout
 
 import pytest
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QWidget
 
 import app.main as app_main
-from core.errors import NetworkError, RepositoryError, ValidationError
-from core.models import Channel, Playlist, PlaylistReference, Program, Settings
+from core.errors import NetworkError, ParsingError, RepositoryError, ValidationError
+from core.models import (
+    Channel,
+    Playlist,
+    PlaylistReference,
+    PlaylistSourceType,
+    Program,
+    Settings,
+    XtreamCredentials,
+)
 from core.services.epg_service import EPGService
 from core.services.history_service import HistoryService
 from core.services.playlist_service import PlaylistService
@@ -24,9 +35,12 @@ from infra.db.settings_repository import SettingsRepository
 from infra.db.sqlite_connection import SQLiteConnection
 from infra.parsers.epg_parser import EPGParser
 from infra.parsers.m3u_parser import M3UParser
+from infra.providers.xtream_client import XtreamClient
 from ui.controllers.epg_controller import EPGController
+from ui.controllers.main_controller import MainController
 from ui.controllers.playlist_controller import PlaylistController
 from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
+from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.right_panel import RightPanel
@@ -46,16 +60,47 @@ class _DummyPlaylistRepository:
         self.playlists = []
 
     def upsert_playlist(self, playlist: PlaylistReference) -> None:
+        self.playlists = [item for item in self.playlists if item.source_identity != playlist.source_identity]
         self.playlists.append(playlist)
 
-    def delete_playlist(self, path: str) -> None:
-        self.playlists = [item for item in self.playlists if item.path != path]
+    def delete_playlist(self, identity: str) -> None:
+        self.playlists = [item for item in self.playlists if item.source_identity != identity]
 
     def get_playlists(self):
         return self.playlists
 
+    def get_playlist_by_identity(self, identity: str):
+        for item in self.playlists:
+            if item.source_identity == identity:
+                return item
+        return None
+
     def import_playlists(self, playlists):
         self.playlists = list(playlists)
+
+    def update_playlist_metadata(
+        self,
+        identity: str,
+        *,
+        channel_count: int,
+        last_loaded_at: str,
+        last_status: str,
+        last_error: str = "",
+    ) -> None:
+        for index, item in enumerate(self.playlists):
+            if item.source_identity != identity:
+                continue
+            self.playlists[index] = PlaylistReference(
+                name=item.name,
+                path=item.path,
+                source_type=item.source_type,
+                xtream=item.xtream,
+                channel_count=channel_count,
+                last_loaded_at=last_loaded_at,
+                last_status=last_status,
+                last_error=last_error,
+            )
+            return
 
 
 class _FailingEPGRepository:
@@ -78,6 +123,8 @@ def test_settings_round_trip():
         theme="light",
         volume=42,
         last_playlist_path="/tmp/list.m3u",
+        last_playlist_source_type=PlaylistSourceType.FILE.value,
+        last_playlist_identity="file::/tmp/list.m3u",
         splitter_sizes=(320, 880),
         active_tab_index=2,
         selected_category="News",
@@ -87,6 +134,8 @@ def test_settings_round_trip():
     assert updated.theme == "light"
     assert updated.volume == 42
     assert updated.last_playlist_path == "/tmp/list.m3u"
+    assert updated.last_playlist_source_type == "file"
+    assert updated.last_playlist_identity == "file::/tmp/list.m3u"
     assert updated.show_now_playing_in_list is True
     assert updated.splitter_sizes == (320, 880)
     assert updated.active_tab_index == 2
@@ -163,7 +212,7 @@ def test_playlist_service_assigns_channel_source_path(tmp_path):
 
     playlist = service.load_playlist(str(playlist_path))
 
-    assert playlist.channels[0].playlist_path == str(playlist_path.resolve())
+    assert playlist.channels[0].playlist_path == f"file::{playlist_path.resolve()}"
 
 
 def test_playlist_service_uses_canonical_query_pipeline():
@@ -380,14 +429,14 @@ def test_playlist_metadata_round_trip(tmp_path):
     reference = PlaylistReference(
         name="Main",
         path="/tmp/main.m3u",
-        is_url=False,
+        source_type=PlaylistSourceType.FILE,
         channel_count=120,
         last_loaded_at="2026-04-10 12:00",
         last_status="ready",
     )
     repository.upsert_playlist(reference)
 
-    saved = repository.get_playlist("/tmp/main.m3u")
+    saved = repository.get_playlist_by_identity(reference.source_identity)
     assert saved is not None
     assert saved.channel_count == 120
     assert saved.last_status == "ready"
@@ -399,7 +448,11 @@ def test_playlist_service_rejects_duplicate_references(tmp_path):
     connection = SQLiteConnection(db_path=tmp_path / "playlist-duplicates.sqlite")
     repository = PlaylistRepository(connection)
     service = PlaylistService(repository)
-    reference = PlaylistReference(name="Main", path=str(playlist_path), is_url=False)
+    reference = PlaylistReference(
+        name="Main",
+        path=str(playlist_path),
+        source_type=PlaylistSourceType.FILE,
+    )
 
     with pytest.raises(ValidationError):
         service.import_playlists([reference, reference])
@@ -411,11 +464,15 @@ def test_playlist_service_blocks_removing_active_playlist(tmp_path):
     connection = SQLiteConnection(db_path=tmp_path / "playlist-active.sqlite")
     repository = PlaylistRepository(connection)
     service = PlaylistService(repository)
-    reference = PlaylistReference(name="Main", path=str(playlist_path), is_url=False)
+    reference = PlaylistReference(
+        name="Main",
+        path=str(playlist_path),
+        source_type=PlaylistSourceType.FILE,
+    )
     service.save_playlist_reference(reference)
 
     with pytest.raises(ValidationError):
-        service.import_playlists([], active_playlist_path=str(playlist_path))
+        service.import_playlists([], active_playlist_path=reference.source_identity)
 
 
 def test_playlist_repository_import_preserves_metadata(tmp_path):
@@ -428,7 +485,7 @@ def test_playlist_repository_import_preserves_metadata(tmp_path):
     reference = PlaylistReference(
         name="Main",
         path=str(playlist_path),
-        is_url=False,
+        source_type=PlaylistSourceType.FILE,
         channel_count=120,
         last_loaded_at="2026-04-10 12:00",
         last_status="ready",
@@ -436,7 +493,7 @@ def test_playlist_repository_import_preserves_metadata(tmp_path):
     )
 
     service.import_playlists([reference])
-    saved = service.get_saved_playlist(str(playlist_path))
+    saved = service.get_saved_playlist(reference)
 
     assert saved is not None
     assert saved.channel_count == 120
@@ -580,6 +637,51 @@ def test_left_panel_loading_state(qapp):
     assert state.detail_label.text() == "Parsing 200 channels"
 
 
+def test_left_panel_populates_channels_incrementally(qapp):
+    panel = LeftPanel()
+    channels = [
+        Channel(name=f"Channel {index}", url=f"https://example.com/{index}", group="News")
+        for index in range(5)
+    ]
+    progress: list[tuple[int, int]] = []
+    completed: list[bool] = []
+
+    panel.populate_channels_incrementally(
+        channels,
+        batch_size=2,
+        progress_callback=lambda loaded, total: progress.append((loaded, total)),
+        completion_callback=lambda: completed.append(True),
+    )
+
+    for _ in range(10):
+        qapp.processEvents()
+
+    assert panel.channel_list.count() == 5
+    assert progress[-1] == (5, 5)
+    assert completed == [True]
+
+
+def test_left_panel_incremental_population_cancels_stale_batches(qapp):
+    panel = LeftPanel()
+    first_batch = [
+        Channel(name=f"Old {index}", url=f"https://example.com/old/{index}")
+        for index in range(4)
+    ]
+    second_batch = [Channel(name="Fresh", url="https://example.com/fresh")]
+
+    panel.populate_channels_incrementally(first_batch, batch_size=1)
+    panel.populate_channels_incrementally(second_batch, batch_size=1)
+
+    for _ in range(10):
+        qapp.processEvents()
+
+    assert panel.channel_list.count() == 1
+    item = panel.channel_list.item(0)
+    channel = item.data(0x0100)
+    assert isinstance(channel, Channel)
+    assert channel.name == "Fresh"
+
+
 def test_notification_widget_queues_messages_and_repositions(qapp):
     parent = QWidget()
     parent.resize(600, 400)
@@ -599,6 +701,9 @@ def test_notification_widget_queues_messages_and_repositions(qapp):
 
 def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeypatch):
     dialog = PlaylistManagerDialog()
+    assert dialog.objectName() == "playlist_dialog"
+    assert dialog.autoFillBackground() is True
+    assert dialog.testAttribute(Qt.WidgetAttribute.WA_StyledBackground) is True
     dialog.set_playlist_validator(lambda ref: (None, "Playlist file not found"))
     dialog._add_item("Broken", "/missing/file.m3u", False)
 
@@ -609,7 +714,8 @@ def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeyp
         lambda ref, **_kwargs: PlaylistReference(
             name=ref.name,
             path=ref.path,
-            is_url=ref.is_url,
+            source_type=ref.source_type,
+            xtream=ref.xtream,
             channel_count=42,
             last_status="ready",
             last_error="",
@@ -624,6 +730,455 @@ def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeyp
     assert "42 channels" in dialog.feedback_label.text()
     assert "42" in dialog.detail_channels.text()
     assert "Verified successfully" in dialog.detail_validation.text()
+
+
+def test_xtream_source_dialog_has_opaque_root(qapp):
+    dialog = XtreamSourceDialog()
+
+    assert dialog.objectName() == "xtream_source_dialog"
+    assert dialog.autoFillBackground() is True
+    assert dialog.testAttribute(Qt.WidgetAttribute.WA_StyledBackground) is True
+
+
+def test_playlist_reference_source_identity_and_safe_summary():
+    xtream = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example/",
+            username="alice",
+            password="secret",
+            output="m3u8",
+        ),
+    )
+
+    assert xtream.source_identity == "xtream::https://provider.example::alice::m3u8"
+    assert "secret" not in xtream.source_summary()
+    assert "secret" not in xtream.to_settings_value()
+
+
+def test_xtream_client_success_path(monkeypatch):
+    client = XtreamClient(timeout=5)
+    credentials = XtreamCredentials(
+        server_url="https://provider.example/",
+        username="alice",
+        password="secret",
+        output="ts",
+    )
+    calls: list[str] = []
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def _fake_get(url, timeout):
+        calls.append(url)
+        if "action=get_live_categories" in url:
+            return _Response([{"category_id": "7", "category_name": "News"}])
+        if "action=get_live_streams" in url:
+            return _Response(
+                [
+                    {
+                        "stream_id": 100,
+                        "name": "Global News",
+                        "stream_icon": "https://img.example/news.png",
+                        "epg_channel_id": "news.epg",
+                        "num": "12",
+                        "category_id": "7",
+                    }
+                ]
+            )
+        return _Response({"user_info": {"auth": 1, "status": "Active"}})
+
+    monkeypatch.setattr(client.session, "get", _fake_get)
+
+    client.validate_credentials(credentials)
+    channels = client.fetch_live_channels(credentials)
+
+    assert len(channels) == 1
+    assert channels[0].group == "News"
+    assert channels[0].channel_number == 12
+    assert channels[0].url == "https://provider.example/live/alice/secret/100.ts"
+    assert any("player_api.php" in call for call in calls)
+
+
+def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
+    client = XtreamClient(timeout=5)
+    credentials = XtreamCredentials(
+        server_url="https://provider.example/",
+        username="alice",
+        password="secret",
+        output="ts",
+    )
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"user_info": {"auth": 1, "status": "Active"}}
+
+    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
+        client.validate_credentials(credentials)
+
+    text = caplog.text
+    assert "secret" not in text
+    assert "password=%2A%2A%2A" in text or "password=***" in text
+    assert "provider.example / alice / ts" in text
+
+
+def test_xtream_client_auth_failure(monkeypatch):
+    client = XtreamClient()
+    credentials = XtreamCredentials(
+        server_url="https://provider.example",
+        username="alice",
+        password="bad",
+    )
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"user_info": {"auth": 0, "status": "Disabled"}}
+
+    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+
+    with pytest.raises(ValidationError):
+        client.validate_credentials(credentials)
+
+
+def test_xtream_client_logs_timeout(monkeypatch, caplog):
+    client = XtreamClient(timeout=5)
+    credentials = XtreamCredentials(
+        server_url="https://provider.example",
+        username="alice",
+        password="secret",
+    )
+
+    monkeypatch.setattr(
+        client.session,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(Timeout("slow")),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
+        with pytest.raises(NetworkError):
+            client.validate_credentials(credentials)
+
+    assert "timed out" in caplog.text.lower()
+    assert "secret" not in caplog.text
+
+
+def test_xtream_client_invalid_payload(monkeypatch):
+    client = XtreamClient()
+    credentials = XtreamCredentials(
+        server_url="https://provider.example",
+        username="alice",
+        password="secret",
+    )
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return "not a list"
+
+    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+
+    with pytest.raises(ParsingError):
+        client.fetch_live_channels(credentials)
+
+
+def test_playlist_service_logs_xtream_failure(caplog):
+    class _FailingXtreamClient:
+        def validate_credentials(self, credentials):
+            raise ValidationError("bad credentials")
+
+        def fetch_live_channels(self, credentials):
+            return []
+
+    service = PlaylistService(
+        _DummyPlaylistRepository(),  # type: ignore[arg-type]
+        xtream_client=_FailingXtreamClient(),  # type: ignore[arg-type]
+    )
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+        ),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="core.services.playlist_service"):
+        with pytest.raises(ValidationError):
+            service.load_playlist(reference)
+
+    assert "Starting Xtream playlist load" in caplog.text
+    assert "authentication phase failed" in caplog.text.lower()
+    assert "secret" not in caplog.text
+
+
+def test_xtream_client_retries_http_over_https(monkeypatch, caplog):
+    client = XtreamClient(timeout=5)
+    credentials = XtreamCredentials(
+        server_url="http://provider.example",
+        username="alice",
+        password="secret",
+        output="ts",
+    )
+    calls: list[str] = []
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"user_info": {"auth": 1, "status": "Active"}}
+
+    def _fake_get(url, timeout):
+        calls.append(url)
+        if url.startswith("http://"):
+            raise requests.exceptions.ConnectionError("reset")
+        return _Response()
+
+    monkeypatch.setattr(client.session, "get", _fake_get)
+
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
+        client.validate_credentials(credentials)
+
+    assert calls[0].startswith("http://")
+    assert calls[1].startswith("https://")
+    assert client.last_effective_credentials is not None
+    assert client.last_effective_credentials.server_url == "https://provider.example"
+    assert "Retrying Xtream authenticate request over HTTPS" in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_xtream_client_reports_dual_transport_failure(monkeypatch):
+    client = XtreamClient(timeout=5)
+    credentials = XtreamCredentials(
+        server_url="http://provider.example",
+        username="alice",
+        password="secret",
+    )
+
+    monkeypatch.setattr(
+        client.session,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            requests.exceptions.ConnectionError("reset")
+        ),
+    )
+
+    with pytest.raises(NetworkError, match="HTTP or HTTPS"):
+        client.validate_credentials(credentials)
+
+
+def test_playlist_service_upgrades_xtream_reference_after_https_retry():
+    class _FallbackXtreamClient:
+        def __init__(self):
+            self.last_effective_credentials = None
+
+        def validate_credentials(self, credentials):
+            self.last_effective_credentials = XtreamCredentials(
+                server_url="https://provider.example",
+                username=credentials.username,
+                password=credentials.password,
+                output=credentials.output,
+            )
+            return {"user_info": {"auth": 1, "status": "Active"}}
+
+        def fetch_live_channels(self, credentials):
+            self.last_effective_credentials = credentials
+            return [
+                Channel(
+                    name="News",
+                    url="https://provider.example/live/alice/secret/1.ts",
+                )
+            ]
+
+    service = PlaylistService(
+        _DummyPlaylistRepository(),  # type: ignore[arg-type]
+        xtream_client=_FallbackXtreamClient(),  # type: ignore[arg-type]
+    )
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="http://provider.example",
+            username="alice",
+            password="secret",
+            output="ts",
+        ),
+    )
+
+    playlist = service.load_playlist(reference)
+
+    assert playlist.source_reference is not None
+    assert playlist.source_reference.xtream is not None
+    assert playlist.source_reference.xtream.server_url == "https://provider.example"
+    assert playlist.source_path == "xtream::https://provider.example::alice::ts"
+
+
+def test_app_resolves_log_level_from_environment(monkeypatch):
+    monkeypatch.setenv("IPTV_LOG_LEVEL", "DEBUG")
+    assert app_main._resolve_log_level() == logging.DEBUG
+
+    monkeypatch.setenv("IPTV_LOG_LEVEL", "not-a-level")
+    assert app_main._resolve_log_level() == logging.INFO
+
+
+def test_playlist_service_validates_xtream_reference():
+    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+            output="ts",
+        ),
+    )
+
+    validated = service.validate_playlist_reference(reference)
+
+    assert validated.source_type == PlaylistSourceType.XTREAM
+    assert validated.xtream is not None
+    assert validated.xtream.server_url == "https://provider.example"
+
+
+def test_playlist_service_rejects_duplicate_xtream_references():
+    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+            output="ts",
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        service.import_playlists([reference, reference])
+
+
+def test_playlist_repository_persists_xtream_references(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "playlist-xtream.sqlite")
+    repository = PlaylistRepository(connection)
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+            output="m3u8",
+        ),
+        channel_count=88,
+        last_status="ready",
+    )
+
+    repository.upsert_playlist(reference)
+    saved = repository.get_playlist_by_identity(reference.source_identity)
+
+    assert saved is not None
+    assert saved.source_type == PlaylistSourceType.XTREAM
+    assert saved.xtream is not None
+    assert saved.xtream.password == "secret"
+    assert saved.channel_count == 88
+
+
+def test_playlist_repository_migrates_legacy_rows(tmp_path):
+    db_path = tmp_path / "legacy-playlists.sqlite"
+    connection = SQLiteConnection(db_path=db_path)
+    with connection.get_connection() as conn:
+        conn.execute("DROP TABLE playlists")
+        conn.executescript(
+            """
+            CREATE TABLE playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                is_url BOOLEAN NOT NULL DEFAULT 0
+            );
+            INSERT INTO playlists (name, path, is_url)
+            VALUES ('Legacy URL', 'https://example.com/list.m3u', 1);
+            """
+        )
+
+    migrated = SQLiteConnection(db_path=db_path)
+    repository = PlaylistRepository(migrated)
+    playlists = repository.get_playlists()
+
+    assert len(playlists) == 1
+    assert playlists[0].source_type == PlaylistSourceType.URL
+    assert playlists[0].path == "https://example.com/list.m3u"
+
+
+def test_main_controller_restores_xtream_source():
+    saved = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+        ),
+    )
+    calls: list[object] = []
+
+    class _PlaylistController:
+        def get_saved_playlist_by_identity(self, identity):
+            return saved if identity == saved.source_identity else None
+
+        def load_playlist(self, value, is_url=False):
+            calls.append(value)
+
+    class _SettingsController:
+        def get_setting(self, key, default=None):
+            values = {
+                "last_playlist_identity": saved.source_identity,
+                "last_playlist_source_type": "xtream",
+                "last_playlist_path": "",
+                "last_playlist": "",
+                "last_playlist_is_url": "false",
+            }
+            return values.get(key, default)
+
+    controller = MainController(_PlaylistController(), _SettingsController())
+    controller.start()
+
+    assert calls == [saved]
 
 
 def test_playlist_controller_ignores_stale_worker_result(monkeypatch):
