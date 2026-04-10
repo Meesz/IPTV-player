@@ -1,86 +1,98 @@
-import sys
 import logging
+import sys
+
+from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+
 from infra.playback.vlc_backend import VLCBackend
+
 
 logger = logging.getLogger(__name__)
 
+
 class MediaEventHandler(QObject):
     """Handler for VLC media events with Qt signals."""
-    
+
     error_occurred = pyqtSignal(str)
     media_playing = pyqtSignal()
     media_stopped = pyqtSignal()
     media_buffering = pyqtSignal(float)
-    
+
     def __init__(self, player):
         super().__init__()
         self.player = player
         self.vlc = VLCBackend.get_vlc()
         self._setup_events()
-        
-    def _setup_events(self):
+
+    def _setup_events(self) -> None:
         if not self.player:
             return
-            
+
         events = self.player.event_manager()
         events.event_attach(self.vlc.EventType.MediaPlayerPlaying, self._on_playing)
         events.event_attach(self.vlc.EventType.MediaPlayerStopped, self._on_stopped)
         events.event_attach(self.vlc.EventType.MediaPlayerEncounteredError, self._on_error)
         events.event_attach(self.vlc.EventType.MediaPlayerBuffering, self._on_buffering)
-    
-    def _on_playing(self, event):
+
+    def _on_playing(self, event) -> None:
         self.media_playing.emit()
-    
-    def _on_stopped(self, event):
+
+    def _on_stopped(self, event) -> None:
         self.media_stopped.emit()
-    
-    def _on_error(self, event):
+
+    def _on_error(self, event) -> None:
         self.error_occurred.emit("Media playback failed")
-    
-    def _on_buffering(self, event):
+
+    def _on_buffering(self, event) -> None:
         cache_percentage = event.u.new_cache if hasattr(event, "u") else 0
         self.media_buffering.emit(cache_percentage)
+
 
 class PlayerWidget(QFrame):
     """A widget that displays and controls VLC media playback."""
 
+    playback_state_changed = pyqtSignal(str, str)
+
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(400, 300)
+        self.setObjectName("player_canvas")
+        self.setMinimumSize(540, 340)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
 
-        self.placeholder = QLabel("No media playing")
+        self.placeholder = QLabel("No stream loaded")
+        self.placeholder.setObjectName("player_placeholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder.setWordWrap(True)
         self.layout.addWidget(self.placeholder)
 
-        self.status_overlay = QLabel()
+        self.status_overlay = QLabel(self)
+        self.status_overlay.setObjectName("player_overlay")
         self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128); color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
+        self.status_overlay.setWordWrap(True)
         self.status_overlay.hide()
-        self.layout.addWidget(self.status_overlay)
 
         success, error = VLCBackend.initialize()
         self.vlc_available = success
         self.vlc = None
         self.instance = None
         self.player = None
+        self.current_state = "idle"
         if not success:
-            self.placeholder.setText(error)
+            self.placeholder.setText(error or "VLC backend unavailable")
+            self._set_state("error", error or "VLC backend unavailable")
             return
 
         self.vlc = VLCBackend.get_vlc()
         self.instance = VLCBackend.get_instance()
         self.player = VLCBackend.create_player()
-        
+
         self.event_handler = MediaEventHandler(self.player)
         self.event_handler.error_occurred.connect(self._handle_playback_error)
         self.event_handler.media_playing.connect(self._on_media_playing)
         self.event_handler.media_stopped.connect(self._on_media_stopped)
         self.event_handler.media_buffering.connect(self._on_media_buffering)
-        
+
         self._setup_player()
 
         self.setMouseTracking(True)
@@ -91,14 +103,16 @@ class PlayerWidget(QFrame):
         self.normal_layout = None
         self.normal_index = None
         self.normal_stretch = None
-        
+
         self.reconnect_timer = QTimer(self)
         self.reconnect_timer.setSingleShot(True)
         self.reconnect_timer.timeout.connect(self._reconnect)
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 5
 
-    def _setup_player(self):
+        self._set_state("idle", "Awaiting stream selection")
+
+    def _setup_player(self) -> None:
         if not self.vlc_available or not self.player:
             return
 
@@ -106,8 +120,7 @@ class PlayerWidget(QFrame):
             if sys.platform == "win32":
                 self.player.set_hwnd(self.winId())
             elif sys.platform.startswith("linux"):
-                window_id = int(self.winId())
-                self.player.set_xwindow(window_id)
+                self.player.set_xwindow(int(self.winId()))
             elif sys.platform == "darwin":
                 self.player.set_nsobject(int(self.winId()))
             self.player.video_set_key_input(False)
@@ -115,83 +128,101 @@ class PlayerWidget(QFrame):
         except Exception as exc:
             logger.warning("Failed to bind VLC window handle: %s", exc)
 
-    def play(self, url: str):
+    def play(self, url: str) -> None:
         if not self.vlc_available or not self.player:
             self.placeholder.setText("VLC backend unavailable")
             self.placeholder.show()
+            self._set_state("error", "VLC backend unavailable")
             return
-            
+
         self.reconnect_timer.stop()
         self.reconnect_attempts = 0
         self.current_url = url
 
         try:
             self._show_status("Connecting to stream...")
+            self._set_state("connecting", "Preparing live stream")
             media = self.instance.media_new(url)
-            
+
             if url.startswith(("rtmp://", "rtsp://")):
                 media.add_option("network-caching=1500")
             else:
                 media.add_option("network-caching=1000")
-                
+
             media.add_option("clock-jitter=0")
             media.add_option("clock-synchro=0")
-            
+
             self.player.set_media(media)
             self.player.play()
-        except Exception as e:
-            self._handle_playback_error(str(e))
+        except Exception as exc:
+            self._handle_playback_error(str(exc))
 
-    def stop(self):
+    def stop(self) -> None:
         if self.vlc_available and self.player:
             if self.is_fullscreen:
                 self._exit_fullscreen()
             self.player.stop()
             self.placeholder.show()
             self.reconnect_timer.stop()
+        self._set_state("idle", "Awaiting stream selection")
 
-    def pause(self):
+    def pause(self) -> None:
         if self.vlc_available and self.player:
             self.player.pause()
 
-    def set_volume(self, volume: int):
+    def set_volume(self, volume: int) -> None:
         if self.vlc_available and self.player:
             self.player.audio_set_volume(max(0, min(100, volume)))
 
-    def _show_status(self, message, duration=2000):
+    def _set_state(self, state: str, detail: str = "") -> None:
+        self.current_state = state
+        self.playback_state_changed.emit(state, detail)
+
+    def _show_status(self, message: str, duration: int = 2000) -> None:
         self.status_overlay.setText(message)
+        self.status_overlay.adjustSize()
+        self._position_overlay()
         self.status_overlay.show()
         QTimer.singleShot(duration, self.status_overlay.hide)
 
-    def _on_media_playing(self):
+    def _on_media_playing(self) -> None:
         self.placeholder.hide()
         self.status_overlay.hide()
         self.reconnect_attempts = 0
+        self._set_state("playing", "Stream is live")
 
-    def _on_media_stopped(self):
+    def _on_media_stopped(self) -> None:
         self.placeholder.show()
+        self._set_state("idle", "Playback stopped")
 
-    def _on_media_buffering(self, cache_percentage):
+    def _on_media_buffering(self, cache_percentage: float) -> None:
         if cache_percentage < 100:
-            self._show_status(f"Buffering: {int(cache_percentage)}%")
+            detail = f"Buffering {int(cache_percentage)}%"
+            self._show_status(detail)
+            self._set_state("buffering", detail)
         else:
             self.status_overlay.hide()
 
-    def _handle_playback_error(self, error_msg):
+    def _handle_playback_error(self, error_msg: str) -> None:
         self.placeholder.setText(error_msg)
         self.placeholder.show()
-        
+
         if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
             self.reconnect_attempts += 1
             delay = min(2 ** self.reconnect_attempts, 30)
-            self._show_status(f"Reconnecting in {delay}s...", duration=delay*1000)
+            detail = f"Retrying in {delay}s"
+            self._show_status(detail, duration=delay * 1000)
+            self._set_state("reconnecting", detail)
             self.reconnect_timer.start(int(delay * 1000))
+            return
 
-    def _reconnect(self):
+        self._set_state("error", error_msg)
+
+    def _reconnect(self) -> None:
         if self.current_url and self.player:
             self.play(self.current_url)
 
-    def mouseDoubleClickEvent(self, event):
+    def mouseDoubleClickEvent(self, event) -> None:
         if not self.vlc_available or not self.player or not self.player.is_playing():
             return
 
@@ -200,7 +231,7 @@ class PlayerWidget(QFrame):
         else:
             self._exit_fullscreen()
 
-    def _enter_fullscreen(self):
+    def _enter_fullscreen(self) -> None:
         self.normal_geometry = self.geometry()
         self.normal_parent = self.parent()
         self.normal_layout = self.parent().layout() if self.parent() else None
@@ -221,7 +252,7 @@ class PlayerWidget(QFrame):
         self.show()
         self.is_fullscreen = True
 
-    def _exit_fullscreen(self):
+    def _exit_fullscreen(self) -> None:
         if not self.parent():
             return
         self.window().setWindowState(Qt.WindowState.WindowNoState)
@@ -237,6 +268,18 @@ class PlayerWidget(QFrame):
 
         self.is_fullscreen = False
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
             self._exit_fullscreen()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_overlay()
+
+    def _position_overlay(self) -> None:
+        overlay_width = min(max(220, self.width() - 80), 420)
+        self.status_overlay.resize(overlay_width, self.status_overlay.sizeHint().height() + 12)
+        self.status_overlay.move(
+            (self.width() - self.status_overlay.width()) // 2,
+            max(24, (self.height() - self.status_overlay.height()) // 2),
+        )
