@@ -1,7 +1,7 @@
 from typing import Any
 
 from core.errors import RepositoryError
-from core.models import Settings
+from core.models import PlaylistReference, PlaylistSourceType, Settings
 from infra.db.settings_repository import SettingsRepository
 
 
@@ -22,6 +22,12 @@ class SettingsService:
                     self.repository.get_setting(
                         "last_playlist", self._settings.last_playlist_path
                     ),
+                ),
+                last_playlist_source_type=self.repository.get_setting(
+                    "last_playlist_source_type", self._settings.last_playlist_source_type
+                ),
+                last_playlist_identity=self.repository.get_setting(
+                    "last_playlist_identity", self._settings.last_playlist_identity
                 ),
                 last_channel_url=self.repository.get_setting(
                     "last_channel_url", self._settings.last_channel_url
@@ -96,12 +102,18 @@ class SettingsService:
         self.repository.save_setting("last_playlist", self._settings.last_playlist_path)
         self.repository.save_setting("last_epg_file", self._settings.last_epg_path)
         self.repository.save_setting("epg_url", self._settings.last_epg_url)
+        self.repository.save_setting(
+            "last_playlist_source_type", self._settings.last_playlist_source_type
+        )
+        self.repository.save_setting(
+            "last_playlist_identity", self._settings.last_playlist_identity
+        )
         playlist_is_url = self.repository.get_setting("last_playlist_is_url", "false")
         normalized_value = str(playlist_is_url).strip().lower()
         is_recognized_bool = normalized_value in {"0", "1", "true", "false", "yes", "no", "on", "off"}
         if not is_recognized_bool:
             playlist_is_url = (
-                "true" if self._settings.last_playlist_path.startswith(("http://", "https://")) else "false"
+                "true" if self._settings.last_playlist_source_type == PlaylistSourceType.URL.value else "false"
             )
         self.repository.save_setting("last_playlist_is_url", playlist_is_url)
 
@@ -144,19 +156,69 @@ class SettingsService:
             normalized_value = str(value)
 
         if normalized_key == "last_playlist_path":
-            self._settings = self._settings.with_updates(last_playlist_path=normalized_value)
+            source_type = (
+                PlaylistSourceType.URL
+                if str(value).startswith(("http://", "https://"))
+                else PlaylistSourceType.FILE
+            )
+            source_identity = PlaylistReference(
+                name="Playlist",
+                path=normalized_value,
+                source_type=source_type,
+            ).source_identity
+            self._settings = self._settings.with_updates(
+                last_playlist_path=normalized_value,
+                last_playlist_source_type=source_type.value,
+                last_playlist_identity=source_identity,
+            )
             self.repository.save_setting("last_playlist", normalized_value)
             self.repository.save_setting(
                 "last_playlist_is_url",
                 "true" if str(value).startswith(("http://", "https://")) else "false",
             )
+            self.repository.save_setting(
+                "last_playlist_identity",
+                source_identity,
+            )
+            self.repository.save_setting(
+                "last_playlist_source_type",
+                source_type.value,
+            )
         elif normalized_key == "last_playlist":
-            self._settings = self._settings.with_updates(last_playlist_path=normalized_value)
+            source_type = (
+                PlaylistSourceType.URL
+                if str(value).startswith(("http://", "https://"))
+                else PlaylistSourceType.FILE
+            )
+            source_identity = PlaylistReference(
+                name="Playlist",
+                path=normalized_value,
+                source_type=source_type,
+            ).source_identity
+            self._settings = self._settings.with_updates(
+                last_playlist_path=normalized_value,
+                last_playlist_source_type=source_type.value,
+                last_playlist_identity=source_identity,
+            )
             self.repository.save_setting("last_playlist_path", normalized_value)
             self.repository.save_setting(
                 "last_playlist_is_url",
                 "true" if str(value).startswith(("http://", "https://")) else "false",
             )
+            self.repository.save_setting(
+                "last_playlist_identity",
+                source_identity,
+            )
+            self.repository.save_setting(
+                "last_playlist_source_type",
+                source_type.value,
+            )
+        elif normalized_key == "last_playlist_source_type":
+            self._settings = self._settings.with_updates(
+                last_playlist_source_type=normalized_value
+            )
+        elif normalized_key == "last_playlist_identity":
+            self._settings = self._settings.with_updates(last_playlist_identity=normalized_value)
         elif normalized_key == "last_epg_path":
             self._settings = self._settings.with_updates(last_epg_path=normalized_value)
             self.repository.save_setting("last_epg_file", normalized_value)
