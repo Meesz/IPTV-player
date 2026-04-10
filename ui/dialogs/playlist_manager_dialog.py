@@ -19,14 +19,15 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.models import PlaylistReference
+from core.models import PlaylistReference, PlaylistSourceType
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
+from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
 
 
 class PlaylistManagerDialog(QDialog):
     """Dialog for adding, editing, and selecting playlist references."""
 
-    playlist_selected = pyqtSignal(str, bool)
+    playlist_selected = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -34,6 +35,8 @@ class PlaylistManagerDialog(QDialog):
         self.setWindowTitle("Playlist Manager")
         self.setMinimumSize(760, 420)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
         self._active_playlist_path = ""
         self._playlist_validator: Callable[
             [PlaylistReference], tuple[PlaylistReference | None, str]
@@ -42,7 +45,7 @@ class PlaylistManagerDialog(QDialog):
         self._thread_pool = QThreadPool.globalInstance() or QThreadPool()
         self._tester_task_id = 0
         self._tester_worker: BackgroundTask | None = None
-        self._validation_messages: dict[tuple[str, bool], tuple[str, str]] = {}
+        self._validation_messages: dict[str, tuple[str, str]] = {}
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -88,6 +91,7 @@ class PlaylistManagerDialog(QDialog):
         self.add_menu = QMenu(self)
         self.add_menu.addAction("From File...", self._add_playlist_file)
         self.add_menu.addAction("From URL...", self._add_playlist_url)
+        self.add_menu.addAction("From Xtream Codes...", self._add_playlist_xtream)
         self.add_button.setMenu(self.add_menu)
 
         self.edit_button = QPushButton("Edit")
@@ -189,6 +193,18 @@ class PlaylistManagerDialog(QDialog):
         if ok and url:
             self._add_playlist_entry(url.strip(), is_url=True)
 
+    def _add_playlist_xtream(self) -> None:
+        dialog = XtreamSourceDialog(self)
+        if dialog.exec():
+            playlist = self._validated_playlist(dialog.to_reference())
+            if not playlist or self._has_duplicate(playlist):
+                return
+            self._add_playlist_item(playlist)
+            self._set_feedback(
+                "ready",
+                "Xtream source added to the library. Use Test Source to verify the credentials.",
+            )
+
     def _add_playlist_entry(self, path: str, is_url: bool = False) -> None:
         default_name = os.path.basename(path) if not is_url else "URL Playlist"
         name, ok = QInputDialog.getText(
@@ -203,7 +219,11 @@ class PlaylistManagerDialog(QDialog):
 
     def _add_item(self, name: str, path: str, is_url: bool) -> None:
         playlist = self._validated_playlist(
-            PlaylistReference(name=name, path=path, is_url=is_url)
+            PlaylistReference(
+                name=name,
+                path=path,
+                source_type=PlaylistSourceType.URL if is_url else PlaylistSourceType.FILE,
+            )
         )
         if not playlist or self._has_duplicate(playlist):
             return
@@ -220,7 +240,10 @@ class PlaylistManagerDialog(QDialog):
         if not current_item:
             return
         playlist = current_item.data(Qt.ItemDataRole.UserRole)
-        if isinstance(playlist, PlaylistReference) and playlist.path == self._active_playlist_path:
+        if (
+            isinstance(playlist, PlaylistReference)
+            and playlist.source_identity == self._active_playlist_path
+        ):
             self._show_warning("The active playlist cannot be removed.")
             return
         confirm = QMessageBox.question(
@@ -241,7 +264,7 @@ class PlaylistManagerDialog(QDialog):
         playlist = current_item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(playlist, PlaylistReference):
             return
-        self.playlist_selected.emit(playlist.path, playlist.is_url)
+        self.playlist_selected.emit(playlist)
         self.accept()
 
     def _edit_playlist(self) -> None:
@@ -258,8 +281,39 @@ class PlaylistManagerDialog(QDialog):
         if not ok or not name:
             return
 
+        if data.source_type == PlaylistSourceType.XTREAM:
+            xtream_reference = PlaylistReference(
+                name=name.strip(),
+                path="",
+                source_type=PlaylistSourceType.XTREAM,
+                xtream=data.xtream,
+                channel_count=data.channel_count,
+                last_loaded_at=data.last_loaded_at,
+                last_status=data.last_status,
+                last_error=data.last_error,
+            )
+            dialog = XtreamSourceDialog(self, xtream_reference)
+            if not dialog.exec():
+                return
+            playlist = self._validated_playlist(dialog.to_reference())
+            if not playlist:
+                return
+            if (
+                data.source_identity == self._active_playlist_path
+                and playlist.identity_key() != data.identity_key()
+            ):
+                self._show_warning("The active playlist source cannot be changed while it is active.")
+                return
+            if self._has_duplicate(playlist, ignore_item=current_item):
+                return
+            current_item.setData(Qt.ItemDataRole.UserRole, playlist)
+            current_item.setText(self._item_title(playlist))
+            self._set_feedback("ready", "Playlist updated.")
+            self._set_details(playlist)
+            return
+
         path = data.path
-        is_url = data.is_url
+        is_url = data.source_type == PlaylistSourceType.URL
         if is_url:
             new_path, ok = QInputDialog.getText(
                 self,
@@ -269,7 +323,7 @@ class PlaylistManagerDialog(QDialog):
             )
             if not ok or not new_path:
                 return
-            if data.path == self._active_playlist_path and new_path.strip() != data.path:
+            if data.source_identity == self._active_playlist_path and new_path.strip() != data.path:
                 self._show_warning("The active playlist source cannot be changed while it is active.")
                 return
             path = new_path.strip()
@@ -281,7 +335,7 @@ class PlaylistManagerDialog(QDialog):
                 "M3U Files (*.m3u *.m3u8)",
             )
             if new_path:
-                if data.path == self._active_playlist_path and new_path != data.path:
+                if data.source_identity == self._active_playlist_path and new_path != data.path:
                     self._show_warning("The active playlist source cannot be changed while it is active.")
                     return
                 path = new_path
@@ -290,7 +344,7 @@ class PlaylistManagerDialog(QDialog):
             PlaylistReference(
                 name=name.strip(),
                 path=path,
-                is_url=is_url,
+                source_type=PlaylistSourceType.URL if is_url else PlaylistSourceType.FILE,
                 channel_count=data.channel_count,
                 last_loaded_at=data.last_loaded_at,
                 last_status=data.last_status,
@@ -334,7 +388,8 @@ class PlaylistManagerDialog(QDialog):
                 PlaylistReference(
                     name=data.name,
                     path=data.path,
-                    is_url=data.is_url,
+                    source_type=data.source_type,
+                    xtream=data.xtream,
                     channel_count=data.channel_count,
                     last_loaded_at=data.last_loaded_at,
                     last_status=data.last_status,
@@ -391,7 +446,7 @@ class PlaylistManagerDialog(QDialog):
             data = item.data(Qt.ItemDataRole.UserRole)
             if not isinstance(data, PlaylistReference):
                 continue
-            if (data.path, data.is_url) == (playlist.path, playlist.is_url):
+            if data.identity_key() == playlist.identity_key():
                 self._show_warning("That playlist is already in the library.")
                 return True
         return False
@@ -434,7 +489,7 @@ class PlaylistManagerDialog(QDialog):
             return
         current_item.setData(Qt.ItemDataRole.UserRole, result)
         current_item.setText(self._item_title(result))
-        self._validation_messages[(result.path, result.is_url)] = (
+        self._validation_messages[result.source_identity] = (
             result.last_status or "ready",
             result.last_error or f"Verified successfully ({result.channel_count} channels detected).",
         )
@@ -460,7 +515,7 @@ class PlaylistManagerDialog(QDialog):
             else None
         )
         if isinstance(playlist, PlaylistReference):
-            self._validation_messages[(playlist.path, playlist.is_url)] = ("error", message)
+            self._validation_messages[playlist.source_identity] = ("error", message)
             self._set_details(playlist)
         self._set_feedback("error", message)
 
@@ -475,8 +530,8 @@ class PlaylistManagerDialog(QDialog):
         QMessageBox.warning(self, "Playlist Manager", message)
 
     def _item_title(self, playlist: PlaylistReference) -> str:
-        source_kind = "URL" if playlist.is_url else "FILE"
-        suffix = " [ACTIVE]" if playlist.path == self._active_playlist_path else ""
+        source_kind = playlist.source_type.value.upper()
+        suffix = " [ACTIVE]" if playlist.source_identity == self._active_playlist_path else ""
         return f"{playlist.name} [{source_kind}]{suffix}"
 
     def _set_feedback(self, tone: str, message: str) -> None:
@@ -497,8 +552,13 @@ class PlaylistManagerDialog(QDialog):
             return
 
         self.detail_name.setText(f"Name: {playlist.name}")
-        self.detail_source.setText(f"Source: {'Remote URL' if playlist.is_url else 'Local file'}")
-        self.detail_path.setText(f"Path: {playlist.path}")
+        source_map = {
+            PlaylistSourceType.FILE: "Local file",
+            PlaylistSourceType.URL: "Remote URL",
+            PlaylistSourceType.XTREAM: "Xtream Codes",
+        }
+        self.detail_source.setText(f"Source: {source_map.get(playlist.source_type, 'Unknown')}")
+        self.detail_path.setText(f"Path: {playlist.source_summary()}")
         self.detail_channels.setText(
             f"Channels: {playlist.channel_count if playlist.channel_count else 'Unknown'}"
         )
@@ -506,12 +566,12 @@ class PlaylistManagerDialog(QDialog):
             f"Last loaded: {playlist.last_loaded_at or 'Never loaded'}"
         )
         status = playlist.last_status or "Not validated yet"
-        if playlist.path == self._active_playlist_path:
+        if playlist.source_identity == self._active_playlist_path:
             status = f"{status} / Active"
         self.detail_status.setText(f"Status: {status}")
 
         validation_status, validation_message = self._validation_messages.get(
-            (playlist.path, playlist.is_url),
+            playlist.source_identity,
             ("pending", "Use Test Source to verify reachability and parsing."),
         )
         if validation_status == "ready":
