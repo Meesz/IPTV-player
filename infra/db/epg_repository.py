@@ -66,9 +66,13 @@ class EPGRepository:
             logger.error("Failed to clear EPG data: %s", exc)
             raise RepositoryError("Failed to clear EPG cache") from exc
 
-    def get_current_program(self, channel_id: str) -> Optional[Program]:
+    def get_current_program(
+        self,
+        channel_id: str,
+        current_time: datetime | None = None,
+    ) -> Optional[Program]:
         try:
-            current_time = int(datetime.now().timestamp())
+            effective_time = int((current_time or datetime.now()).timestamp())
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
                     """
@@ -79,7 +83,7 @@ class EPGRepository:
                     ORDER BY start_time
                     LIMIT 1
                     """,
-                    (channel_id, current_time, current_time),
+                    (channel_id, effective_time, effective_time),
                 )
                 row = cursor.fetchone()
                 if row:
