@@ -1,15 +1,16 @@
 import logging
 import os
 import tempfile
+from concurrent.futures import CancelledError
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional
 from urllib.parse import urlparse
 
 import requests
 from requests.exceptions import RequestException, Timeout
 
 from core.errors import NetworkError, ParsingError, ValidationError
-from core.models import Playlist, PlaylistReference
+from core.models import Channel, ChannelQuery, Playlist, PlaylistReference
 from infra.db.playlist_repository import PlaylistRepository
 from infra.parsers.m3u_parser import M3UParser
 
@@ -25,18 +26,45 @@ class PlaylistService:
     def current_playlist(self) -> Optional[Playlist]:
         return self._current_playlist
 
-    def load_playlist(self, path: str, is_url: bool = False) -> Playlist:
+    def load_playlist(
+        self,
+        path: str,
+        is_url: bool = False,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
+        update_current: bool = True,
+    ) -> Playlist:
         if not path:
             raise ValidationError("Playlist source is required")
 
         normalized = self._normalize_source(path, is_url)
         if is_url:
             logger.info("Loading playlist from URL: %s", normalized)
-            return self._load_from_url(normalized)
+            return self._load_from_url(
+                normalized,
+                progress_callback=progress_callback,
+                cancel_callback=cancel_callback,
+                update_current=update_current,
+            )
 
-        return self._load_from_file(normalized)
+        return self._load_from_file(
+            normalized,
+            progress_callback=progress_callback,
+            cancel_callback=cancel_callback,
+            update_current=update_current,
+        )
 
-    def _load_from_file(self, path: str) -> Playlist:
+    def _load_from_file(
+        self,
+        path: str,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
+        update_current: bool = True,
+    ) -> Playlist:
+        self._ensure_not_cancelled(cancel_callback)
+        self._emit_progress(progress_callback, "Parsing playlist")
         try:
             playlist = M3UParser.parse(path)
         except FileNotFoundError as exc:
@@ -48,21 +76,36 @@ class PlaylistService:
 
         playlist.source_path = os.path.abspath(path)
         self._apply_source_path(playlist)
-        self._current_playlist = playlist
+        self._ensure_not_cancelled(cancel_callback)
+        if update_current:
+            self._current_playlist = playlist
         return playlist
 
-    def _load_from_url(self, url: str) -> Playlist:
+    def _load_from_url(
+        self,
+        url: str,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
+        update_current: bool = True,
+    ) -> Playlist:
         tmp_path: Path | None = None
         try:
+            self._ensure_not_cancelled(cancel_callback)
+            self._emit_progress(progress_callback, "Downloading playlist")
             content = self._download_with_retries(url, max_retries=3)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8") as tmp_file:
                 tmp_path = Path(tmp_file.name)
                 tmp_file.write(content)
 
+            self._ensure_not_cancelled(cancel_callback)
+            self._emit_progress(progress_callback, "Parsing playlist")
             playlist = M3UParser.parse(str(tmp_path))
             playlist.source_path = url
             self._apply_source_path(playlist)
-            self._current_playlist = playlist
+            self._ensure_not_cancelled(cancel_callback)
+            if update_current:
+                self._current_playlist = playlist
             return playlist
         except NetworkError:
             raise
@@ -116,6 +159,54 @@ class PlaylistService:
 
     def get_saved_playlists(self) -> List[PlaylistReference]:
         return self.repository.get_playlists()
+
+    def query_channels(self, playlist: Playlist, query: ChannelQuery) -> list[Channel]:
+        selected_category = query.category or "All"
+        search_text = query.text.strip().lower()
+
+        if selected_category == "All":
+            channels = list(playlist.channels)
+        else:
+            channels = list(playlist.get_channels_by_category(selected_category))
+
+        if search_text:
+            if not query.current_category_only:
+                channels = list(playlist.channels)
+            channels = [
+                channel
+                for channel in channels
+                if search_text in channel.name.lower()
+                or search_text in channel.group.lower()
+            ]
+
+        return self._sort_channels(channels, query.sort_mode, query.favorite_keys)
+
+    def search_channels(
+        self,
+        query: str,
+        *,
+        playlist: Playlist | None = None,
+        category: str = "All",
+        current_category_only: bool = True,
+        sort_mode: str = "name_asc",
+        favorite_keys: set[tuple[str, str]] | None = None,
+    ) -> list[Channel]:
+        target_playlist = playlist or self._current_playlist
+        if not target_playlist:
+            return []
+        return self.query_channels(
+            target_playlist,
+            ChannelQuery(
+                category=category,
+                text=query,
+                current_category_only=current_category_only,
+                sort_mode=sort_mode,
+                favorite_keys=favorite_keys or set(),
+            ),
+        )
+
+    def set_current_playlist(self, playlist: Playlist) -> None:
+        self._current_playlist = playlist
 
     def import_playlists(
         self,
@@ -175,6 +266,31 @@ class PlaylistService:
             existing_keys.add(key)
         return normalized
 
+    def probe_playlist_reference(
+        self,
+        reference: PlaylistReference,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
+    ) -> PlaylistReference:
+        normalized = self.validate_playlist_reference(reference)
+        playlist = self.load_playlist(
+            normalized.path,
+            normalized.is_url,
+            progress_callback=progress_callback,
+            cancel_callback=cancel_callback,
+            update_current=False,
+        )
+        return PlaylistReference(
+            name=normalized.name,
+            path=normalized.path,
+            is_url=normalized.is_url,
+            channel_count=len(playlist.channels),
+            last_loaded_at=normalized.last_loaded_at,
+            last_status="warning" if playlist.parse_warnings else "ready",
+            last_error=playlist.parse_warnings[0].message if playlist.parse_warnings else "",
+        )
+
     def _normalize_references(self, playlists: Iterable[PlaylistReference]) -> List[PlaylistReference]:
         seen_keys: set[tuple[str, bool]] = set()
         normalized: List[PlaylistReference] = []
@@ -228,3 +344,33 @@ class PlaylistService:
     def _apply_source_path(playlist: Playlist) -> None:
         for channel in playlist.channels:
             channel.playlist_path = playlist.source_path
+
+    @staticmethod
+    def _emit_progress(
+        callback: Callable[[str], None] | None,
+        message: str,
+    ) -> None:
+        if callback is not None:
+            callback(message)
+
+    @staticmethod
+    def _ensure_not_cancelled(callback: Callable[[], bool] | None) -> None:
+        if callback is not None and callback():
+            raise CancelledError("Playlist load cancelled")
+
+    @staticmethod
+    def _sort_channels(
+        channels: list[Channel],
+        sort_mode: str,
+        favorite_keys: set[tuple[str, str]],
+    ) -> list[Channel]:
+        if sort_mode == "name_desc":
+            return sorted(channels, key=lambda item: item.name.lower(), reverse=True)
+        if sort_mode == "group":
+            return sorted(channels, key=lambda item: (item.group.lower(), item.name.lower()))
+        if sort_mode == "favorites_first":
+            return sorted(
+                channels,
+                key=lambda item: (item.identity_key() not in favorite_keys, item.name.lower()),
+            )
+        return sorted(channels, key=lambda item: item.name.lower())
