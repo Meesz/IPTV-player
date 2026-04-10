@@ -26,6 +26,9 @@ class SettingsService:
                 last_channel_url=self.repository.get_setting(
                     "last_channel_url", self._settings.last_channel_url
                 ),
+                last_channel_group=self.repository.get_setting(
+                    "last_channel_group", self._settings.last_channel_group
+                ),
                 last_epg_path=self.repository.get_setting(
                     "last_epg_path",
                     self.repository.get_setting(
@@ -34,6 +37,9 @@ class SettingsService:
                 ),
                 last_epg_url=self.repository.get_setting(
                     "last_epg_url", self.repository.get_setting("epg_url", "")
+                ),
+                last_epg_loaded_at=self.repository.get_setting(
+                    "last_epg_loaded_at", self._settings.last_epg_loaded_at
                 ),
                 window_width=int(
                     self.repository.get_setting(
@@ -44,6 +50,18 @@ class SettingsService:
                     self.repository.get_setting(
                         "window_height", str(self._settings.window_height)
                     )
+                ),
+                play_on_single_click=self._to_bool(
+                    self.repository.get_setting("play_on_single_click", "false")
+                ),
+                show_now_playing_in_list=self._to_bool(
+                    self.repository.get_setting("show_now_playing_in_list", "true")
+                ),
+                search_current_category_only=self._to_bool(
+                    self.repository.get_setting("search_current_category_only", "true")
+                ),
+                channel_sort_mode=self.repository.get_setting(
+                    "channel_sort_mode", self._settings.channel_sort_mode
                 ),
             )
         except RepositoryError:
@@ -105,6 +123,7 @@ class SettingsService:
                 "true" if str(value).startswith(("http://", "https://")) else "false",
             )
         elif normalized_key == "last_epg_path":
+            self._settings = self._settings.with_updates(last_epg_path=normalized_value)
             self.repository.save_setting("last_epg_file", normalized_value)
         elif normalized_key in {"epg_url", "last_epg_url"}:
             self._settings = self._settings.with_updates(last_epg_url=normalized_value)
