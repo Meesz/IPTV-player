@@ -32,6 +32,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _show_critical_dialog(title: str, message: str) -> None:
+    QMessageBox.critical(None, title, message)
+
+
+def _install_exception_hook() -> None:
+    default_hook = sys.excepthook
+
+    def _handle_exception(exc_type, exc_value, exc_traceback) -> None:
+        logger.exception(
+            "Unhandled application error",
+            exc_info=(exc_type, exc_value, exc_traceback),
+        )
+        _show_critical_dialog(
+            "Application Error",
+            f"Simple IPTV Player hit an unexpected error.\n\n{exc_value}",
+        )
+        default_hook(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = _handle_exception
+
+
 def create_window() -> MainWindow:
     db_connection = SQLiteConnection()
     playlist_repo = PlaylistRepository(db_connection)
@@ -66,17 +87,21 @@ def create_window() -> MainWindow:
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Simple IPTV Player")
+    _install_exception_hook()
 
     try:
         window = create_window()
     except Exception as exc:
         logger.exception("Application startup failed")
-        QMessageBox.critical(
-            None,
-            "Startup Error",
-            f"Failed to start Simple IPTV Player.\n\n{exc}",
-        )
+        _show_critical_dialog("Startup Error", f"Failed to start Simple IPTV Player.\n\n{exc}")
         return 1
+
+    if not window.right_panel.player_widget.vlc_available:
+        _show_critical_dialog(
+            "VLC Unavailable",
+            "Playback will be unavailable until VLC is installed and importable.\n\n"
+            f"{window.right_panel.player_widget.placeholder.text()}",
+        )
 
     window.show()
     return app.exec()
