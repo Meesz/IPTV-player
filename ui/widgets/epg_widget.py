@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QFrame,
@@ -44,6 +46,12 @@ class EPGWidget(QFrame):
         self.current_time.setObjectName("current_time")
         scroll_layout.addWidget(self.current_time)
 
+        self.state_hint = QLabel("")
+        self.state_hint.setObjectName("placeholder_hint")
+        self.state_hint.setWordWrap(True)
+        self.state_hint.hide()
+        scroll_layout.addWidget(self.state_hint)
+
         self.description = QLabel()
         self.description.setObjectName("player_meta")
         self.description.setWordWrap(True)
@@ -69,6 +77,26 @@ class EPGWidget(QFrame):
     def clear(self) -> None:
         self.current_title.setText("No program information")
         self.current_time.setText("Load EPG data to see live scheduling.")
+        self.state_hint.setText("")
+        self.state_hint.hide()
+        self.description.setText("")
+        self.upcoming_list.clear()
+        self.upcoming_list.addItem("No upcoming schedule available.")
+
+    def set_loading_state(self, message: str) -> None:
+        self.current_title.setText("Refreshing program guide")
+        self.current_time.setText(message)
+        self.state_hint.setText("Schedule data will appear here once the refresh finishes.")
+        self.state_hint.show()
+        self.description.setText("")
+        self.upcoming_list.clear()
+        self.upcoming_list.addItem("Loading schedule data...")
+
+    def set_empty_state(self, title: str, detail: str) -> None:
+        self.current_title.setText(title)
+        self.current_time.setText(detail)
+        self.state_hint.setText("")
+        self.state_hint.hide()
         self.description.setText("")
         self.upcoming_list.clear()
         self.upcoming_list.addItem("No upcoming schedule available.")
@@ -78,9 +106,14 @@ class EPGWidget(QFrame):
             self.clear()
             return
 
-        time_str = f"{program.start_time.strftime('%H:%M')} - {program.end_time.strftime('%H:%M')}"
+        time_str = (
+            f"{self._format_display_time(program.start_time)} - "
+            f"{self._format_display_time(program.end_time)}"
+        )
         self.current_title.setText(program.title)
         self.current_time.setText(time_str)
+        self.state_hint.setText("")
+        self.state_hint.hide()
         self.description.setText(program.description or "No program description available.")
 
     def set_upcoming_programs(self, programs: list[Program]) -> None:
@@ -89,5 +122,11 @@ class EPGWidget(QFrame):
             self.upcoming_list.addItem("No upcoming schedule available.")
             return
         for program in programs:
-            time_str = program.start_time.strftime("%H:%M")
+            time_str = self._format_display_time(program.start_time)
             self.upcoming_list.addItem(f"{time_str}  {program.title}")
+
+    @staticmethod
+    def _format_display_time(value: datetime) -> str:
+        if value.tzinfo is None:
+            return value.strftime("%H:%M")
+        return value.astimezone().strftime("%H:%M")
