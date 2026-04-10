@@ -14,6 +14,7 @@ from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.epg_controller import EPGController
 from ui.controllers.settings_controller import SettingsController
 from ui.controllers.main_controller import MainController
+from ui.controllers.favorites_controller import FavoritesController
 from ui.windows.main_window import MainWindow
 
 # Configure logging
@@ -47,10 +48,17 @@ def main():
     playlist_controller = PlaylistController(playlist_service)
     epg_controller = EPGController(epg_service)
     settings_controller = SettingsController(settings_service)
-    main_controller = MainController(playlist_controller, epg_controller, settings_controller)
+    favorites_controller = FavoritesController(favorites_service)
+    main_controller = MainController(playlist_controller, settings_controller)
 
     # UI
-    window = MainWindow(main_controller, playlist_controller, epg_controller, settings_controller)
+    window = MainWindow(
+        main_controller,
+        playlist_controller,
+        epg_controller,
+        settings_controller,
+        favorites_controller,
+    )
     window.show()
 
     sys.exit(app.exec())
