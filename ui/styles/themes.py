@@ -76,6 +76,12 @@ class Themes:
                 );
             }}
 
+            QDialog#playlist_dialog,
+            QDialog#xtream_source_dialog {{
+                background-color: {panel};
+                border: 1px solid {border_soft};
+            }}
+
             QWidget {{
                 color: {text};
                 font-size: 13px;
@@ -95,7 +101,8 @@ class Themes:
             QFrame#epg_widget,
             QFrame#playlist_dialog_card,
             QFrame#playlist_detail_card,
-            QFrame#collection_state {{
+            QFrame#collection_state,
+            QFrame#busy_overlay_card {{
                 background-color: {panel};
                 border: 1px solid {border_soft};
                 border-radius: 18px;
@@ -117,6 +124,11 @@ class Themes:
                 border-style: dashed;
             }}
 
+            QFrame#busy_overlay {{
+                background-color: {overlay};
+                border: none;
+            }}
+
             QToolBar#main_toolbar {{
                 spacing: 12px;
                 padding: 10px 14px;
@@ -128,7 +140,8 @@ class Themes:
             QLabel#section_title,
             QLabel#dialog_title,
             QLabel#panel_heading,
-            QLabel#current_title {{
+            QLabel#current_title,
+            QLabel#busy_title {{
                 font-size: 16px;
                 font-weight: 700;
                 color: {text};
@@ -156,7 +169,8 @@ class Themes:
             QLabel#state_detail,
             QLabel#playlist_feedback,
             QLabel#channel_row_subtitle,
-            QLabel#channel_row_meta {{
+            QLabel#channel_row_meta,
+            QLabel#busy_detail {{
                 color: {muted};
                 padding: 0;
             }}
@@ -358,6 +372,18 @@ class Themes:
                 background-color: {surface};
                 border-radius: 6px;
                 height: 8px;
+            }}
+
+            QProgressBar#busy_progress {{
+                background-color: {surface};
+                border: 1px solid {border_soft};
+                border-radius: 8px;
+                min-height: 12px;
+            }}
+
+            QProgressBar#busy_progress::chunk {{
+                background-color: {accent};
+                border-radius: 7px;
             }}
 
             QSlider::handle:horizontal {{
