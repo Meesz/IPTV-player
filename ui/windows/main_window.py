@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.models import Channel, Playlist, PlaylistReference, Program
+from core.models import Channel, Playlist, PlaylistReference, PlaylistSourceType, Program
 from ui.controllers.epg_controller import EPGController
 from ui.controllers.favorites_controller import FavoritesController
 from ui.controllers.history_controller import HistoryController
@@ -27,6 +27,7 @@ from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
 from ui.styles.styles import ToolbarStyle
 from ui.styles.themes import Themes
 from ui.widgets.left_panel import LeftPanel
+from ui.widgets.loading_overlay import LoadingOverlay
 from ui.widgets.menu_bar import MenuBar
 from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.right_panel import RightPanel
@@ -55,9 +56,11 @@ class MainWindow(QMainWindow):
         settings = self.settings_controller.settings
         self._theme = settings.theme
         self._current_channel: Channel | None = None
-        self._active_playlist_path = settings.last_playlist_path
+        self._active_playlist_path = settings.last_playlist_identity or settings.last_playlist_path
         self._pending_channel_url = settings.last_channel_url or ""
         self._pending_channel_group = settings.last_channel_group or ""
+        self._playlist_loading_active = False
+        self._playlist_render_active = False
 
         self._apply_settings_to_window()
         self._init_ui()
@@ -66,7 +69,7 @@ class MainWindow(QMainWindow):
         self._apply_saved_preferences()
         self._refresh_favorite_button()
         self._refresh_recent_channels()
-        self.right_panel.set_source_context(self._active_playlist_path)
+        self.right_panel.set_source_context("")
         self.main_controller.start()
 
     def _apply_settings_to_window(self) -> None:
@@ -107,6 +110,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.splitter, stretch=1)
 
         self.notification = NotificationWidget(self)
+        self.loading_overlay = LoadingOverlay(self.central_widget)
+        self._sync_loading_overlay_geometry()
 
     def _setup_toolbar(self) -> None:
         self.toolbar = QToolBar()
@@ -246,6 +251,7 @@ class MainWindow(QMainWindow):
     def _refresh_channel_list(self, *_args) -> None:
         playlist = self._current_playlist()
         if not playlist:
+            self.left_panel.cancel_channel_population()
             self.left_panel.show_loading_state(
                 "channels",
                 "No playlist loaded",
@@ -260,18 +266,19 @@ class MainWindow(QMainWindow):
             sort_mode=self.left_panel.sort_combo.currentData() or "name_asc",
             favorite_keys=self._favorite_keys(),
         )
-        program_map = self._current_programs_for_channels(channels)
-        self.left_panel.add_channels(
+        self.left_panel.populate_channels_incrementally(
             channels,
-            current_programs=program_map,
+            current_program_resolver=self._current_programs_for_channels,
             show_now_playing=self.settings_controller.get_setting(
                 "show_now_playing_in_list", True
             ),
             favorites=self._favorite_keys(),
             current_channel_key=self._current_channel_key(),
+            progress_callback=None if not self._playlist_render_active else self._on_playlist_render_progress,
+            completion_callback=None if not self._playlist_render_active else self._on_playlist_render_complete,
         )
 
-    def _refresh_favorites(self) -> None:
+    def _refresh_favorites(self, *, refresh_channels: bool = True) -> None:
         favorites = self.favorites_controller.get_favorites()
         program_map = self._current_programs_for_channels(favorites)
         self.left_panel.add_favorites(
@@ -284,7 +291,8 @@ class MainWindow(QMainWindow):
         )
         if self._current_channel:
             self._refresh_favorite_button()
-        self._refresh_channel_list()
+        if refresh_channels:
+            self._refresh_channel_list()
 
     def _refresh_recent_channels(self) -> None:
         recent = self.history_controller.get_recent_channels(limit=12)
@@ -300,6 +308,11 @@ class MainWindow(QMainWindow):
         )
 
     def _on_playlist_loading_started(self) -> None:
+        self.left_panel.cancel_channel_population()
+        self._playlist_loading_active = True
+        self._playlist_render_active = False
+        self._set_main_interaction_enabled(False)
+        self.loading_overlay.show_message("Loading playlist", "Loading playlist source")
         self.right_panel.player_widget.stop()
         self.right_panel.set_playback_state("connecting", "Loading playlist source")
         self.left_panel.show_loading_state(
@@ -311,11 +324,17 @@ class MainWindow(QMainWindow):
         self._set_status_chip(self.playlist_status_label, "Playlist: loading...", "warning")
 
     def _on_playlist_loading_progress(self, message: str) -> None:
+        self.loading_overlay.update_detail(message)
         self.right_panel.set_playback_state("connecting", message)
         self.left_panel.show_loading_state("channels", "Loading playlist", message)
         self._set_status_chip(self.playlist_status_label, f"Playlist: {message}", "warning")
 
     def _on_playlist_loading_cancelled(self) -> None:
+        self.left_panel.cancel_channel_population()
+        self._playlist_loading_active = False
+        self._playlist_render_active = False
+        self.loading_overlay.hide()
+        self._set_main_interaction_enabled(True)
         self._set_status_chip(self.playlist_status_label, "Playlist: load cancelled", "warning")
         self.left_panel.show_loading_state(
             "channels",
@@ -328,12 +347,8 @@ class MainWindow(QMainWindow):
 
     def _on_playlist_loaded(self, playlist: Playlist) -> None:
         self._active_playlist_path = playlist.source_path
-        playlist_name = Path(playlist.source_path).name or playlist.source_path
-        self._set_status_chip(
-            self.playlist_status_label,
-            f"Playlist: {playlist_name} ({len(playlist.channels)} ch)",
-            "success",
-        )
+        playlist_name = playlist.source_reference.display_label() if playlist.source_reference else playlist.name
+        self._set_status_chip(self.playlist_status_label, "Playlist: rendering...", "warning")
 
         self.left_panel.category_combo.blockSignals(True)
         self.left_panel.category_combo.clear()
@@ -353,50 +368,56 @@ class MainWindow(QMainWindow):
             "selected_category", self.left_panel.category_combo.currentText() or "All"
         )
 
-        self._persist_playlist_state(playlist)
-        self.right_panel.set_source_context(playlist.source_path)
+        self.right_panel.set_source_context(playlist_name)
+        self._playlist_loading_active = False
+        self._playlist_render_active = True
+        self.loading_overlay.show_message(
+            "Rendering playlist",
+            f"Rendering channel list (0 / {len(playlist.channels)})",
+        )
         self._refresh_channel_list()
-        self._refresh_favorites()
-        self._refresh_recent_channels()
-        self._restore_pending_channel(playlist)
-        warning_count = len(playlist.parse_warnings)
-        if warning_count:
-            self.show_notification(
-                f"Loaded {len(playlist.channels)} channels with {warning_count} warnings",
-                NotificationType.WARNING,
-            )
-        else:
-            self.show_notification(
-                f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS
-            )
 
     def _persist_playlist_state(self, playlist: Playlist) -> None:
-        is_url = playlist.source_path.startswith(("http://", "https://"))
-        self.settings_controller.save_settings(
-            {
-                "last_playlist_path": playlist.source_path,
-                "last_playlist": playlist.source_path,
-                "last_playlist_is_url": "true" if is_url else "false",
-            }
-        )
+        reference = playlist.source_reference
+        if reference is None:
+            return
+        settings_payload = {
+            "last_playlist_source_type": reference.source_type.value,
+            "last_playlist_identity": reference.source_identity,
+        }
+        if reference.source_type != PlaylistSourceType.XTREAM:
+            settings_payload.update(
+                {
+                    "last_playlist_path": reference.path,
+                    "last_playlist": reference.path,
+                    "last_playlist_is_url": "true"
+                    if reference.source_type == PlaylistSourceType.URL
+                    else "false",
+                }
+            )
+        self.settings_controller.save_settings(settings_payload)
 
-        existing_reference = self.playlist_controller.get_saved_playlist(playlist.source_path)
+        existing_reference = self.playlist_controller.get_saved_playlist_by_identity(
+            reference.source_identity
+        )
         if existing_reference:
             reference_name = existing_reference.name
-        elif is_url:
+        elif reference.source_type == PlaylistSourceType.URL:
             reference_name = "URL Playlist"
+        elif reference.source_type == PlaylistSourceType.XTREAM:
+            reference_name = reference.name or "Xtream Source"
         else:
-            reference_name = Path(playlist.source_path).name or "Playlist"
+            reference_name = Path(reference.path).name or "Playlist"
 
-        self.playlist_controller.save_playlist_reference(
-            PlaylistReference(
-                name=reference_name,
-                path=playlist.source_path,
-                is_url=is_url,
-            )
+        saved_reference = PlaylistReference(
+            name=reference_name,
+            path=reference.path,
+            source_type=reference.source_type,
+            xtream=reference.xtream,
         )
+        self.playlist_controller.save_playlist_reference(saved_reference)
         self.playlist_controller.update_playlist_metadata(
-            playlist.source_path,
+            saved_reference,
             channel_count=len(playlist.channels),
             last_loaded_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
             last_status="warning" if playlist.parse_warnings else "ready",
@@ -492,8 +513,11 @@ class MainWindow(QMainWindow):
         if channel.playlist_path and channel.playlist_path != self._active_playlist_path:
             self._pending_channel_url = channel.url
             self._pending_channel_group = channel.group
-            is_url = channel.playlist_path.startswith(("http://", "https://"))
-            self.playlist_controller.load_playlist(channel.playlist_path, is_url)
+            reference = self.playlist_controller.get_saved_playlist_by_identity(channel.playlist_path)
+            if reference is None:
+                self.show_notification("The source for this channel is no longer available.", NotificationType.WARNING)
+                return
+            self.playlist_controller.load_playlist(reference)
             return
 
         self._play_channel(channel)
@@ -519,7 +543,13 @@ class MainWindow(QMainWindow):
         self.left_panel.epg_widget.set_current_program(program)
         upcoming = self.epg_controller.get_upcoming_programs(channel_id)
         self.left_panel.epg_widget.set_upcoming_programs(upcoming)
-        self.right_panel.set_now_playing(self._current_channel, program, self._active_playlist_path)
+        playlist_label = (
+            self.playlist_controller.get_current_playlist().source_reference.display_label()
+            if self.playlist_controller.get_current_playlist()
+            and self.playlist_controller.get_current_playlist().source_reference
+            else ""
+        )
+        self.right_panel.set_now_playing(self._current_channel, program, playlist_label)
         return program
 
     def _refresh_favorite_button(self) -> None:
@@ -575,11 +605,17 @@ class MainWindow(QMainWindow):
             self.show_notification("No channel selected", NotificationType.WARNING)
             return
         channel = self._current_channel
+        current_playlist = self.playlist_controller.get_current_playlist()
+        source_text = (
+            current_playlist.source_reference.source_summary()
+            if current_playlist and current_playlist.source_reference
+            else channel.playlist_path or self._active_playlist_path or "Current source"
+        )
         message = "\n".join(
             [
                 f"Name: {channel.name}",
                 f"Group: {channel.group or 'Uncategorized'}",
-                f"Playlist: {channel.playlist_path or self._active_playlist_path or 'Current source'}",
+                f"Playlist: {source_text}",
                 f"URL: {channel.url}",
                 f"EPG ID: {channel.epg_id or 'Not set'}",
             ]
@@ -595,6 +631,8 @@ class MainWindow(QMainWindow):
             self.show_notification("Favorites updated", NotificationType.SUCCESS)
 
     def _on_sort_mode_changed(self, *_args) -> None:
+        if self._playlist_loading_active:
+            return
         self.settings_controller.save_setting(
             "channel_sort_mode", self.left_panel.sort_combo.currentData()
         )
@@ -607,6 +645,8 @@ class MainWindow(QMainWindow):
         self.settings_controller.save_setting("search_text", value)
 
     def _on_search_scope_changed(self, checked: bool) -> None:
+        if self._playlist_loading_active:
+            return
         self.settings_controller.save_setting("search_current_category_only", checked)
         self._refresh_channel_list()
 
@@ -628,6 +668,8 @@ class MainWindow(QMainWindow):
         self.settings_controller.save_setting("play_on_single_click", checked)
 
     def _on_show_now_playing_changed(self, checked: bool) -> None:
+        if self._playlist_loading_active:
+            return
         self.settings_controller.save_setting("show_now_playing_in_list", checked)
         self._refresh_channel_list()
         self._refresh_favorites()
@@ -652,8 +694,8 @@ class MainWindow(QMainWindow):
             active_playlist_path=self._active_playlist_path,
         )
 
-    def _on_playlist_selected_from_manager(self, path: str, is_url: bool) -> None:
-        self.playlist_controller.load_playlist(path, is_url)
+    def _on_playlist_selected_from_manager(self, reference: PlaylistReference) -> None:
+        self.playlist_controller.load_playlist(reference)
 
     def _load_epg_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -703,6 +745,11 @@ class MainWindow(QMainWindow):
         label.style().polish(label)
 
     def _on_error(self, message: str) -> None:
+        self.left_panel.cancel_channel_population()
+        self._playlist_loading_active = False
+        self._playlist_render_active = False
+        self.loading_overlay.hide()
+        self._set_main_interaction_enabled(True)
         self.show_notification(message, NotificationType.ERROR)
 
     def show_notification(
@@ -734,3 +781,62 @@ class MainWindow(QMainWindow):
             }
         )
         super().closeEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_loading_overlay_geometry()
+
+    def _sync_loading_overlay_geometry(self) -> None:
+        if hasattr(self, "loading_overlay") and hasattr(self, "central_widget"):
+            self.loading_overlay.setGeometry(self.central_widget.rect())
+
+    def _set_main_interaction_enabled(self, enabled: bool) -> None:
+        self.menu_bar.setEnabled(enabled)
+        self.toolbar.setEnabled(enabled)
+        self.left_panel.setEnabled(enabled)
+        self.right_panel.control_bar.setEnabled(enabled)
+
+    def _on_playlist_render_progress(self, loaded_count: int, total_count: int) -> None:
+        self.loading_overlay.update_detail(
+            f"Rendering channel list ({loaded_count:,} / {total_count:,})"
+        )
+        self._set_status_chip(
+            self.playlist_status_label,
+            f"Playlist: rendering {loaded_count:,}/{total_count:,}",
+            "warning",
+        )
+
+    def _on_playlist_render_complete(self) -> None:
+        playlist = self._current_playlist()
+        if playlist is None:
+            self._playlist_render_active = False
+            self.loading_overlay.hide()
+            self._set_main_interaction_enabled(True)
+            return
+
+        playlist_name = (
+            playlist.source_reference.display_label() if playlist.source_reference else playlist.name
+        )
+        self._persist_playlist_state(playlist)
+        self._refresh_favorites(refresh_channels=False)
+        self._refresh_recent_channels()
+        self._restore_pending_channel(playlist)
+        self._playlist_render_active = False
+        self.loading_overlay.hide()
+        self._set_main_interaction_enabled(True)
+        self._set_status_chip(
+            self.playlist_status_label,
+            f"Playlist: {playlist_name} ({len(playlist.channels)} ch)",
+            "success",
+        )
+
+        warning_count = len(playlist.parse_warnings)
+        if warning_count:
+            self.show_notification(
+                f"Loaded {len(playlist.channels)} channels with {warning_count} warnings",
+                NotificationType.WARNING,
+            )
+        else:
+            self.show_notification(
+                f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS
+            )
