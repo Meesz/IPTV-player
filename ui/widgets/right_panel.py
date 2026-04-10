@@ -1,4 +1,3 @@
-from pathlib import Path
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
@@ -176,7 +175,7 @@ class RightPanel(QFrame):
         self,
         channel: Channel | None,
         program: Program | None,
-        playlist_path: str = "",
+        playlist_label: str = "",
     ) -> None:
         if not channel:
             self.channel_title_label.setText("Nothing selected")
@@ -192,7 +191,7 @@ class RightPanel(QFrame):
 
         self._current_stream_url = channel.url
         self.channel_title_label.setText(channel.name)
-        playlist_name = Path(playlist_path).name if playlist_path else "Current source"
+        playlist_name = playlist_label or "Current source"
         meta_parts = [playlist_name]
         if channel.group:
             meta_parts.append(channel.group)
@@ -217,9 +216,9 @@ class RightPanel(QFrame):
             f"Source playlist: {playlist_name}  |  Stream URL ready to copy"
         )
 
-    def set_source_context(self, playlist_path: str) -> None:
+    def set_source_context(self, playlist_label: str) -> None:
         self._current_stream_url = ""
-        playlist_name = Path(playlist_path).name if playlist_path else "No playlist loaded"
+        playlist_name = playlist_label or "No playlist loaded"
         self.channel_title_label.setText("Ready to Play")
         self.channel_meta_label.setText(playlist_name)
         self.program_title_label.setText("Choose a channel from the library to start playback.")
