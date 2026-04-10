@@ -3,11 +3,13 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QSplitter,
     QToolBar,
     QVBoxLayout,
@@ -93,8 +95,11 @@ class MainWindow(QMainWindow):
         self.left_panel = LeftPanel()
         self.right_panel = RightPanel()
         volume = self.settings_controller.get_setting("volume", 100)
+        is_muted = self.settings_controller.get_setting("is_muted", False)
         self.right_panel.volume_slider.setValue(volume)
         self.right_panel.player_widget.set_volume(volume)
+        self.right_panel.player_widget.set_muted(is_muted)
+        self.right_panel.mute_button.setText("Unmute" if is_muted else "Mute")
 
         self.splitter.addWidget(self.left_panel)
         self.splitter.addWidget(self.right_panel)
@@ -134,10 +139,16 @@ class MainWindow(QMainWindow):
         self.playlist_controller.playlist_loaded.connect(self._on_playlist_loaded)
         self.playlist_controller.error_occurred.connect(self._on_error)
         self.playlist_controller.loading_started.connect(self._on_playlist_loading_started)
+        self.playlist_controller.loading_progress.connect(self._on_playlist_loading_progress)
+        self.playlist_controller.loading_cancelled.connect(self._on_playlist_loading_cancelled)
         self.playlist_controller.loading_finished.connect(self._on_playlist_loading_finished)
 
         self.epg_controller.error_occurred.connect(self._on_error)
         self.epg_controller.epg_loaded.connect(self._on_epg_loaded)
+        self.epg_controller.loading_started.connect(self._on_epg_loading_started)
+        self.epg_controller.loading_progress.connect(self._on_epg_loading_progress)
+        self.epg_controller.loading_cancelled.connect(self._on_epg_loading_cancelled)
+        self.epg_controller.loading_finished.connect(self._on_epg_loading_finished)
 
         self.favorites_controller.changed.connect(self._refresh_favorites)
         self.favorites_controller.error_occurred.connect(self._on_error)
@@ -155,12 +166,17 @@ class MainWindow(QMainWindow):
         self.menu_bar.show_now_playing_action.toggled.connect(
             self._on_show_now_playing_changed
         )
+        self.menu_bar.show_library_panel_action.toggled.connect(
+            self._on_left_panel_visibility_changed
+        )
 
         self.left_panel.category_combo.currentTextChanged.connect(self._refresh_channel_list)
+        self.left_panel.category_combo.currentTextChanged.connect(self._on_category_changed)
         self.left_panel.sort_combo.currentIndexChanged.connect(self._on_sort_mode_changed)
         self.left_panel.search_current_group_checkbox.toggled.connect(
             self._on_search_scope_changed
         )
+        self.left_panel.tabs.currentChanged.connect(self._on_active_tab_changed)
         self.left_panel.channel_list.itemDoubleClicked.connect(self._on_channel_selected)
         self.left_panel.favorites_list.itemDoubleClicked.connect(self._on_channel_selected)
         self.left_panel.recent_list.itemDoubleClicked.connect(self._on_channel_selected)
@@ -168,9 +184,16 @@ class MainWindow(QMainWindow):
         self.left_panel.favorites_list.itemClicked.connect(self._on_channel_clicked)
         self.left_panel.recent_list.itemClicked.connect(self._on_channel_clicked)
         self.left_panel.search_bar.search_changed.connect(self._refresh_channel_list)
+        self.left_panel.search_bar.search_changed.connect(self._on_search_text_changed)
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
 
         self.right_panel.play_button.clicked.connect(self._on_play_button)
         self.right_panel.stop_button.clicked.connect(self.right_panel.player_widget.stop)
+        self.right_panel.retry_button.clicked.connect(self._on_retry_now)
+        self.right_panel.mute_button.clicked.connect(self._on_toggle_mute)
+        self.right_panel.copy_url_button.clicked.connect(self._on_copy_stream_url)
+        self.right_panel.fullscreen_button.clicked.connect(self._on_toggle_fullscreen)
+        self.right_panel.info_button.clicked.connect(self._on_channel_info)
         self.right_panel.volume_slider.valueChanged.connect(self._on_volume_changed)
         self.right_panel.favorite_button.clicked.connect(self._on_toggle_favorite)
         self.right_panel.player_widget.playback_state_changed.connect(
@@ -186,10 +209,15 @@ class MainWindow(QMainWindow):
         settings = self.settings_controller.settings
         self.menu_bar.play_on_single_click_action.setChecked(settings.play_on_single_click)
         self.menu_bar.show_now_playing_action.setChecked(settings.show_now_playing_in_list)
+        self.menu_bar.show_library_panel_action.setChecked(settings.left_panel_visible)
         self.left_panel.search_current_group_checkbox.setChecked(
             settings.search_current_category_only
         )
         self.left_panel.set_sort_mode(settings.channel_sort_mode)
+        self.left_panel.tabs.setCurrentIndex(settings.active_tab_index)
+        self.left_panel.search_bar.setText(settings.search_text)
+        self.menu_bar.epg_url_input.setText(settings.last_epg_url)
+        self.splitter.setSizes(list(settings.splitter_sizes))
         self._update_epg_status_label()
 
     def _favorite_keys(self) -> set[tuple[str, str]]:
@@ -218,10 +246,20 @@ class MainWindow(QMainWindow):
     def _refresh_channel_list(self, *_args) -> None:
         playlist = self._current_playlist()
         if not playlist:
-            self.left_panel.add_channels([], current_channel_key=self._current_channel_key())
+            self.left_panel.show_loading_state(
+                "channels",
+                "No playlist loaded",
+                "Add or select a playlist to browse channels.",
+            )
             return
 
-        channels = self._resolve_visible_channels(playlist)
+        channels = self.playlist_controller.search_channels(
+            self.left_panel.search_bar.text(),
+            category=self.left_panel.category_combo.currentText() or "All",
+            current_category_only=self.left_panel.search_current_group_checkbox.isChecked(),
+            sort_mode=self.left_panel.sort_combo.currentData() or "name_asc",
+            favorite_keys=self._favorite_keys(),
+        )
         program_map = self._current_programs_for_channels(channels)
         self.left_panel.add_channels(
             channels,
@@ -232,41 +270,6 @@ class MainWindow(QMainWindow):
             favorites=self._favorite_keys(),
             current_channel_key=self._current_channel_key(),
         )
-
-    def _resolve_visible_channels(self, playlist: Playlist) -> list[Channel]:
-        category = self.left_panel.category_combo.currentText() or "All"
-        query = self.left_panel.search_bar.text().strip().lower()
-        current_group_only = self.left_panel.search_current_group_checkbox.isChecked()
-
-        if category == "All":
-            channels = list(playlist.channels)
-        else:
-            channels = list(playlist.get_channels_by_category(category))
-
-        if query:
-            if not current_group_only:
-                channels = list(playlist.channels)
-            channels = [
-                channel
-                for channel in channels
-                if query in channel.name.lower() or query in channel.group.lower()
-            ]
-
-        return self._sort_channels(channels)
-
-    def _sort_channels(self, channels: list[Channel]) -> list[Channel]:
-        sort_mode = self.left_panel.sort_combo.currentData() or "name_asc"
-        favorites = self._favorite_keys()
-        if sort_mode == "name_desc":
-            return sorted(channels, key=lambda item: item.name.lower(), reverse=True)
-        if sort_mode == "group":
-            return sorted(channels, key=lambda item: (item.group.lower(), item.name.lower()))
-        if sort_mode == "favorites_first":
-            return sorted(
-                channels,
-                key=lambda item: (item.identity_key() not in favorites, item.name.lower()),
-            )
-        return sorted(channels, key=lambda item: item.name.lower())
 
     def _refresh_favorites(self) -> None:
         favorites = self.favorites_controller.get_favorites()
@@ -299,7 +302,26 @@ class MainWindow(QMainWindow):
     def _on_playlist_loading_started(self) -> None:
         self.right_panel.player_widget.stop()
         self.right_panel.set_playback_state("connecting", "Loading playlist source")
+        self.left_panel.show_loading_state(
+            "channels",
+            "Loading playlist",
+            "Fetching channels and validating the source. Results will appear here once parsing finishes.",
+        )
         self.show_notification("Loading playlist...", NotificationType.INFO, duration=1200)
+        self._set_status_chip(self.playlist_status_label, "Playlist: loading...", "warning")
+
+    def _on_playlist_loading_progress(self, message: str) -> None:
+        self.right_panel.set_playback_state("connecting", message)
+        self.left_panel.show_loading_state("channels", "Loading playlist", message)
+        self._set_status_chip(self.playlist_status_label, f"Playlist: {message}", "warning")
+
+    def _on_playlist_loading_cancelled(self) -> None:
+        self._set_status_chip(self.playlist_status_label, "Playlist: load cancelled", "warning")
+        self.left_panel.show_loading_state(
+            "channels",
+            "Playlist load cancelled",
+            "Select a playlist source to try again.",
+        )
 
     def _on_playlist_loading_finished(self) -> None:
         return
@@ -317,12 +339,19 @@ class MainWindow(QMainWindow):
         self.left_panel.category_combo.clear()
         self.left_panel.category_combo.addItem("All")
         self.left_panel.category_combo.addItems(playlist.categories)
-        target_group = self._pending_channel_group or self.settings_controller.get_setting(
-            "last_channel_group", ""
+        target_group = (
+            self._pending_channel_group
+            or self.settings_controller.get_setting("selected_category", "All")
+            or self.settings_controller.get_setting("last_channel_group", "")
         )
         if target_group and target_group in playlist.categories:
             self.left_panel.category_combo.setCurrentText(target_group)
+        else:
+            self.left_panel.category_combo.setCurrentText("All")
         self.left_panel.category_combo.blockSignals(False)
+        self.settings_controller.save_setting(
+            "selected_category", self.left_panel.category_combo.currentText() or "All"
+        )
 
         self._persist_playlist_state(playlist)
         self.right_panel.set_source_context(playlist.source_path)
@@ -330,9 +359,16 @@ class MainWindow(QMainWindow):
         self._refresh_favorites()
         self._refresh_recent_channels()
         self._restore_pending_channel(playlist)
-        self.show_notification(
-            f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS
-        )
+        warning_count = len(playlist.parse_warnings)
+        if warning_count:
+            self.show_notification(
+                f"Loaded {len(playlist.channels)} channels with {warning_count} warnings",
+                NotificationType.WARNING,
+            )
+        else:
+            self.show_notification(
+                f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS
+            )
 
     def _persist_playlist_state(self, playlist: Playlist) -> None:
         is_url = playlist.source_path.startswith(("http://", "https://"))
@@ -363,8 +399,8 @@ class MainWindow(QMainWindow):
             playlist.source_path,
             channel_count=len(playlist.channels),
             last_loaded_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            last_status="ready",
-            last_error="",
+            last_status="warning" if playlist.parse_warnings else "ready",
+            last_error=playlist.parse_warnings[0].message if playlist.parse_warnings else "",
         )
 
     def _restore_pending_channel(self, playlist: Playlist) -> None:
@@ -379,17 +415,70 @@ class MainWindow(QMainWindow):
         self._pending_channel_group = ""
         self._play_channel(channel)
 
+    def _on_epg_loading_started(self) -> None:
+        self._set_status_chip(self.epg_status_label, "EPG: loading...", "warning")
+        self.left_panel.epg_widget.set_loading_state("Refreshing EPG source")
+
+    def _on_epg_loading_progress(self, message: str) -> None:
+        self._set_status_chip(self.epg_status_label, f"EPG: {message}", "warning")
+        self.left_panel.set_epg_status(f"EPG: {message}")
+        self.left_panel.epg_widget.set_loading_state(message)
+
+    def _on_epg_loading_cancelled(self) -> None:
+        self._set_status_chip(self.epg_status_label, "EPG: load cancelled", "warning")
+        self.left_panel.set_epg_status("EPG: load cancelled")
+        self.left_panel.epg_widget.set_empty_state(
+            "EPG refresh cancelled",
+            "The previous guide data remains unchanged.",
+        )
+
+    def _on_epg_loading_finished(self) -> None:
+        return
+
     def _on_epg_loaded(self) -> None:
+        loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        if self.epg_controller.last_loaded_is_url:
+            self.settings_controller.save_settings(
+                {
+                    "epg_url": self.epg_controller.last_loaded_source,
+                    "last_epg_path": "",
+                    "last_epg_loaded_at": loaded_at,
+                }
+            )
+        else:
+            self.settings_controller.save_settings(
+                {
+                    "last_epg_path": self.epg_controller.last_loaded_source,
+                    "epg_url": "",
+                    "last_epg_loaded_at": loaded_at,
+                }
+            )
         self._update_epg_status_label()
         self._refresh_channel_list()
         self._refresh_favorites()
         self._refresh_recent_channels()
         if self._current_channel:
             self._update_epg(self._current_channel.epg_id)
-        self.show_notification(
-            f"EPG loaded for {self.epg_controller.loaded_channel_count} channels",
-            NotificationType.SUCCESS,
+        else:
+            self.left_panel.epg_widget.set_empty_state(
+                "Guide data ready",
+                "Select a channel to see live and upcoming programming.",
+            )
+        warning_count = len(self.epg_controller.last_warnings)
+        source_type = "URL" if self.epg_controller.last_loaded_is_url else "File"
+        self.left_panel.set_epg_status(
+            f"EPG: {source_type} / {self.epg_controller.loaded_channel_count} channels / {loaded_at}"
         )
+        if warning_count:
+            self.show_notification(
+                f"EPG loaded for {self.epg_controller.loaded_channel_count} channels with {warning_count} warnings",
+                NotificationType.WARNING,
+            )
+        else:
+            self.show_notification(
+                f"EPG loaded for {self.epg_controller.loaded_channel_count} channels",
+                NotificationType.SUCCESS,
+            )
 
     def _on_channel_clicked(self, item: QListWidgetItem) -> None:
         if self.settings_controller.get_setting("play_on_single_click", False):
@@ -413,6 +502,7 @@ class MainWindow(QMainWindow):
         self._current_channel = channel
         self.left_panel.highlight_channel(channel)
         self.right_panel.player_widget.play(channel.url)
+        self.right_panel.set_stream_url(channel.url)
         self._refresh_favorite_button()
         self.settings_controller.save_settings(
             {
@@ -457,6 +547,45 @@ class MainWindow(QMainWindow):
         self.right_panel.player_widget.set_volume(value)
         self.settings_controller.save_setting("volume", value)
 
+    def _on_toggle_mute(self) -> None:
+        muted = self.right_panel.player_widget.toggle_mute()
+        self.right_panel.mute_button.setText("Unmute" if muted else "Mute")
+        self.settings_controller.save_setting("is_muted", muted)
+
+    def _on_retry_now(self) -> None:
+        if self.right_panel.player_widget.retry_now():
+            self.show_notification("Retrying current stream", NotificationType.INFO, duration=1500)
+            return
+        self.show_notification("No stream available to retry", NotificationType.WARNING)
+
+    def _on_copy_stream_url(self) -> None:
+        url = self.right_panel.current_stream_url or self.right_panel.player_widget.current_url or ""
+        if not url:
+            self.show_notification("No stream URL available", NotificationType.WARNING)
+            return
+        QApplication.clipboard().setText(url)
+        self.show_notification("Stream URL copied", NotificationType.SUCCESS, duration=1500)
+
+    def _on_toggle_fullscreen(self) -> None:
+        if not self.right_panel.player_widget.toggle_fullscreen():
+            self.show_notification("Start playback before entering fullscreen", NotificationType.WARNING)
+
+    def _on_channel_info(self) -> None:
+        if not self._current_channel:
+            self.show_notification("No channel selected", NotificationType.WARNING)
+            return
+        channel = self._current_channel
+        message = "\n".join(
+            [
+                f"Name: {channel.name}",
+                f"Group: {channel.group or 'Uncategorized'}",
+                f"Playlist: {channel.playlist_path or self._active_playlist_path or 'Current source'}",
+                f"URL: {channel.url}",
+                f"EPG ID: {channel.epg_id or 'Not set'}",
+            ]
+        )
+        QMessageBox.information(self, "Channel Info", message)
+
     def _on_toggle_favorite(self) -> None:
         if not self._current_channel:
             return
@@ -471,9 +600,29 @@ class MainWindow(QMainWindow):
         )
         self._refresh_channel_list()
 
+    def _on_category_changed(self, category: str) -> None:
+        self.settings_controller.save_setting("selected_category", category or "All")
+
+    def _on_search_text_changed(self, value: str) -> None:
+        self.settings_controller.save_setting("search_text", value)
+
     def _on_search_scope_changed(self, checked: bool) -> None:
         self.settings_controller.save_setting("search_current_category_only", checked)
         self._refresh_channel_list()
+
+    def _on_active_tab_changed(self, index: int) -> None:
+        self.settings_controller.save_setting("active_tab_index", index)
+
+    def _on_splitter_moved(self, *_args) -> None:
+        sizes = tuple(self.splitter.sizes())
+        if len(sizes) == 2:
+            self.settings_controller.save_setting("splitter_sizes", sizes)
+
+    def _on_left_panel_visibility_changed(self, visible: bool) -> None:
+        self.left_panel.setVisible(visible)
+        self.settings_controller.save_setting("left_panel_visible", visible)
+        if visible:
+            self.splitter.setSizes(list(self.settings_controller.settings.splitter_sizes))
 
     def _on_play_on_single_click_changed(self, checked: bool) -> None:
         self.settings_controller.save_setting("play_on_single_click", checked)
@@ -489,7 +638,8 @@ class MainWindow(QMainWindow):
 
     def _open_playlist_manager(self) -> None:
         dialog = PlaylistManagerDialog(self)
-        dialog.set_playlist_validator(self.playlist_controller.validate_playlist_reference)
+        dialog.set_playlist_validator(self.playlist_controller.validate_playlist_reference_detailed)
+        dialog.set_playlist_tester(self.playlist_controller.test_playlist_reference)
         dialog.set_playlists(self.playlist_controller.get_saved_playlists())
         dialog.set_active_playlist(self._active_playlist_path)
         dialog.playlist_selected.connect(self._on_playlist_selected_from_manager)
@@ -510,53 +660,27 @@ class MainWindow(QMainWindow):
             self,
             "Open EPG File",
             "",
-            "XMLTV Files (*.xml);;All Files (*)",
+            "XMLTV Files (*.xml *.xml.gz *.gz);;All Files (*)",
         )
         if not path:
             return
-        if self.epg_controller.load_epg_file(path):
-            loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-            self.settings_controller.save_settings(
-                {
-                    "last_epg_path": path,
-                    "epg_url": "",
-                    "last_epg_loaded_at": loaded_at,
-                }
-            )
-            self._update_epg_status_label()
+        self.epg_controller.load_epg_file(path)
 
     def _load_epg_url(self) -> None:
         url = self.menu_bar.epg_url_input.text().strip()
         if not url:
             self.show_notification("Enter an EPG URL", NotificationType.WARNING)
             return
-        if self.epg_controller.load_epg_url(url):
-            loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-            self.settings_controller.save_settings(
-                {
-                    "epg_url": url,
-                    "last_epg_path": "",
-                    "last_epg_loaded_at": loaded_at,
-                }
-            )
-            self._update_epg_status_label()
+        self.epg_controller.load_epg_url(url)
 
     def _refresh_epg(self) -> None:
         last_epg_path = self.settings_controller.get_setting("last_epg_path", "")
         last_epg_url = self.settings_controller.get_setting("last_epg_url", "")
         if last_epg_path:
-            if self.epg_controller.load_epg_file(last_epg_path):
-                self.settings_controller.save_setting(
-                    "last_epg_loaded_at", datetime.now().strftime("%Y-%m-%d %H:%M")
-                )
-                self._update_epg_status_label()
+            self.epg_controller.load_epg_file(last_epg_path)
             return
         if last_epg_url:
-            if self.epg_controller.load_epg_url(last_epg_url):
-                self.settings_controller.save_setting(
-                    "last_epg_loaded_at", datetime.now().strftime("%Y-%m-%d %H:%M")
-                )
-                self._update_epg_status_label()
+            self.epg_controller.load_epg_url(last_epg_url)
             return
         self.show_notification("No previous EPG source to refresh", NotificationType.WARNING)
 
@@ -602,6 +726,11 @@ class MainWindow(QMainWindow):
                 "window_width": self.width(),
                 "window_height": self.height(),
                 "is_muted": is_muted,
+                "splitter_sizes": tuple(self.splitter.sizes()),
+                "active_tab_index": self.left_panel.tabs.currentIndex(),
+                "selected_category": self.left_panel.category_combo.currentText() or "All",
+                "search_text": self.left_panel.search_bar.text(),
+                "left_panel_visible": self.left_panel.isVisible(),
             }
         )
         super().closeEvent(event)
