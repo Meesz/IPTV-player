@@ -192,8 +192,13 @@ class MainWindow(QMainWindow):
         self.left_panel.set_sort_mode(settings.channel_sort_mode)
         self._update_epg_status_label()
 
-    def _favorite_urls(self) -> set[str]:
-        return {channel.url for channel in self.favorites_controller.get_favorites()}
+    def _favorite_keys(self) -> set[tuple[str, str]]:
+        return {channel.identity_key() for channel in self.favorites_controller.get_favorites()}
+
+    def _current_channel_key(self) -> tuple[str, str] | None:
+        if not self._current_channel:
+            return None
+        return self._current_channel.identity_key()
 
     def _current_programs_for_channels(self, channels: list[Channel]) -> dict[str, Program]:
         if not self.settings_controller.get_setting("show_now_playing_in_list", True):
@@ -212,9 +217,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_channel_list(self, *_args) -> None:
         playlist = self._current_playlist()
-        current_url = self._current_channel.url if self._current_channel else ""
         if not playlist:
-            self.left_panel.add_channels([], current_channel_url=current_url)
+            self.left_panel.add_channels([], current_channel_key=self._current_channel_key())
             return
 
         channels = self._resolve_visible_channels(playlist)
@@ -225,8 +229,8 @@ class MainWindow(QMainWindow):
             show_now_playing=self.settings_controller.get_setting(
                 "show_now_playing_in_list", True
             ),
-            favorites=self._favorite_urls(),
-            current_channel_url=current_url,
+            favorites=self._favorite_keys(),
+            current_channel_key=self._current_channel_key(),
         )
 
     def _resolve_visible_channels(self, playlist: Playlist) -> list[Channel]:
@@ -252,7 +256,7 @@ class MainWindow(QMainWindow):
 
     def _sort_channels(self, channels: list[Channel]) -> list[Channel]:
         sort_mode = self.left_panel.sort_combo.currentData() or "name_asc"
-        favorites = self._favorite_urls()
+        favorites = self._favorite_keys()
         if sort_mode == "name_desc":
             return sorted(channels, key=lambda item: item.name.lower(), reverse=True)
         if sort_mode == "group":
@@ -260,7 +264,7 @@ class MainWindow(QMainWindow):
         if sort_mode == "favorites_first":
             return sorted(
                 channels,
-                key=lambda item: (item.url not in favorites, item.name.lower()),
+                key=lambda item: (item.identity_key() not in favorites, item.name.lower()),
             )
         return sorted(channels, key=lambda item: item.name.lower())
 
@@ -273,7 +277,7 @@ class MainWindow(QMainWindow):
             show_now_playing=self.settings_controller.get_setting(
                 "show_now_playing_in_list", True
             ),
-            current_channel_url=self._current_channel.url if self._current_channel else "",
+            current_channel_key=self._current_channel_key(),
         )
         if self._current_channel:
             self._refresh_favorite_button()
@@ -288,8 +292,8 @@ class MainWindow(QMainWindow):
             show_now_playing=self.settings_controller.get_setting(
                 "show_now_playing_in_list", True
             ),
-            favorites=self._favorite_urls(),
-            current_channel_url=self._current_channel.url if self._current_channel else "",
+            favorites=self._favorite_keys(),
+            current_channel_key=self._current_channel_key(),
         )
 
     def _on_playlist_loading_started(self) -> None:
@@ -407,7 +411,7 @@ class MainWindow(QMainWindow):
 
     def _play_channel(self, channel: Channel) -> None:
         self._current_channel = channel
-        self.left_panel.highlight_channel(channel.url)
+        self.left_panel.highlight_channel(channel)
         self.right_panel.player_widget.play(channel.url)
         self._refresh_favorite_button()
         self.settings_controller.save_settings(
@@ -485,6 +489,7 @@ class MainWindow(QMainWindow):
 
     def _open_playlist_manager(self) -> None:
         dialog = PlaylistManagerDialog(self)
+        dialog.set_playlist_validator(self.playlist_controller.validate_playlist_reference)
         dialog.set_playlists(self.playlist_controller.get_saved_playlists())
         dialog.set_active_playlist(self._active_playlist_path)
         dialog.playlist_selected.connect(self._on_playlist_selected_from_manager)
@@ -492,7 +497,10 @@ class MainWindow(QMainWindow):
             self._save_playlists_from_dialog(dialog.get_playlists())
 
     def _save_playlists_from_dialog(self, playlists: list[PlaylistReference]) -> None:
-        self.playlist_controller.import_playlists(playlists)
+        self.playlist_controller.import_playlists(
+            playlists,
+            active_playlist_path=self._active_playlist_path,
+        )
 
     def _on_playlist_selected_from_manager(self, path: str, is_url: bool) -> None:
         self.playlist_controller.load_playlist(path, is_url)
