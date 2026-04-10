@@ -21,19 +21,17 @@ class FavoritesController(QObject):
             self.error_occurred.emit(str(exc))
             return False
 
-    def remove_favorite(self, channel: Channel | str) -> bool:
+    def remove_favorite(self, channel: Channel) -> bool:
         try:
-            url = channel.url if isinstance(channel, Channel) else channel
-            result = self.service.remove_favorite(url)
+            result = self.service.remove_favorite(channel)
             self.changed.emit()
             return result
         except Exception as exc:
             self.error_occurred.emit(str(exc))
             return False
 
-    def is_favorite(self, channel: Channel | str) -> bool:
-        url = channel.url if isinstance(channel, Channel) else channel
-        return self.service.is_favorite(url)
+    def is_favorite(self, channel: Channel) -> bool:
+        return self.service.is_favorite(channel)
 
     def get_favorites(self) -> list[Channel]:
         return self.service.get_favorites()
