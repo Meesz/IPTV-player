@@ -53,11 +53,18 @@ class PlaylistController(QObject):
         return []
 
     def save_playlist_reference(self, reference: PlaylistReference | str, is_url: bool | None = None) -> None:
-        if isinstance(reference, str):
-            if is_url is None:
-                raise ValueError("is_url must be provided when passing a path")
-            reference = PlaylistReference(name=Path(reference).name or "Playlist", path=reference, is_url=is_url)
-        self.service.save_playlist_reference(reference)
+        try:
+            if isinstance(reference, str):
+                if is_url is None:
+                    raise ValueError("is_url must be provided when passing a path")
+                reference = PlaylistReference(
+                    name=Path(reference).name or "Playlist",
+                    path=reference,
+                    is_url=is_url,
+                )
+            self.service.save_playlist_reference(reference)
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
 
     def get_saved_playlists(self):
         return self.service.get_saved_playlists()
@@ -66,13 +73,31 @@ class PlaylistController(QObject):
         return self.service.get_saved_playlist(path)
 
     def remove_saved_playlist(self, path: str) -> None:
-        self.service.remove_playlist_reference(path)
-
-    def import_playlists(self, playlists: list[PlaylistReference]) -> None:
         try:
-            self.service.import_playlists(playlists)
-            return None
+            self.service.remove_playlist_reference(path)
         except Exception as exc:
+            self.error_occurred.emit(str(exc))
+
+    def import_playlists(
+        self,
+        playlists: list[PlaylistReference],
+        *,
+        active_playlist_path: str = "",
+    ) -> bool:
+        try:
+            self.service.import_playlists(
+                playlists,
+                active_playlist_path=active_playlist_path,
+            )
+            return True
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
+            return False
+
+    def validate_playlist_reference(self, reference: PlaylistReference) -> PlaylistReference | None:
+        try:
+            return self.service.validate_playlist_reference(reference)
+        except (ValidationError, RepositoryError, OSError, ValueError) as exc:
             self.error_occurred.emit(str(exc))
             return None
 
