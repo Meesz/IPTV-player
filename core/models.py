@@ -1,6 +1,55 @@
+import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Dict, List, Optional, Set
+from urllib.parse import urlparse, urlunparse
+
+
+class PlaylistSourceType(str, Enum):
+    FILE = "file"
+    URL = "url"
+    XTREAM = "xtream"
+
+
+@dataclass(frozen=True)
+class XtreamCredentials:
+    """Credentials required for an Xtream-compatible live TV source."""
+
+    server_url: str
+    username: str
+    password: str
+    output: str = "ts"
+
+    @staticmethod
+    def normalize_server_url(value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            return ""
+
+        parsed = urlparse(raw)
+        scheme = parsed.scheme.lower()
+        netloc = parsed.netloc.lower()
+        path = parsed.path.rstrip("/")
+        if path.endswith("/player_api.php"):
+            path = path[: -len("/player_api.php")]
+        elif path.endswith("/get.php"):
+            path = path[: -len("/get.php")]
+        return urlunparse((scheme, netloc, path, "", "", "")).rstrip("/")
+
+    def normalized(self) -> "XtreamCredentials":
+        return XtreamCredentials(
+            server_url=self.normalize_server_url(self.server_url),
+            username=self.username.strip(),
+            password=self.password,
+            output=self.output.strip().lower() or "ts",
+        )
+
+    def redacted_summary(self) -> str:
+        parsed = urlparse(self.normalize_server_url(self.server_url))
+        host = parsed.netloc or self.server_url.strip()
+        return f"{host} / {self.username.strip()} / {self.output.strip().lower() or 'ts'}"
 
 @dataclass
 class Channel:
@@ -34,12 +83,113 @@ class PlaylistReference:
     """Reference metadata for a stored playlist entry."""
 
     name: str
-    path: str
-    is_url: bool = False
+    path: str = ""
+    source_type: PlaylistSourceType = PlaylistSourceType.FILE
+    xtream: XtreamCredentials | None = None
     channel_count: int = 0
     last_loaded_at: str = ""
     last_status: str = ""
     last_error: str = ""
+
+    @property
+    def is_url(self) -> bool:
+        return self.source_type == PlaylistSourceType.URL
+
+    @property
+    def source_identity(self) -> str:
+        if self.source_type == PlaylistSourceType.FILE:
+            return f"file::{self.normalized_path()}"
+        if self.source_type == PlaylistSourceType.URL:
+            return f"url::{self.normalized_url()}"
+        creds = self.normalized_xtream()
+        return f"xtream::{creds.server_url}::{creds.username}::{creds.output}"
+
+    def identity_key(self) -> tuple[str, ...]:
+        if self.source_type == PlaylistSourceType.XTREAM:
+            creds = self.normalized_xtream()
+            return (self.source_type.value, creds.server_url, creds.username, creds.output)
+        if self.source_type == PlaylistSourceType.URL:
+            return (self.source_type.value, self.normalized_url())
+        return (self.source_type.value, self.normalized_path())
+
+    def normalized_path(self) -> str:
+        raw = self.path.strip()
+        if not raw:
+            return ""
+        return os.path.abspath(raw)
+
+    def normalized_url(self) -> str:
+        return self.path.strip()
+
+    def normalized_xtream(self) -> XtreamCredentials:
+        return (self.xtream or XtreamCredentials("", "", "", "ts")).normalized()
+
+    def display_label(self) -> str:
+        name = self.name.strip() or "Playlist"
+        if self.source_type == PlaylistSourceType.XTREAM:
+            return name
+        if self.source_type == PlaylistSourceType.URL:
+            return name
+        normalized_path = self.normalized_path() if self.path.strip() else ""
+        return name or os.path.basename(normalized_path) or "Playlist"
+
+    def source_summary(self) -> str:
+        if self.source_type == PlaylistSourceType.FILE:
+            return self.normalized_path()
+        if self.source_type == PlaylistSourceType.URL:
+            return self.normalized_url()
+        return self.normalized_xtream().redacted_summary()
+
+    def to_settings_value(self) -> str:
+        payload = {
+            "source_type": self.source_type.value,
+            "path": (
+                self.normalized_url()
+                if self.source_type == PlaylistSourceType.URL
+                else self.normalized_path()
+            ),
+            "source_identity": self.source_identity,
+        }
+        if self.source_type == PlaylistSourceType.XTREAM:
+            creds = self.normalized_xtream()
+            payload["xtream"] = {
+                "server_url": creds.server_url,
+                "username": creds.username,
+                "output": creds.output,
+            }
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+    @classmethod
+    def from_settings_value(cls, value: str) -> "PlaylistReference | None":
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            source_type = (
+                PlaylistSourceType.URL
+                if raw.startswith(("http://", "https://"))
+                else PlaylistSourceType.FILE
+            )
+            return cls(name="Playlist", path=raw, source_type=source_type)
+
+        source_type = PlaylistSourceType(payload.get("source_type", PlaylistSourceType.FILE.value))
+        xtream_payload = payload.get("xtream")
+        xtream = None
+        if isinstance(xtream_payload, dict):
+            xtream = XtreamCredentials(
+                server_url=str(xtream_payload.get("server_url", "")),
+                username=str(xtream_payload.get("username", "")),
+                password="",
+                output=str(xtream_payload.get("output", "ts")),
+            )
+        return cls(
+            name=str(payload.get("name", "Playlist")),
+            path=str(payload.get("path", "")),
+            source_type=source_type,
+            xtream=xtream,
+        )
 
 
 @dataclass(frozen=True)
@@ -70,6 +220,8 @@ class Settings:
     volume: int = 100
     is_muted: bool = False
     last_playlist_path: str = ""
+    last_playlist_source_type: str = PlaylistSourceType.FILE.value
+    last_playlist_identity: str = ""
     last_channel_url: str = ""
     last_channel_group: str = ""
     last_epg_path: str = ""
@@ -97,6 +249,12 @@ class Settings:
             volume=kwargs.get("volume", self.volume),
             is_muted=kwargs.get("is_muted", self.is_muted),
             last_playlist_path=kwargs.get("last_playlist_path", self.last_playlist_path),
+            last_playlist_source_type=kwargs.get(
+                "last_playlist_source_type", self.last_playlist_source_type
+            ),
+            last_playlist_identity=kwargs.get(
+                "last_playlist_identity", self.last_playlist_identity
+            ),
             last_channel_url=kwargs.get("last_channel_url", self.last_channel_url),
             last_channel_group=kwargs.get("last_channel_group", self.last_channel_group),
             last_epg_path=kwargs.get("last_epg_path", self.last_epg_path),
@@ -125,6 +283,7 @@ class Playlist:
 
     name: str = "Unnamed Playlist"
     source_path: str = ""
+    source_reference: Optional[PlaylistReference] = None
     source_hash: str = ""
     channels: List[Channel] = field(default_factory=list)
     parse_warnings: List[ParseWarning] = field(default_factory=list)
