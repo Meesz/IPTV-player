@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Set, Optional, Any
-from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 @dataclass
 class Channel:
     """Represents a TV channel with its properties."""
+
     name: str
     url: str
     group: str = ""
@@ -23,9 +23,51 @@ class Channel:
     def __hash__(self) -> int:
         return hash(self.url)
 
+
+@dataclass(frozen=True)
+class PlaylistReference:
+    """Reference metadata for a stored playlist entry."""
+
+    name: str
+    path: str
+    is_url: bool = False
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Application settings."""
+
+    theme: str = "dark"
+    volume: int = 100
+    is_muted: bool = False
+    last_playlist_path: str = ""
+    last_channel_url: str = ""
+    last_epg_path: str = ""
+    last_epg_url: str = ""
+    window_width: int = 1280
+    window_height: int = 720
+
+    @classmethod
+    def defaults(cls) -> "Settings":
+        return cls()
+
+    def with_updates(self, **kwargs: object) -> "Settings":
+        return type(self)(
+            theme=kwargs.get("theme", self.theme),
+            volume=kwargs.get("volume", self.volume),
+            is_muted=kwargs.get("is_muted", self.is_muted),
+            last_playlist_path=kwargs.get("last_playlist_path", self.last_playlist_path),
+            last_channel_url=kwargs.get("last_channel_url", self.last_channel_url),
+            last_epg_path=kwargs.get("last_epg_path", self.last_epg_path),
+            last_epg_url=kwargs.get("last_epg_url", self.last_epg_url),
+            window_width=kwargs.get("window_width", self.window_width),
+            window_height=kwargs.get("window_height", self.window_height),
+        )
+
 @dataclass
 class Playlist:
     """Represents a collection of channels from an M3U/M3U8 playlist."""
+
     name: str = "Unnamed Playlist"
     source_path: str = ""
     source_hash: str = ""
@@ -39,6 +81,10 @@ class Playlist:
     _name_index: Dict[str, List[Channel]] = field(default_factory=dict)
 
     def __post_init__(self):
+        self._rebuild_indexes()
+
+    def replace_channels(self, channels: List[Channel]) -> None:
+        self.channels = channels
         self._rebuild_indexes()
 
     def add_channel(self, channel: Channel) -> None:
@@ -109,15 +155,3 @@ class EPGChannel:
         upcoming = [p for p in self.programs if p.start_time > current_time]
         upcoming.sort(key=lambda p: p.start_time)
         return upcoming[:limit]
-
-@dataclass
-class Settings:
-    """Application settings."""
-    theme: str = "dark"
-    volume: int = 100
-    last_playlist_path: Optional[str] = None
-    last_channel_url: Optional[str] = None
-    window_width: int = 1280
-    window_height: int = 720
-    is_maximized: bool = False
-    is_muted: bool = False
