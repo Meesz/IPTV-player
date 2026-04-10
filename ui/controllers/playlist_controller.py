@@ -62,6 +62,9 @@ class PlaylistController(QObject):
     def get_saved_playlists(self):
         return self.service.get_saved_playlists()
 
+    def get_saved_playlist(self, path: str) -> PlaylistReference | None:
+        return self.service.get_saved_playlist(path)
+
     def remove_saved_playlist(self, path: str) -> None:
         self.service.remove_playlist_reference(path)
 
@@ -72,3 +75,23 @@ class PlaylistController(QObject):
         except Exception as exc:
             self.error_occurred.emit(str(exc))
             return None
+
+    def update_playlist_metadata(
+        self,
+        path: str,
+        *,
+        channel_count: int,
+        last_loaded_at: str,
+        last_status: str,
+        last_error: str = "",
+    ) -> None:
+        try:
+            self.service.update_playlist_metadata(
+                path,
+                channel_count=channel_count,
+                last_loaded_at=last_loaded_at,
+                last_status=last_status,
+                last_error=last_error,
+            )
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
