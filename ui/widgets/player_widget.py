@@ -128,7 +128,7 @@ class PlayerWidget(QFrame):
         except Exception as exc:
             logger.warning("Failed to bind VLC window handle: %s", exc)
 
-    def play(self, url: str) -> None:
+    def play(self, url: str, *, is_retry: bool = False) -> None:
         if not self.vlc_available or not self.player:
             self.placeholder.setText("VLC backend unavailable")
             self.placeholder.show()
@@ -136,7 +136,8 @@ class PlayerWidget(QFrame):
             return
 
         self.reconnect_timer.stop()
-        self.reconnect_attempts = 0
+        if not is_retry:
+            self.reconnect_attempts = 0
         self.current_url = url
 
         try:
@@ -164,6 +165,7 @@ class PlayerWidget(QFrame):
             self.player.stop()
             self.placeholder.show()
             self.reconnect_timer.stop()
+            self.reconnect_attempts = 0
         self._set_state("idle", "Awaiting stream selection")
 
     def pause(self) -> None:
@@ -220,7 +222,7 @@ class PlayerWidget(QFrame):
 
     def _reconnect(self) -> None:
         if self.current_url and self.player:
-            self.play(self.current_url)
+            self.play(self.current_url, is_retry=True)
 
     def mouseDoubleClickEvent(self, event) -> None:
         if not self.vlc_available or not self.player or not self.player.is_playing():
