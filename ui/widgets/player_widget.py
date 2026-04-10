@@ -1,5 +1,4 @@
 import logging
-import sys
 
 from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
@@ -48,6 +47,34 @@ class MediaEventHandler(QObject):
         self.media_buffering.emit(cache_percentage)
 
 
+class FullscreenPlayerWindow(QWidget):
+    exit_requested = pyqtSignal()
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.Window)
+        self.setWindowTitle("Simple IPTV Player")
+        self.setObjectName("player_fullscreen_window")
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._layout = layout
+
+    def set_player_widget(self, widget: QWidget) -> None:
+        if self._layout.indexOf(widget) == -1:
+            self._layout.addWidget(widget)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.exit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:
+        self.exit_requested.emit()
+        event.ignore()
+
+
 class PlayerWidget(QFrame):
     """A widget that displays and controls VLC media playback."""
 
@@ -60,13 +87,22 @@ class PlayerWidget(QFrame):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
 
+        self.video_surface = QFrame()
+        self.video_surface.setObjectName("player_video_surface")
+        self.video_surface.setFrameStyle(QFrame.Shape.NoFrame)
+        self.video_surface.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.video_surface.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
+        self.video_layout = QVBoxLayout(self.video_surface)
+        self.video_layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.addWidget(self.video_surface)
+
         self.placeholder = QLabel("No stream loaded")
         self.placeholder.setObjectName("player_placeholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
-        self.layout.addWidget(self.placeholder)
+        self.video_layout.addWidget(self.placeholder)
 
-        self.status_overlay = QLabel(self)
+        self.status_overlay = QLabel(self.video_surface)
         self.status_overlay.setObjectName("player_overlay")
         self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_overlay.setWordWrap(True)
@@ -98,11 +134,12 @@ class PlayerWidget(QFrame):
         self.setMouseTracking(True)
         self.is_fullscreen = False
         self.current_url = None
-        self.normal_geometry = None
+        self.fullscreen_window: FullscreenPlayerWindow | None = None
         self.normal_parent = None
         self.normal_layout = None
         self.normal_index = None
         self.normal_stretch = None
+        self._embedding_warning = ""
 
         self.reconnect_timer = QTimer(self)
         self.reconnect_timer.setSingleShot(True)
@@ -117,12 +154,11 @@ class PlayerWidget(QFrame):
             return
 
         try:
-            if sys.platform == "win32":
-                self.player.set_hwnd(self.winId())
-            elif sys.platform.startswith("linux"):
-                self.player.set_xwindow(int(self.winId()))
-            elif sys.platform == "darwin":
-                self.player.set_nsobject(int(self.winId()))
+            self.video_surface.winId()
+            self._embedding_warning = VLCBackend.bind_video_output(
+                self.player,
+                int(self.video_surface.winId()),
+            ) or ""
             self.player.video_set_key_input(False)
             self.player.video_set_mouse_input(False)
         except Exception as exc:
@@ -172,9 +208,39 @@ class PlayerWidget(QFrame):
         if self.vlc_available and self.player:
             self.player.pause()
 
+    def retry_now(self) -> bool:
+        if not self.current_url:
+            return False
+        self.reconnect_timer.stop()
+        self.play(self.current_url, is_retry=True)
+        return True
+
     def set_volume(self, volume: int) -> None:
         if self.vlc_available and self.player:
             self.player.audio_set_volume(max(0, min(100, volume)))
+
+    def is_muted(self) -> bool:
+        if self.vlc_available and self.player:
+            return bool(self.player.audio_get_mute())
+        return False
+
+    def set_muted(self, muted: bool) -> None:
+        if self.vlc_available and self.player:
+            self.player.audio_set_mute(bool(muted))
+
+    def toggle_mute(self) -> bool:
+        next_state = not self.is_muted()
+        self.set_muted(next_state)
+        return next_state
+
+    def toggle_fullscreen(self) -> bool:
+        if not self.vlc_available or not self.player or not self.player.is_playing():
+            return False
+        if self.is_fullscreen:
+            self._exit_fullscreen()
+        else:
+            self._enter_fullscreen()
+        return True
 
     def _set_state(self, state: str, detail: str = "") -> None:
         self.current_state = state
@@ -225,16 +291,12 @@ class PlayerWidget(QFrame):
             self.play(self.current_url, is_retry=True)
 
     def mouseDoubleClickEvent(self, event) -> None:
-        if not self.vlc_available or not self.player or not self.player.is_playing():
+        if self.toggle_fullscreen():
+            event.accept()
             return
-
-        if not self.is_fullscreen:
-            self._enter_fullscreen()
-        else:
-            self._exit_fullscreen()
+        super().mouseDoubleClickEvent(event)
 
     def _enter_fullscreen(self) -> None:
-        self.normal_geometry = self.geometry()
         self.normal_parent = self.parent()
         self.normal_layout = self.parent().layout() if self.parent() else None
         if self.normal_layout:
@@ -242,46 +304,47 @@ class PlayerWidget(QFrame):
             self.normal_stretch = self.normal_layout.stretch(self.normal_index)
             self.normal_layout.removeWidget(self)
 
-        for widget in self.window().findChildren(QWidget):
-            if widget is not self and widget.isVisible():
-                widget.hide()
-                widget.setProperty("was_visible", True)
+        if self.fullscreen_window is None:
+            self.fullscreen_window = FullscreenPlayerWindow()
+            self.fullscreen_window.exit_requested.connect(self._exit_fullscreen)
 
-        self.window().setWindowState(Qt.WindowState.WindowFullScreen)
-        self.setParent(self.window())
-        self.setGeometry(self.window().rect())
-        self.raise_()
+        self.setParent(self.fullscreen_window)
+        self.fullscreen_window.set_player_widget(self)
+        self.fullscreen_window.showFullScreen()
         self.show()
+        self._setup_player()
         self.is_fullscreen = True
 
     def _exit_fullscreen(self) -> None:
-        if not self.parent():
+        if not self.is_fullscreen:
             return
-        self.window().setWindowState(Qt.WindowState.WindowNoState)
+        if self.fullscreen_window is not None:
+            self.fullscreen_window.layout().removeWidget(self)
+            self.fullscreen_window.hide()
         self.setParent(self.normal_parent)
         if self.normal_layout and self.normal_index is not None:
             self.normal_layout.insertWidget(self.normal_index, self, stretch=self.normal_stretch)
-        self.setGeometry(self.normal_geometry)
 
-        for widget in self.window().findChildren(QWidget):
-            if widget is not self and widget.property("was_visible"):
-                widget.show()
-                widget.setProperty("was_visible", False)
-
+        self.show()
+        self._setup_player()
         self.is_fullscreen = False
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
             self._exit_fullscreen()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._setup_player()
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._position_overlay()
 
     def _position_overlay(self) -> None:
-        overlay_width = min(max(220, self.width() - 80), 420)
+        overlay_width = min(max(220, self.video_surface.width() - 80), 420)
         self.status_overlay.resize(overlay_width, self.status_overlay.sizeHint().height() + 12)
         self.status_overlay.move(
-            (self.width() - self.status_overlay.width()) // 2,
-            max(24, (self.height() - self.status_overlay.height()) // 2),
+            (self.video_surface.width() - self.status_overlay.width()) // 2,
+            max(24, (self.video_surface.height() - self.status_overlay.height()) // 2),
         )
