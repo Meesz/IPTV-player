@@ -115,6 +115,11 @@ class SQLiteConnection:
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('show_now_playing_in_list', 'true');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('search_current_category_only', 'true');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('channel_sort_mode', 'name_asc');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('splitter_sizes', '390,960');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('active_tab_index', '0');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('selected_category', 'All');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('search_text', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('left_panel_visible', 'true');
                 """)
                 self._ensure_column(conn, "playlists", "channel_count", "INTEGER NOT NULL DEFAULT 0")
                 self._ensure_column(conn, "playlists", "last_loaded_at", "TEXT NOT NULL DEFAULT ''")
