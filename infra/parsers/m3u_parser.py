@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from core.errors import ParsingError
-from core.models import Channel, Playlist
+from core.models import Channel, ParseWarning, Playlist
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ _EXTINF_RE = re.compile(
     r"#EXTINF:-1(?P<attrs>[^,]*),(?P<name>.*)$",
     re.IGNORECASE,
 )
-_ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)="([^"]*)"')
+_ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)=(?:"([^"]*)"|\'([^\']*)\')')
 
 
 class M3UParser:
@@ -35,7 +35,7 @@ class M3UParser:
         except OSError as exc:
             raise ParsingError(f"Could not read playlist file: {file_path}") from exc
 
-        parse_errors: List[str] = []
+        parse_warnings: List[ParseWarning] = []
         playlist = Playlist(source_path=str(file_path), source_hash=file_path_hash)
 
         text = M3UParser._decode_playlist_content(payload, file_path)
@@ -53,7 +53,13 @@ class M3UParser:
             if value.startswith("#EXTINF"):
                 match = _EXTINF_RE.match(value)
                 if not match:
-                    parse_errors.append(f"Invalid EXTINF line: {value[:80]}")
+                    parse_warnings.append(
+                        ParseWarning(
+                            code="invalid_extinf",
+                            message="Skipped malformed EXTINF entry",
+                            context=value[:80],
+                        )
+                    )
                     pending_channel = None
                     continue
 
@@ -73,6 +79,13 @@ class M3UParser:
                 continue
 
             if pending_channel is None:
+                parse_warnings.append(
+                    ParseWarning(
+                        code="orphan_stream_url",
+                        message="Skipped stream URL without a matching EXTINF record",
+                        context=value[:80],
+                    )
+                )
                 continue
 
             try:
@@ -84,12 +97,28 @@ class M3UParser:
                     epg_id=pending_channel.get("epg_id", ""),
                 )
                 if pending_channel.get("channel_number"):
-                    channel.channel_number = int(pending_channel["channel_number"])
+                    channel.channel_number = M3UParser._parse_int_field(
+                        pending_channel["channel_number"],
+                        field_name="tvg-chno",
+                        warnings=parse_warnings,
+                        context=channel.name,
+                    )
                 if pending_channel.get("time_shift"):
-                    channel.time_shift = int(pending_channel["time_shift"])
+                    channel.time_shift = M3UParser._parse_int_field(
+                        pending_channel["time_shift"],
+                        field_name="tvg-shift",
+                        warnings=parse_warnings,
+                        context=channel.name,
+                    )
                 playlist.add_channel(channel)
             except Exception as exc:
-                parse_errors.append(f"Skipping invalid entry {value[:80]}: {exc}")
+                parse_warnings.append(
+                    ParseWarning(
+                        code="invalid_channel_entry",
+                        message=f"Skipped invalid playlist entry: {exc}",
+                        context=value[:80],
+                    )
+                )
             finally:
                 pending_channel = None
 
@@ -98,14 +127,27 @@ class M3UParser:
                 "Playlist contains no channels"
             )
 
-        if parse_errors:
-            logger.warning("M3U parse warnings in %s: %s", file_path, parse_errors[:5])
+        if parse_warnings:
+            logger.warning(
+                "M3U parse warnings in %s: %s",
+                file_path,
+                [warning.message for warning in parse_warnings[:5]],
+            )
+        playlist.parse_warnings = parse_warnings
 
         return playlist
 
     @staticmethod
     def _decode_playlist_content(content: bytes, source: Path) -> str:
-        for encoding in ("utf-8", "iso-8859-1", "cp1252"):
+        for encoding in (
+            "utf-8-sig",
+            "utf-8",
+            "utf-16",
+            "utf-16-le",
+            "utf-16-be",
+            "iso-8859-1",
+            "cp1252",
+        ):
             try:
                 return content.decode(encoding)
             except UnicodeDecodeError:
@@ -114,4 +156,29 @@ class M3UParser:
 
     @staticmethod
     def _parse_attributes(raw: str) -> Dict[str, str]:
-        return {key.lower(): value for key, value in _ATTRIBUTE_RE.findall(raw)}
+        attributes: Dict[str, str] = {}
+        for match in _ATTRIBUTE_RE.finditer(raw):
+            key = match.group(1).lower()
+            value = match.group(2) if match.group(2) is not None else match.group(3) or ""
+            attributes[key] = value
+        return attributes
+
+    @staticmethod
+    def _parse_int_field(
+        value: str,
+        *,
+        field_name: str,
+        warnings: list[ParseWarning],
+        context: str,
+    ) -> int:
+        try:
+            return int(value)
+        except ValueError:
+            warnings.append(
+                ParseWarning(
+                    code="invalid_numeric_attribute",
+                    message=f"Ignored invalid {field_name} value",
+                    context=f"{context}: {value}",
+                )
+            )
+            return 0
