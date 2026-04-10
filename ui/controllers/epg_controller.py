@@ -2,7 +2,7 @@ from typing import List
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from core.errors import NetworkError, ParsingError
+from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import Program
 from core.services.epg_service import EPGService
 
@@ -20,7 +20,7 @@ class EPGController(QObject):
             self.service.load_epg_from_path(path)
             self.epg_loaded.emit()
             return True
-        except (NetworkError, ParsingError, OSError, ValueError) as exc:
+        except (NetworkError, ParsingError, RepositoryError, OSError, ValueError) as exc:
             self.error_occurred.emit(str(exc))
             return False
 
@@ -29,7 +29,7 @@ class EPGController(QObject):
             self.service.load_epg_from_url(url)
             self.epg_loaded.emit()
             return True
-        except (NetworkError, ParsingError, OSError, ValueError) as exc:
+        except (NetworkError, ParsingError, RepositoryError, OSError, ValueError) as exc:
             self.error_occurred.emit(str(exc))
             return False
 
