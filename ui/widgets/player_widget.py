@@ -40,7 +40,7 @@ class MediaEventHandler(QObject):
         self.error_occurred.emit("Media playback failed")
     
     def _on_buffering(self, event):
-        cache_percentage = event.u.new_cache if hasattr(event, 'u') else 0
+        cache_percentage = event.u.new_cache if hasattr(event, "u") else 0
         self.media_buffering.emit(cache_percentage)
 
 class PlayerWidget(QFrame):
@@ -64,6 +64,9 @@ class PlayerWidget(QFrame):
 
         success, error = VLCBackend.initialize()
         self.vlc_available = success
+        self.vlc = None
+        self.instance = None
+        self.player = None
         if not success:
             self.placeholder.setText(error)
             return
@@ -83,6 +86,11 @@ class PlayerWidget(QFrame):
         self.setMouseTracking(True)
         self.is_fullscreen = False
         self.current_url = None
+        self.normal_geometry = None
+        self.normal_parent = None
+        self.normal_layout = None
+        self.normal_index = None
+        self.normal_stretch = None
         
         self.reconnect_timer = QTimer(self)
         self.reconnect_timer.setSingleShot(True)
@@ -91,30 +99,26 @@ class PlayerWidget(QFrame):
         self.max_reconnect_attempts = 5
 
     def _setup_player(self):
-        if not self.vlc_available:
+        if not self.vlc_available or not self.player:
             return
 
-        if sys.platform == "win32":
-            self.player.set_hwnd(self.winId())
-        elif sys.platform.startswith("linux"):
-            try:
+        try:
+            if sys.platform == "win32":
+                self.player.set_hwnd(self.winId())
+            elif sys.platform.startswith("linux"):
                 window_id = int(self.winId())
                 self.player.set_xwindow(window_id)
-            except Exception:
-                try:
-                    import sip
-                    window_id = sip.unwrapinstance(self.winId())
-                    self.player.set_xwindow(window_id)
-                except Exception:
-                    pass # Log error
-        elif sys.platform == "darwin":
-            self.player.set_nsobject(int(self.winId()))
-
-        self.player.video_set_key_input(False)
-        self.player.video_set_mouse_input(False)
+            elif sys.platform == "darwin":
+                self.player.set_nsobject(int(self.winId()))
+            self.player.video_set_key_input(False)
+            self.player.video_set_mouse_input(False)
+        except Exception as exc:
+            logger.warning("Failed to bind VLC window handle: %s", exc)
 
     def play(self, url: str):
-        if not self.vlc_available:
+        if not self.vlc_available or not self.player:
+            self.placeholder.setText("VLC backend unavailable")
+            self.placeholder.show()
             return
             
         self.reconnect_timer.stop()
@@ -139,7 +143,7 @@ class PlayerWidget(QFrame):
             self._handle_playback_error(str(e))
 
     def stop(self):
-        if self.vlc_available:
+        if self.vlc_available and self.player:
             if self.is_fullscreen:
                 self._exit_fullscreen()
             self.player.stop()
@@ -147,11 +151,11 @@ class PlayerWidget(QFrame):
             self.reconnect_timer.stop()
 
     def pause(self):
-        if self.vlc_available:
+        if self.vlc_available and self.player:
             self.player.pause()
 
     def set_volume(self, volume: int):
-        if self.vlc_available:
+        if self.vlc_available and self.player:
             self.player.audio_set_volume(max(0, min(100, volume)))
 
     def _show_status(self, message, duration=2000):
@@ -184,11 +188,11 @@ class PlayerWidget(QFrame):
             self.reconnect_timer.start(int(delay * 1000))
 
     def _reconnect(self):
-        if self.current_url:
+        if self.current_url and self.player:
             self.play(self.current_url)
 
     def mouseDoubleClickEvent(self, event):
-        if not self.vlc_available or not self.player.is_playing():
+        if not self.vlc_available or not self.player or not self.player.is_playing():
             return
 
         if not self.is_fullscreen:
@@ -218,6 +222,8 @@ class PlayerWidget(QFrame):
         self.is_fullscreen = True
 
     def _exit_fullscreen(self):
+        if not self.parent():
+            return
         self.window().setWindowState(Qt.WindowState.WindowNoState)
         self.setParent(self.normal_parent)
         if self.normal_layout and self.normal_index is not None:
