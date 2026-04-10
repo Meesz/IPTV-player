@@ -112,3 +112,23 @@ class PlaylistService:
 
     def import_playlists(self, playlists: List[PlaylistReference]) -> None:
         self.repository.import_playlists(playlists)
+
+    def get_saved_playlist(self, path: str) -> PlaylistReference | None:
+        return self.repository.get_playlist(path)
+
+    def update_playlist_metadata(
+        self,
+        path: str,
+        *,
+        channel_count: int,
+        last_loaded_at: str,
+        last_status: str,
+        last_error: str = "",
+    ) -> None:
+        self.repository.update_playlist_metadata(
+            path,
+            channel_count=channel_count,
+            last_loaded_at=last_loaded_at,
+            last_status=last_status,
+            last_error=last_error,
+        )
