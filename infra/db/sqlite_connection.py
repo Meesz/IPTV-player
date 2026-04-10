@@ -50,6 +50,7 @@ class SQLiteConnection:
                         path TEXT NOT NULL,
                         is_url BOOLEAN NOT NULL DEFAULT 0
                     );
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_path ON playlists (path);
                     
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
@@ -64,6 +65,8 @@ class SQLiteConnection:
                         description TEXT,
                         PRIMARY KEY (channel_id, start_time)
                     );
+                    CREATE INDEX IF NOT EXISTS ix_epg_channel_time
+                        ON epg_data (channel_id, start_time, end_time);
                     
                     CREATE TABLE IF NOT EXISTS favorites (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,11 +76,21 @@ class SQLiteConnection:
                         logo TEXT,
                         epg_id TEXT
                     );
+                    CREATE INDEX IF NOT EXISTS ix_favorites_url ON favorites (url);
                     
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('volume', '100');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('is_muted', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_channel_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('window_width', '1280');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('window_height', '720');
                 """)
                 logger.info("Database initialized successfully")
         except Exception as e:
