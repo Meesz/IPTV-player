@@ -48,7 +48,11 @@ class SQLiteConnection:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
                         path TEXT NOT NULL,
-                        is_url BOOLEAN NOT NULL DEFAULT 0
+                        is_url BOOLEAN NOT NULL DEFAULT 0,
+                        channel_count INTEGER NOT NULL DEFAULT 0,
+                        last_loaded_at TEXT NOT NULL DEFAULT '',
+                        last_status TEXT NOT NULL DEFAULT '',
+                        last_error TEXT NOT NULL DEFAULT ''
                     );
                     CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_path ON playlists (path);
                     
@@ -77,6 +81,19 @@ class SQLiteConnection:
                         epg_id TEXT
                     );
                     CREATE INDEX IF NOT EXISTS ix_favorites_url ON favorites (url);
+
+                    CREATE TABLE IF NOT EXISTS recent_channels (
+                        url TEXT NOT NULL,
+                        playlist_path TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        group_name TEXT,
+                        logo TEXT,
+                        epg_id TEXT,
+                        played_at INTEGER NOT NULL,
+                        PRIMARY KEY (url, playlist_path)
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_recent_channels_played_at
+                        ON recent_channels (played_at DESC);
                     
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_path', '');
@@ -84,14 +101,36 @@ class SQLiteConnection:
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_loaded_at', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('volume', '100');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('is_muted', 'false');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_channel_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_channel_group', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('window_width', '1280');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('window_height', '720');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('play_on_single_click', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('show_now_playing_in_list', 'true');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('search_current_category_only', 'true');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('channel_sort_mode', 'name_asc');
                 """)
+                self._ensure_column(conn, "playlists", "channel_count", "INTEGER NOT NULL DEFAULT 0")
+                self._ensure_column(conn, "playlists", "last_loaded_at", "TEXT NOT NULL DEFAULT ''")
+                self._ensure_column(conn, "playlists", "last_status", "TEXT NOT NULL DEFAULT ''")
+                self._ensure_column(conn, "playlists", "last_error", "TEXT NOT NULL DEFAULT ''")
                 logger.info("Database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
+
+    @staticmethod
+    def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name in columns:
+            return
+        conn.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+        )
