@@ -7,10 +7,12 @@ class FavoritesService:
         self.repository = repository
 
     def add_favorite(self, channel: Channel) -> bool:
-        return self.repository.add_favorite(channel)
+        self.repository.add_favorite(channel)
+        return True
 
     def remove_favorite(self, url: str) -> bool:
-        return self.repository.remove_favorite(url)
+        self.repository.remove_favorite(url)
+        return True
 
     def get_favorites(self) -> List[Channel]:
         return self.repository.get_favorites()
