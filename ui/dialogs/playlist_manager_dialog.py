@@ -1,5 +1,5 @@
 import os
-from typing import Sequence
+from typing import Callable, Sequence
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -32,6 +32,7 @@ class PlaylistManagerDialog(QDialog):
         self.setMinimumSize(760, 420)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
         self._active_playlist_path = ""
+        self._playlist_validator: Callable[[PlaylistReference], PlaylistReference | None] | None = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -179,7 +180,12 @@ class PlaylistManagerDialog(QDialog):
         self._add_item(name.strip(), path, is_url)
 
     def _add_item(self, name: str, path: str, is_url: bool) -> None:
-        self._add_playlist_item(PlaylistReference(name=name, path=path, is_url=is_url))
+        playlist = self._validated_playlist(
+            PlaylistReference(name=name, path=path, is_url=is_url)
+        )
+        if not playlist or self._has_duplicate(playlist):
+            return
+        self._add_playlist_item(playlist)
 
     def _add_playlist_item(self, playlist: PlaylistReference) -> None:
         item = QListWidgetItem(self._item_title(playlist))
@@ -189,6 +195,10 @@ class PlaylistManagerDialog(QDialog):
     def _remove_playlist(self) -> None:
         current_item = self.playlist_list.currentItem()
         if not current_item:
+            return
+        playlist = current_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(playlist, PlaylistReference) and playlist.path == self._active_playlist_path:
+            self._show_warning("The active playlist cannot be removed.")
             return
         confirm = QMessageBox.question(
             self,
@@ -235,6 +245,9 @@ class PlaylistManagerDialog(QDialog):
             )
             if not ok or not new_path:
                 return
+            if data.path == self._active_playlist_path and new_path.strip() != data.path:
+                self._show_warning("The active playlist source cannot be changed while it is active.")
+                return
             path = new_path.strip()
         else:
             new_path, _ = QFileDialog.getOpenFileName(
@@ -244,17 +257,27 @@ class PlaylistManagerDialog(QDialog):
                 "M3U Files (*.m3u *.m3u8)",
             )
             if new_path:
+                if data.path == self._active_playlist_path and new_path != data.path:
+                    self._show_warning("The active playlist source cannot be changed while it is active.")
+                    return
                 path = new_path
 
-        playlist = PlaylistReference(
-            name=name.strip(),
-            path=path,
-            is_url=is_url,
-            channel_count=data.channel_count,
-            last_loaded_at=data.last_loaded_at,
-            last_status=data.last_status,
-            last_error=data.last_error,
+        playlist = self._validated_playlist(
+            PlaylistReference(
+                name=name.strip(),
+                path=path,
+                is_url=is_url,
+                channel_count=data.channel_count,
+                last_loaded_at=data.last_loaded_at,
+                last_status=data.last_status,
+                last_error=data.last_error,
+            )
         )
+        if not playlist:
+            return
+        if self._has_duplicate(playlist, ignore_item=current_item):
+            return
+
         current_item.setData(Qt.ItemDataRole.UserRole, playlist)
         current_item.setText(self._item_title(playlist))
         self._set_details(playlist)
@@ -284,6 +307,10 @@ class PlaylistManagerDialog(QDialog):
                     name=data.name,
                     path=data.path,
                     is_url=data.is_url,
+                    channel_count=data.channel_count,
+                    last_loaded_at=data.last_loaded_at,
+                    last_status=data.last_status,
+                    last_error=data.last_error,
                 )
             )
         return playlists
@@ -302,6 +329,38 @@ class PlaylistManagerDialog(QDialog):
             data = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(data, PlaylistReference):
                 item.setText(self._item_title(data))
+
+    def set_playlist_validator(
+        self,
+        validator: Callable[[PlaylistReference], PlaylistReference | None],
+    ) -> None:
+        self._playlist_validator = validator
+
+    def _validated_playlist(self, playlist: PlaylistReference) -> PlaylistReference | None:
+        if self._playlist_validator is None:
+            return playlist
+        return self._playlist_validator(playlist)
+
+    def _has_duplicate(
+        self,
+        playlist: PlaylistReference,
+        *,
+        ignore_item: QListWidgetItem | None = None,
+    ) -> bool:
+        for index in range(self.playlist_list.count()):
+            item = self.playlist_list.item(index)
+            if item is ignore_item:
+                continue
+            data = item.data(Qt.ItemDataRole.UserRole)
+            if not isinstance(data, PlaylistReference):
+                continue
+            if (data.path, data.is_url) == (playlist.path, playlist.is_url):
+                self._show_warning("That playlist is already in the library.")
+                return True
+        return False
+
+    def _show_warning(self, message: str) -> None:
+        QMessageBox.warning(self, "Playlist Manager", message)
 
     def _item_title(self, playlist: PlaylistReference) -> str:
         source_kind = "URL" if playlist.is_url else "FILE"
