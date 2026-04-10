@@ -6,8 +6,11 @@ import pytest
 
 from core.errors import NetworkError
 from core.models import Channel, Playlist, PlaylistReference, Settings
+from core.services.history_service import HistoryService
 from core.services.playlist_service import PlaylistService
 from core.services.settings_service import SettingsService
+from infra.db.history_repository import HistoryRepository
+from infra.db.playlist_repository import PlaylistRepository
 from infra.db.settings_repository import SettingsRepository
 from infra.db.sqlite_connection import SQLiteConnection
 from infra.parsers.epg_parser import EPGParser
@@ -37,6 +40,7 @@ def test_settings_round_trip():
     assert updated.theme == "light"
     assert updated.volume == 42
     assert updated.last_playlist_path == "/tmp/list.m3u"
+    assert updated.show_now_playing_in_list is True
 
 
 def test_playlist_indexing():
@@ -112,9 +116,52 @@ def test_settings_service_legacy_key_sync(tmp_path):
 
     service.save_setting("epg_url", "https://example.com/epg.xml")
     service.save_setting("last_playlist_path", "https://example.com/list.m3u")
+    service.save_setting("play_on_single_click", True)
     assert service.get_setting("last_epg_url") == "https://example.com/epg.xml"
     assert service.get_setting("last_playlist_path") == "https://example.com/list.m3u"
+    assert service.get_setting("play_on_single_click") is True
 
     service = SettingsService(settings_repo)
     assert service.get_setting("last_epg_url") == "https://example.com/epg.xml"
     assert service.get_setting("last_playlist_path") == "https://example.com/list.m3u"
+    assert service.get_setting("play_on_single_click") is True
+
+
+def test_recent_history_round_trip(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "history.sqlite")
+    repository = HistoryRepository(connection)
+    service = HistoryService(repository)
+
+    channel = Channel(
+        name="News",
+        url="https://example.com/news",
+        group="News",
+        epg_id="news.epg",
+    )
+    service.record_channel(channel, "https://example.com/playlist.m3u")
+
+    recent = service.get_recent_channels(limit=5)
+    assert len(recent) == 1
+    assert recent[0].playlist_path == "https://example.com/playlist.m3u"
+    assert recent[0].url == channel.url
+    assert recent[0].last_played_at is not None
+
+
+def test_playlist_metadata_round_trip(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "playlist.sqlite")
+    repository = PlaylistRepository(connection)
+
+    reference = PlaylistReference(
+        name="Main",
+        path="/tmp/main.m3u",
+        is_url=False,
+        channel_count=120,
+        last_loaded_at="2026-04-10 12:00",
+        last_status="ready",
+    )
+    repository.upsert_playlist(reference)
+
+    saved = repository.get_playlist("/tmp/main.m3u")
+    assert saved is not None
+    assert saved.channel_count == 120
+    assert saved.last_status == "ready"
