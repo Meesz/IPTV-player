@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
-from PyQt6.QtCore import QSize, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PyQt6.QtWidgets import (
@@ -248,6 +249,7 @@ class LeftPanel(QFrame):
         self.setMinimumWidth(340)
         self._logo_provider = ChannelLogoProvider(self)
         self._collection_views: dict[QListWidget, tuple[QStackedWidget, CollectionStateWidget]] = {}
+        self._population_generation = 0
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -362,6 +364,84 @@ class LeftPanel(QFrame):
             list_kind="channels",
         )
 
+    def populate_channels_incrementally(
+        self,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None = None,
+        current_program_resolver: Callable[[list[Channel]], dict[str, Program]] | None = None,
+        show_now_playing: bool = True,
+        favorites: set[tuple[str, str]] | None = None,
+        current_channel_key: tuple[str, str] | None = None,
+        empty_title: str = "No channels match",
+        empty_detail: str = "Adjust the category or search filters to broaden the results.",
+        batch_size: int = 250,
+        progress_callback: Callable[[int, int], None] | None = None,
+        completion_callback: Callable[[], None] | None = None,
+    ) -> None:
+        self.cancel_channel_population()
+        generation = self._population_generation
+        widget = self.channel_list
+        widget.clear()
+        favorites = favorites or set()
+        current_programs = current_programs or {}
+        total = len(channels)
+
+        if total == 0:
+            self._set_collection_state(widget, empty_title, empty_detail)
+            if progress_callback:
+                progress_callback(0, 0)
+            if completion_callback:
+                completion_callback()
+            return
+
+        self._show_collection(widget)
+        widget.setUpdatesEnabled(False)
+
+        def _process_batch(start: int) -> None:
+            if generation != self._population_generation:
+                widget.setUpdatesEnabled(True)
+                return
+
+            end = min(start + max(1, batch_size), total)
+            batch = channels[start:end]
+            batch_programs = (
+                current_program_resolver(batch)
+                if current_program_resolver is not None
+                else current_programs
+            )
+            self._append_channels(
+                widget,
+                batch,
+                current_programs=batch_programs,
+                show_now_playing=show_now_playing,
+                favorites=favorites,
+                current_channel_key=current_channel_key,
+                list_kind="channels",
+            )
+
+            widget.setUpdatesEnabled(True)
+            widget.viewport().update()
+            if progress_callback:
+                progress_callback(end, total)
+
+            if end >= total:
+                if current_channel_key:
+                    self._select_channel(widget, current_channel_key)
+                self._sync_list_selection_styles(widget)
+                if completion_callback:
+                    completion_callback()
+                return
+
+            widget.setUpdatesEnabled(False)
+            QTimer.singleShot(0, lambda next_start=end: _process_batch(next_start))
+
+        QTimer.singleShot(0, lambda: _process_batch(0))
+
+    def cancel_channel_population(self) -> None:
+        self._population_generation += 1
+        self.channel_list.setUpdatesEnabled(True)
+
     def add_favorites(
         self,
         channels: list[Channel],
@@ -440,6 +520,32 @@ class LeftPanel(QFrame):
             return
 
         self._show_collection(widget)
+        self._append_channels(
+            widget,
+            channels,
+            current_programs=current_programs,
+            show_now_playing=show_now_playing,
+            favorites=favorites,
+            current_channel_key=current_channel_key,
+            list_kind=list_kind,
+        )
+
+        if current_channel_key:
+            self._select_channel(widget, current_channel_key)
+        self._sync_list_selection_styles(widget)
+
+    def _append_channels(
+        self,
+        widget: QListWidget,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None,
+        show_now_playing: bool,
+        favorites: set[tuple[str, str]],
+        current_channel_key: tuple[str, str] | None,
+        list_kind: str,
+    ) -> None:
+        current_programs = current_programs or {}
         for channel in channels:
             program = current_programs.get(channel.epg_id)
             is_favorite = channel.identity_key() in favorites
@@ -457,10 +563,6 @@ class LeftPanel(QFrame):
                 list_kind=list_kind,
             )
             widget.setItemWidget(item, row)
-
-        if current_channel_key:
-            self._select_channel(widget, current_channel_key)
-        self._sync_list_selection_styles(widget)
 
     def _channel_item_widget(
         self,
