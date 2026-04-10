@@ -94,7 +94,8 @@ class Themes:
             QFrame#control_bar,
             QFrame#epg_widget,
             QFrame#playlist_dialog_card,
-            QFrame#playlist_detail_card {{
+            QFrame#playlist_detail_card,
+            QFrame#collection_state {{
                 background-color: {panel};
                 border: 1px solid {border_soft};
                 border-radius: 18px;
@@ -107,8 +108,13 @@ class Themes:
 
             QFrame#control_bar,
             QFrame#filter_card,
-            QFrame#playlist_detail_card {{
+            QFrame#playlist_detail_card,
+            QFrame#collection_state {{
                 background-color: {panel_alt};
+            }}
+
+            QFrame#collection_state {{
+                border-style: dashed;
             }}
 
             QToolBar#main_toolbar {{
@@ -146,9 +152,19 @@ class Themes:
             QLabel#current_time,
             QLabel#epg_status,
             QLabel#playlist_detail_label,
-            QLabel#placeholder_hint {{
+            QLabel#placeholder_hint,
+            QLabel#state_detail,
+            QLabel#playlist_feedback,
+            QLabel#channel_row_subtitle,
+            QLabel#channel_row_meta {{
                 color: {muted};
                 padding: 0;
+            }}
+
+            QLabel#state_title,
+            QLabel#channel_row_title {{
+                font-weight: 700;
+                color: {text};
             }}
 
             QLabel#status_chip,
@@ -290,6 +306,52 @@ class Themes:
             QListWidget::item:selected {{
                 background-color: {selection};
                 border: 1px solid {accent};
+            }}
+
+            QFrame#channel_row {{
+                background-color: {surface};
+                border: 1px solid {border_soft};
+                border-radius: 14px;
+            }}
+
+            QFrame#channel_row[selected="true"] {{
+                background-color: {selection};
+                border: 1px solid {accent};
+            }}
+
+            QLabel#channel_logo {{
+                background-color: {panel_alt};
+                border: 1px solid {border_soft};
+                border-radius: 12px;
+            }}
+
+            QLabel#channel_badge {{
+                background-color: {accent_soft};
+                color: {accent};
+                border-radius: 10px;
+                padding: 2px 8px;
+                font-size: 11px;
+                font-weight: 700;
+            }}
+
+            QLabel#channel_badge[badgeTone="warning"] {{
+                color: {warning};
+            }}
+
+            QLabel#channel_badge[badgeTone="accent"] {{
+                color: {accent};
+            }}
+
+            QLabel#playlist_feedback[stateTone="error"] {{
+                color: {error};
+            }}
+
+            QLabel#playlist_feedback[stateTone="warning"] {{
+                color: {warning};
+            }}
+
+            QLabel#playlist_feedback[stateTone="ready"] {{
+                color: {success};
             }}
 
             QSlider::groove:horizontal {{
