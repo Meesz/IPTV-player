@@ -1,25 +1,24 @@
-import re
-import logging
 import hashlib
+import logging
+import re
 from pathlib import Path
-from typing import TextIO, Dict, Optional, List
+from typing import Dict, List, Optional
+
+from core.errors import ParsingError
 from core.models import Channel, Playlist
 
 logger = logging.getLogger(__name__)
 
-class M3UParser:
-    """Utility class for parsing M3U/M3U8 playlist files."""
 
-    EXTINF_REGEX = re.compile(
-        r"#EXTINF:-1"
-        r'(?:.*?tvg-id="(.*?)")?'
-        r'(?:.*?tvg-name="(.*?)")?'
-        r'(?:.*?group-title="(.*?)")?'
-        r'(?:.*?tvg-logo="(.*?)")?'
-        r'(?:.*?tvg-chno="(.*?)")?'
-        r'(?:.*?tvg-shift="(.*?)")?'
-        r",(.+)$"
-    )
+_EXTINF_RE = re.compile(
+    r"#EXTINF:-1(?P<attrs>[^,]*),(?P<name>.*)$",
+    re.IGNORECASE,
+)
+_ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)="([^"]*)"')
+
+
+class M3UParser:
+    """Parser for M3U/M3U8 playlists."""
 
     @staticmethod
     def parse(file_path: str | Path) -> Playlist:
@@ -27,104 +26,92 @@ class M3UParser:
         if not file_path.exists():
             raise FileNotFoundError(f"M3U file not found: {file_path}")
 
-        playlist = Playlist()
-        playlist.source_path = str(file_path)
-        
-        try:
-            with open(file_path, "rb") as f:
-                content = f.read()
-                playlist.source_hash = hashlib.md5(content).hexdigest()
-        except Exception as e:
-            logger.warning(f"Could not calculate source hash: {e}")
-            playlist.source_hash = ""
+        if not file_path.is_file():
+            raise ParsingError(f"Playlist path is not a file: {file_path}")
 
         try:
-            # Try UTF-8 first
-            with open(file_path, "r", encoding="utf-8") as f:
-                M3UParser._validate_header(f)
-                channels = M3UParser._parse_channels(f)
-                for channel in channels:
-                    playlist.add_channel(channel)
-            return playlist
+            payload = file_path.read_bytes()
+            file_path_hash = hashlib.md5(payload).hexdigest()
+        except OSError as exc:
+            raise ParsingError(f"Could not read playlist file: {file_path}") from exc
 
-        except UnicodeDecodeError:
-            logger.warning(f"UTF-8 decode failed for {file_path}, trying ISO-8859-1")
-            try:
-                with open(file_path, "r", encoding="ISO-8859-1") as f:
-                    M3UParser._validate_header(f)
-                    channels = M3UParser._parse_channels(f)
-                    for channel in channels:
-                        playlist.add_channel(channel)
-                return playlist
-            except Exception as e:
-                raise ValueError(f"Failed to parse playlist with multiple encodings") from e
-        except Exception as e:
-            raise ValueError(f"Error parsing M3U file: {str(e)}") from e
+        parse_errors: List[str] = []
+        playlist = Playlist(source_path=str(file_path), source_hash=file_path_hash)
 
-    @staticmethod
-    def _validate_header(file: TextIO) -> None:
-        first_line = file.readline().strip()
-        if not first_line:
-            raise ValueError("Empty M3U file")
-        if not first_line.startswith("#EXTM3U"):
-            raise ValueError("Invalid M3U file format - missing #EXTM3U header")
+        text = M3UParser._decode_playlist_content(payload, file_path)
+        lines = text.splitlines()
 
-    @staticmethod
-    def _parse_channels(file: TextIO) -> List[Channel]:
-        channels: List[Channel] = []
-        current_channel: Optional[Dict[str, str]] = None
+        if not lines or not lines[0].lstrip().startswith("#EXTM3U"):
+            raise ParsingError("Missing #EXTM3U header")
 
-        for line in file:
-            line = line.strip()
-            if not line:
+        pending_channel: Optional[Dict[str, str]] = None
+        for line in lines[1:]:
+            value = line.strip()
+            if not value:
                 continue
 
-            if line.startswith("#EXTINF"):
-                match = M3UParser.EXTINF_REGEX.match(line)
-                if match:
-                    epg_id = match.group(1) or ""
-                    name = match.group(2) or match.group(7) or "Unknown Channel"
-                    group = match.group(3) or "Uncategorized"
-                    logo = match.group(4) or ""
-                    channel_number = match.group(5) or ""
-                    time_shift = match.group(6) or "0"
-                    
-                    current_channel = {
-                        "name": name,
-                        "group": group,
-                        "logo": logo,
-                        "epg_id": epg_id,
-                        "channel_number": channel_number,
-                        "time_shift": time_shift
-                    }
-            elif not line.startswith("#") and current_channel is not None:
-                try:
-                    channel_data = dict(current_channel)
-                    
-                    channel = Channel(
-                        name=channel_data.get("name", "Unknown"),
-                        url=line,
-                        group=channel_data.get("group", "Uncategorized"),
-                        logo=channel_data.get("logo", ""),
-                        epg_id=channel_data.get("epg_id", ""),
-                    )
-                    
-                    if "channel_number" in channel_data and channel_data["channel_number"]:
-                        try:
-                            channel.channel_number = int(channel_data["channel_number"])
-                        except ValueError:
-                            pass
-                            
-                    if "time_shift" in channel_data and channel_data["time_shift"]:
-                        try:
-                            channel.time_shift = int(channel_data["time_shift"])
-                        except ValueError:
-                            pass
-                    
-                    channels.append(channel)
-                except Exception:
-                    pass
-                    
-                current_channel = None
+            if value.startswith("#EXTINF"):
+                match = _EXTINF_RE.match(value)
+                if not match:
+                    parse_errors.append(f"Invalid EXTINF line: {value[:80]}")
+                    pending_channel = None
+                    continue
 
-        return channels
+                attrs = M3UParser._parse_attributes(match.group("attrs"))
+                channel_name = (match.group("name") or "").strip() or attrs.get("tvg-name") or "Unknown Channel"
+                pending_channel = {
+                    "name": channel_name,
+                    "group": attrs.get("group-title", "Uncategorized"),
+                    "logo": attrs.get("tvg-logo", ""),
+                    "epg_id": attrs.get("tvg-id", ""),
+                    "channel_number": attrs.get("tvg-chno", ""),
+                    "time_shift": attrs.get("tvg-shift", ""),
+                }
+                continue
+
+            if value.startswith("#"):
+                continue
+
+            if pending_channel is None:
+                continue
+
+            try:
+                channel = Channel(
+                    name=pending_channel.get("name", "Unknown Channel"),
+                    url=value,
+                    group=pending_channel.get("group", "Uncategorized"),
+                    logo=pending_channel.get("logo", ""),
+                    epg_id=pending_channel.get("epg_id", ""),
+                )
+                if pending_channel.get("channel_number"):
+                    channel.channel_number = int(pending_channel["channel_number"])
+                if pending_channel.get("time_shift"):
+                    channel.time_shift = int(pending_channel["time_shift"])
+                playlist.add_channel(channel)
+            except Exception as exc:
+                parse_errors.append(f"Skipping invalid entry {value[:80]}: {exc}")
+            finally:
+                pending_channel = None
+
+        if not playlist.channels:
+            raise ParsingError(
+                "Playlist contains no channels"
+            )
+
+        if parse_errors:
+            logger.warning("M3U parse warnings in %s: %s", file_path, parse_errors[:5])
+
+        return playlist
+
+    @staticmethod
+    def _decode_playlist_content(content: bytes, source: Path) -> str:
+        for encoding in ("utf-8", "iso-8859-1", "cp1252"):
+            try:
+                return content.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        raise ParsingError(f"Could not decode playlist with supported encodings: {source}")
+
+    @staticmethod
+    def _parse_attributes(raw: str) -> Dict[str, str]:
+        return {key.lower(): value for key, value in _ATTRIBUTE_RE.findall(raw)}
