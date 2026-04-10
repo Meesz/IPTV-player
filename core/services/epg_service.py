@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import requests
 from requests.exceptions import RequestException, Timeout
 
-from core.errors import NetworkError, ParsingError
+from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import EPGChannel, Program
 from infra.db.epg_repository import EPGRepository
 from infra.parsers.epg_parser import EPGParser
@@ -23,14 +23,26 @@ class EPGService:
         path_obj = Path(path)
         if not path_obj.exists():
             raise FileNotFoundError(f"EPG file not found: {path}")
+        parsed_channels: Dict[str, EPGChannel]
         try:
-            self._channels = EPGParser.parse(str(path_obj))
-            self.repository.save_all(
-                {key: epg.channels for key, epg in self._channels.items()}
-            )
-        except Exception as exc:
+            parsed_channels = EPGParser.parse(str(path_obj))
+        except ParsingError:
+            raise
+        except ValueError as exc:
             logger.error("Failed to load EPG file %s: %s", path, exc)
             raise ParsingError(f"Failed to parse EPG file: {path}") from exc
+        except Exception as exc:
+            logger.error("Unexpected EPG parser failure for %s: %s", path, exc)
+            raise
+
+        try:
+            self.repository.save_all(
+                {key: epg.programs for key, epg in parsed_channels.items()}
+            )
+        except RepositoryError:
+            logger.error("Failed to persist EPG data for %s", path)
+            raise
+        self._channels = parsed_channels
 
     def load_epg_from_url(self, url: str) -> None:
         response = None
@@ -67,7 +79,7 @@ class EPGService:
     def get_program_for_channel(self, channel_id: str, current_time=None) -> Optional[Program]:
         if channel_id in self._channels:
             return self._channels[channel_id].get_current_program(current_time)
-        return self.repository.get_current_program(channel_id)
+        return self.repository.get_current_program(channel_id, current_time=current_time)
 
     def get_upcoming_programs(self, channel_id: str, limit: int = 5) -> List[Program]:
         if channel_id in self._channels:
