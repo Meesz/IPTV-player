@@ -75,12 +75,13 @@ class SQLiteConnection:
                     CREATE TABLE IF NOT EXISTS favorites (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
-                        url TEXT NOT NULL UNIQUE,
+                        url TEXT NOT NULL,
+                        playlist_path TEXT NOT NULL DEFAULT '',
                         group_name TEXT,
                         logo TEXT,
-                        epg_id TEXT
+                        epg_id TEXT,
+                        UNIQUE (url, playlist_path)
                     );
-                    CREATE INDEX IF NOT EXISTS ix_favorites_url ON favorites (url);
 
                     CREATE TABLE IF NOT EXISTS recent_channels (
                         url TEXT NOT NULL,
@@ -119,9 +120,11 @@ class SQLiteConnection:
                 self._ensure_column(conn, "playlists", "last_loaded_at", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(conn, "playlists", "last_status", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(conn, "playlists", "last_error", "TEXT NOT NULL DEFAULT ''")
+                self._ensure_favorites_table(conn)
                 logger.info("Database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
+            raise
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
@@ -133,4 +136,38 @@ class SQLiteConnection:
             return
         conn.execute(
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+        )
+
+    @staticmethod
+    def _ensure_favorites_table(conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(favorites)").fetchall()
+        }
+        if "playlist_path" in columns:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_favorites_identity ON favorites (url, playlist_path)"
+            )
+            return
+
+        conn.executescript(
+            """
+            ALTER TABLE favorites RENAME TO favorites_legacy;
+            CREATE TABLE favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                playlist_path TEXT NOT NULL DEFAULT '',
+                group_name TEXT,
+                logo TEXT,
+                epg_id TEXT,
+                UNIQUE (url, playlist_path)
+            );
+            CREATE INDEX IF NOT EXISTS ix_favorites_identity
+                ON favorites (url, playlist_path);
+            INSERT INTO favorites (name, url, playlist_path, group_name, logo, epg_id)
+            SELECT name, url, '', group_name, logo, epg_id
+            FROM favorites_legacy;
+            DROP TABLE favorites_legacy;
+            """
         )
