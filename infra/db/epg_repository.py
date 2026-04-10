@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from core.errors import RepositoryError
@@ -24,8 +24,8 @@ class EPGRepository:
                     """,
                     (
                         channel_id,
-                        int(program.start_time.timestamp()),
-                        int(program.end_time.timestamp()),
+                        int(self._normalize_time(program.start_time).timestamp()),
+                        int(self._normalize_time(program.end_time).timestamp()),
                         program.title,
                         program.description,
                     ),
@@ -48,8 +48,8 @@ class EPGRepository:
                             """,
                             (
                                 channel_id,
-                                int(program.start_time.timestamp()),
-                                int(program.end_time.timestamp()),
+                                int(self._normalize_time(program.start_time).timestamp()),
+                                int(self._normalize_time(program.end_time).timestamp()),
                                 program.title,
                                 program.description,
                             ),
@@ -72,7 +72,7 @@ class EPGRepository:
         current_time: datetime | None = None,
     ) -> Optional[Program]:
         try:
-            effective_time = int((current_time or datetime.now()).timestamp())
+            effective_time = int(self._normalize_time(current_time).timestamp())
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
                     """
@@ -89,8 +89,12 @@ class EPGRepository:
                 if row:
                     return Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(row["start_time"]),
-                        end_time=datetime.fromtimestamp(row["end_time"]),
+                        start_time=datetime.fromtimestamp(
+                            row["start_time"], tz=timezone.utc
+                        ),
+                        end_time=datetime.fromtimestamp(
+                            row["end_time"], tz=timezone.utc
+                        ),
                         description=row["description"],
                     )
             return None
@@ -102,9 +106,14 @@ class EPGRepository:
             )
             raise RepositoryError("Failed to query current EPG program") from exc
 
-    def get_upcoming_programs(self, channel_id: str, limit: int = 5) -> List[Program]:
+    def get_upcoming_programs(
+        self,
+        channel_id: str,
+        limit: int = 5,
+        current_time: datetime | None = None,
+    ) -> List[Program]:
         try:
-            current_time = int(datetime.now().timestamp())
+            effective_time = int(self._normalize_time(current_time).timestamp())
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
                     """
@@ -114,13 +123,17 @@ class EPGRepository:
                     ORDER BY start_time
                     LIMIT ?
                     """,
-                    (channel_id, current_time, limit),
+                    (channel_id, effective_time, limit),
                 )
                 return [
                     Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(row["start_time"]),
-                        end_time=datetime.fromtimestamp(row["end_time"]),
+                        start_time=datetime.fromtimestamp(
+                            row["start_time"], tz=timezone.utc
+                        ),
+                        end_time=datetime.fromtimestamp(
+                            row["end_time"], tz=timezone.utc
+                        ),
                         description=row["description"],
                     )
                     for row in cursor.fetchall()
@@ -132,3 +145,11 @@ class EPGRepository:
                 exc,
             )
             raise RepositoryError("Failed to query upcoming EPG programs") from exc
+
+    @staticmethod
+    def _normalize_time(current_time: datetime | None) -> datetime:
+        if current_time is None:
+            return datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            return current_time.replace(tzinfo=timezone.utc)
+        return current_time.astimezone(timezone.utc)
