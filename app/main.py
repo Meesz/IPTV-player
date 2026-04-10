@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -22,9 +23,14 @@ from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.settings_controller import SettingsController
 from ui.windows.main_window import MainWindow
 
+def _resolve_log_level() -> int:
+    raw_level = os.getenv("IPTV_LOG_LEVEL", "INFO").strip().upper()
+    return getattr(logging, raw_level, logging.INFO)
+
+
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=_resolve_log_level(),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(), logging.FileHandler("iptv_player.log")],
 )
