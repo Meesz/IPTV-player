@@ -44,18 +44,6 @@ class SQLiteConnection:
                 conn.execute("PRAGMA temp_store=MEMORY")
 
                 conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS playlists (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        path TEXT NOT NULL,
-                        is_url BOOLEAN NOT NULL DEFAULT 0,
-                        channel_count INTEGER NOT NULL DEFAULT 0,
-                        last_loaded_at TEXT NOT NULL DEFAULT '',
-                        last_status TEXT NOT NULL DEFAULT '',
-                        last_error TEXT NOT NULL DEFAULT ''
-                    );
-                    CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_path ON playlists (path);
-                    
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
                         value TEXT
@@ -104,6 +92,8 @@ class SQLiteConnection:
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_loaded_at', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_source_type', 'file');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_identity', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('volume', '100');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('is_muted', 'false');
@@ -121,10 +111,7 @@ class SQLiteConnection:
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('search_text', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('left_panel_visible', 'true');
                 """)
-                self._ensure_column(conn, "playlists", "channel_count", "INTEGER NOT NULL DEFAULT 0")
-                self._ensure_column(conn, "playlists", "last_loaded_at", "TEXT NOT NULL DEFAULT ''")
-                self._ensure_column(conn, "playlists", "last_status", "TEXT NOT NULL DEFAULT ''")
-                self._ensure_column(conn, "playlists", "last_error", "TEXT NOT NULL DEFAULT ''")
+                self._ensure_playlists_table(conn)
                 self._ensure_favorites_table(conn)
                 logger.info("Database initialized successfully")
         except Exception as e:
@@ -176,3 +163,114 @@ class SQLiteConnection:
             DROP TABLE favorites_legacy;
             """
         )
+
+    @staticmethod
+    def _ensure_playlists_table(conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(playlists)").fetchall()
+        }
+        if not columns:
+            conn.executescript(
+                """
+                CREATE TABLE playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    source_type TEXT NOT NULL DEFAULT 'file',
+                    path TEXT NOT NULL DEFAULT '',
+                    is_url BOOLEAN NOT NULL DEFAULT 0,
+                    source_identity TEXT NOT NULL,
+                    xtream_server_url TEXT NOT NULL DEFAULT '',
+                    xtream_username TEXT NOT NULL DEFAULT '',
+                    xtream_password TEXT NOT NULL DEFAULT '',
+                    xtream_output TEXT NOT NULL DEFAULT 'ts',
+                    channel_count INTEGER NOT NULL DEFAULT 0,
+                    last_loaded_at TEXT NOT NULL DEFAULT '',
+                    last_status TEXT NOT NULL DEFAULT '',
+                    last_error TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX ux_playlists_source_identity
+                    ON playlists (source_identity);
+                """
+            )
+            return
+
+        if {"source_type", "source_identity", "xtream_server_url", "xtream_username", "xtream_password", "xtream_output"} <= columns:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_source_identity ON playlists (source_identity)"
+            )
+            return
+
+        select_fields = [
+            "id",
+            "name",
+            "path",
+            "COALESCE(is_url, 0) AS is_url",
+            "channel_count" if "channel_count" in columns else "0 AS channel_count",
+            "last_loaded_at" if "last_loaded_at" in columns else "'' AS last_loaded_at",
+            "last_status" if "last_status" in columns else "'' AS last_status",
+            "last_error" if "last_error" in columns else "'' AS last_error",
+        ]
+        legacy_rows = conn.execute(
+            f"SELECT {', '.join(select_fields)} FROM playlists"
+        ).fetchall()
+
+        conn.executescript(
+            """
+            ALTER TABLE playlists RENAME TO playlists_legacy;
+            CREATE TABLE playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                source_type TEXT NOT NULL DEFAULT 'file',
+                path TEXT NOT NULL DEFAULT '',
+                is_url BOOLEAN NOT NULL DEFAULT 0,
+                source_identity TEXT NOT NULL,
+                xtream_server_url TEXT NOT NULL DEFAULT '',
+                xtream_username TEXT NOT NULL DEFAULT '',
+                xtream_password TEXT NOT NULL DEFAULT '',
+                xtream_output TEXT NOT NULL DEFAULT 'ts',
+                channel_count INTEGER NOT NULL DEFAULT 0,
+                last_loaded_at TEXT NOT NULL DEFAULT '',
+                last_status TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX ux_playlists_source_identity
+                ON playlists (source_identity);
+            """
+        )
+
+        for row in legacy_rows:
+            source_type = "url" if row["is_url"] else "file"
+            normalized_path = str(row["path"] or "").strip()
+            if source_type == "file" and normalized_path:
+                normalized_path = str(Path(normalized_path).resolve())
+            source_identity = f"{source_type}::{normalized_path}"
+            conn.execute(
+                """
+                INSERT INTO playlists (
+                    name,
+                    source_type,
+                    path,
+                    is_url,
+                    source_identity,
+                    channel_count,
+                    last_loaded_at,
+                    last_status,
+                    last_error
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["name"],
+                    source_type,
+                    normalized_path,
+                    row["is_url"],
+                    source_identity,
+                    row["channel_count"],
+                    row["last_loaded_at"],
+                    row["last_status"],
+                    row["last_error"],
+                ),
+            )
+
+        conn.execute("DROP TABLE playlists_legacy")
