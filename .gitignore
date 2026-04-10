@@ -155,7 +155,7 @@ cython_debug/
 *.db-shm
 *.db-wal
 
-repomix-output.txt
+repomix-output.*
 
 # History files
 .simple_iptv/
