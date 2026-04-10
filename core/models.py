@@ -13,6 +13,8 @@ class Channel:
     epg_id: str = ""
     channel_number: int = 0
     time_shift: int = 0
+    playlist_path: str = ""
+    last_played_at: Optional[int] = None
     id: Optional[int] = None
 
     def __eq__(self, other: object) -> bool:
@@ -31,6 +33,10 @@ class PlaylistReference:
     name: str
     path: str
     is_url: bool = False
+    channel_count: int = 0
+    last_loaded_at: str = ""
+    last_status: str = ""
+    last_error: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,10 +48,16 @@ class Settings:
     is_muted: bool = False
     last_playlist_path: str = ""
     last_channel_url: str = ""
+    last_channel_group: str = ""
     last_epg_path: str = ""
     last_epg_url: str = ""
+    last_epg_loaded_at: str = ""
     window_width: int = 1280
     window_height: int = 720
+    play_on_single_click: bool = False
+    show_now_playing_in_list: bool = True
+    search_current_category_only: bool = True
+    channel_sort_mode: str = "name_asc"
 
     @classmethod
     def defaults(cls) -> "Settings":
@@ -58,10 +70,20 @@ class Settings:
             is_muted=kwargs.get("is_muted", self.is_muted),
             last_playlist_path=kwargs.get("last_playlist_path", self.last_playlist_path),
             last_channel_url=kwargs.get("last_channel_url", self.last_channel_url),
+            last_channel_group=kwargs.get("last_channel_group", self.last_channel_group),
             last_epg_path=kwargs.get("last_epg_path", self.last_epg_path),
             last_epg_url=kwargs.get("last_epg_url", self.last_epg_url),
+            last_epg_loaded_at=kwargs.get("last_epg_loaded_at", self.last_epg_loaded_at),
             window_width=kwargs.get("window_width", self.window_width),
             window_height=kwargs.get("window_height", self.window_height),
+            play_on_single_click=kwargs.get("play_on_single_click", self.play_on_single_click),
+            show_now_playing_in_list=kwargs.get(
+                "show_now_playing_in_list", self.show_now_playing_in_list
+            ),
+            search_current_category_only=kwargs.get(
+                "search_current_category_only", self.search_current_category_only
+            ),
+            channel_sort_mode=kwargs.get("channel_sort_mode", self.channel_sort_mode),
         )
 
 @dataclass
