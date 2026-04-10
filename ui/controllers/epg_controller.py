@@ -15,19 +15,23 @@ class EPGController(QObject):
         super().__init__()
         self.service = service
 
-    def load_epg_file(self, path: str) -> None:
+    def load_epg_file(self, path: str) -> bool:
         try:
             self.service.load_epg_from_path(path)
             self.epg_loaded.emit()
+            return True
         except (NetworkError, ParsingError, OSError, ValueError) as exc:
             self.error_occurred.emit(str(exc))
+            return False
 
-    def load_epg_url(self, url: str) -> None:
+    def load_epg_url(self, url: str) -> bool:
         try:
             self.service.load_epg_from_url(url)
             self.epg_loaded.emit()
+            return True
         except (NetworkError, ParsingError, OSError, ValueError) as exc:
             self.error_occurred.emit(str(exc))
+            return False
 
     def get_current_program(self, channel_id: str) -> Program | None:
         if not channel_id:
