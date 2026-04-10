@@ -3,7 +3,7 @@ from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 from pathlib import Path
 
 from core.errors import NetworkError, ParsingError, RepositoryError, ValidationError
-from core.models import Playlist, PlaylistReference
+from core.models import Playlist, PlaylistReference, PlaylistSourceType
 from core.services.playlist_service import PlaylistService
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
 
@@ -24,7 +24,7 @@ class PlaylistController(QObject):
         self._cancelled_task_ids: set[int] = set()
         self._workers: dict[int, BackgroundTask] = {}
 
-    def load_playlist(self, path: str, is_url: bool = False):
+    def load_playlist(self, source: PlaylistReference | str, is_url: bool = False):
         self.cancel_loading(emit_signal=True)
         self._task_sequence += 1
         task_id = self._task_sequence
@@ -35,7 +35,7 @@ class PlaylistController(QObject):
         worker = create_background_task(
             task_id,
             self.service.load_playlist,
-            path,
+            source,
             is_url,
             cancel_callback=lambda: not self._is_active_task(task_id),
             update_current=False,
@@ -91,7 +91,7 @@ class PlaylistController(QObject):
                 reference = PlaylistReference(
                     name=Path(reference).name or "Playlist",
                     path=reference,
-                    is_url=is_url,
+                    source_type=PlaylistSourceType.URL if is_url else PlaylistSourceType.FILE,
                 )
             self.service.save_playlist_reference(reference)
         except Exception as exc:
@@ -100,12 +100,19 @@ class PlaylistController(QObject):
     def get_saved_playlists(self):
         return self.service.get_saved_playlists()
 
-    def get_saved_playlist(self, path: str) -> PlaylistReference | None:
-        return self.service.get_saved_playlist(path)
+    def get_saved_playlist(
+        self,
+        source: PlaylistReference | str,
+        is_url: bool | None = None,
+    ) -> PlaylistReference | None:
+        return self.service.get_saved_playlist(source, is_url=is_url)
 
-    def remove_saved_playlist(self, path: str) -> None:
+    def get_saved_playlist_by_identity(self, identity: str) -> PlaylistReference | None:
+        return self.service.get_saved_playlist_by_identity(identity)
+
+    def remove_saved_playlist(self, source: PlaylistReference | str, is_url: bool | None = None) -> None:
         try:
-            self.service.remove_playlist_reference(path)
+            self.service.remove_playlist_reference(source, is_url=is_url)
         except Exception as exc:
             self.error_occurred.emit(str(exc))
 
@@ -155,20 +162,22 @@ class PlaylistController(QObject):
 
     def update_playlist_metadata(
         self,
-        path: str,
+        source: PlaylistReference | str,
         *,
         channel_count: int,
         last_loaded_at: str,
         last_status: str,
         last_error: str = "",
+        is_url: bool | None = None,
     ) -> None:
         try:
             self.service.update_playlist_metadata(
-                path,
+                source,
                 channel_count=channel_count,
                 last_loaded_at=last_loaded_at,
                 last_status=last_status,
                 last_error=last_error,
+                is_url=is_url,
             )
         except Exception as exc:
             self.error_occurred.emit(str(exc))
