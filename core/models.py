@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
 
 @dataclass
@@ -43,6 +43,26 @@ class PlaylistReference:
 
 
 @dataclass(frozen=True)
+class ParseWarning:
+    """Represents a non-fatal parser warning."""
+
+    code: str
+    message: str
+    context: str = ""
+
+
+@dataclass(frozen=True)
+class ChannelQuery:
+    """Canonical channel filtering and sorting input."""
+
+    category: str = "All"
+    text: str = ""
+    current_category_only: bool = True
+    sort_mode: str = "name_asc"
+    favorite_keys: Set[tuple[str, str]] = field(default_factory=set)
+
+
+@dataclass(frozen=True)
 class Settings:
     """Application settings."""
 
@@ -61,6 +81,11 @@ class Settings:
     show_now_playing_in_list: bool = True
     search_current_category_only: bool = True
     channel_sort_mode: str = "name_asc"
+    splitter_sizes: tuple[int, int] = (390, 960)
+    active_tab_index: int = 0
+    selected_category: str = "All"
+    search_text: str = ""
+    left_panel_visible: bool = True
 
     @classmethod
     def defaults(cls) -> "Settings":
@@ -87,6 +112,11 @@ class Settings:
                 "search_current_category_only", self.search_current_category_only
             ),
             channel_sort_mode=kwargs.get("channel_sort_mode", self.channel_sort_mode),
+            splitter_sizes=kwargs.get("splitter_sizes", self.splitter_sizes),
+            active_tab_index=kwargs.get("active_tab_index", self.active_tab_index),
+            selected_category=kwargs.get("selected_category", self.selected_category),
+            search_text=kwargs.get("search_text", self.search_text),
+            left_panel_visible=kwargs.get("left_panel_visible", self.left_panel_visible),
         )
 
 @dataclass
@@ -97,6 +127,7 @@ class Playlist:
     source_path: str = ""
     source_hash: str = ""
     channels: List[Channel] = field(default_factory=list)
+    parse_warnings: List[ParseWarning] = field(default_factory=list)
     last_updated: Optional[int] = None
     
     # Internal indexes for faster lookups
@@ -168,7 +199,9 @@ class EPGChannel:
 
     def get_current_program(self, current_time: Optional[datetime] = None) -> Optional[Program]:
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
+        elif current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
         for program in self.programs:
             if program.start_time <= current_time < program.end_time:
                 return program
@@ -176,7 +209,9 @@ class EPGChannel:
 
     def get_upcoming_programs(self, current_time: Optional[datetime] = None, limit: int = 5) -> List[Program]:
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
+        elif current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
         upcoming = [p for p in self.programs if p.start_time > current_time]
         upcoming.sort(key=lambda p: p.start_time)
         return upcoming[:limit]
