@@ -5,16 +5,19 @@ from infra.db.sqlite_connection import SQLiteConnection
 from infra.db.playlist_repository import PlaylistRepository
 from infra.db.settings_repository import SettingsRepository
 from infra.db.favorites_repository import FavoritesRepository
+from infra.db.history_repository import HistoryRepository
 from infra.db.epg_repository import EPGRepository
 from core.services.playlist_service import PlaylistService
 from core.services.epg_service import EPGService
 from core.services.settings_service import SettingsService
 from core.services.favorites_service import FavoritesService
+from core.services.history_service import HistoryService
 from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.epg_controller import EPGController
 from ui.controllers.settings_controller import SettingsController
 from ui.controllers.main_controller import MainController
 from ui.controllers.favorites_controller import FavoritesController
+from ui.controllers.history_controller import HistoryController
 from ui.windows.main_window import MainWindow
 
 # Configure logging
@@ -36,6 +39,7 @@ def main():
     playlist_repo = PlaylistRepository(db_connection)
     settings_repo = SettingsRepository(db_connection)
     favorites_repo = FavoritesRepository(db_connection)
+    history_repo = HistoryRepository(db_connection)
     epg_repo = EPGRepository(db_connection)
 
     # Services
@@ -43,12 +47,14 @@ def main():
     epg_service = EPGService(epg_repo)
     settings_service = SettingsService(settings_repo)
     favorites_service = FavoritesService(favorites_repo)
+    history_service = HistoryService(history_repo)
 
     # Controllers
     playlist_controller = PlaylistController(playlist_service)
     epg_controller = EPGController(epg_service)
     settings_controller = SettingsController(settings_service)
     favorites_controller = FavoritesController(favorites_service)
+    history_controller = HistoryController(history_service)
     main_controller = MainController(playlist_controller, settings_controller)
 
     # UI
@@ -58,6 +64,7 @@ def main():
         epg_controller,
         settings_controller,
         favorites_controller,
+        history_controller,
     )
     window.show()
 
