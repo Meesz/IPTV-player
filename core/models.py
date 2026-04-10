@@ -17,13 +17,16 @@ class Channel:
     last_played_at: Optional[int] = None
     id: Optional[int] = None
 
+    def identity_key(self) -> tuple[str, str]:
+        return (self.url, self.playlist_path or "")
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Channel):
             return False
-        return self.url == other.url
+        return self.identity_key() == other.identity_key()
 
     def __hash__(self) -> int:
-        return hash(self.url)
+        return hash(self.identity_key())
 
 
 @dataclass(frozen=True)
