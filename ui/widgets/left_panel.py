@@ -1,59 +1,260 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem
-from PyQt6.QtCore import Qt
+from datetime import datetime
+
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+)
+
+from core.models import Channel, Program
 from ui.widgets.epg_widget import EPGWidget
 from ui.widgets.search_bar import SearchBar
+
+
+SORT_OPTIONS = [
+    ("A-Z", "name_asc"),
+    ("Z-A", "name_desc"),
+    ("Group", "group"),
+    ("Favorites First", "favorites_first"),
+]
+
 
 class LeftPanel(QFrame):
     """A panel containing channel categories, lists, and EPG information."""
 
     def __init__(self):
         super().__init__()
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        self.setFixedWidth(300)
+        self.setObjectName("library_panel")
+        self.setFrameStyle(QFrame.Shape.NoFrame)
+        self.setMinimumWidth(340)
         self._init_ui()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        
-        # Search Bar
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        title = QLabel("Library")
+        title.setObjectName("section_title")
+        layout.addWidget(title)
+
+        self.filter_card = QFrame()
+        self.filter_card.setObjectName("filter_card")
+        filter_layout = QVBoxLayout(self.filter_card)
+        filter_layout.setContentsMargins(16, 16, 16, 16)
+        filter_layout.setSpacing(12)
+
         self.search_bar = SearchBar()
-        layout.addWidget(self.search_bar)
+        filter_layout.addWidget(self.search_bar)
 
-        # Add category selector
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(10)
+
         self.category_combo = QComboBox()
-        layout.addWidget(self.category_combo)
+        self.category_combo.setPlaceholderText("Category")
+        controls.addWidget(self.category_combo, stretch=2)
 
-        # Add tabs for channels and favorites
+        self.sort_combo = QComboBox()
+        for label, value in SORT_OPTIONS:
+            self.sort_combo.addItem(label, value)
+        controls.addWidget(self.sort_combo, stretch=1)
+
+        filter_layout.addLayout(controls)
+
+        self.search_current_group_checkbox = QCheckBox("Filter search to current category")
+        self.search_current_group_checkbox.setChecked(True)
+        filter_layout.addWidget(self.search_current_group_checkbox)
+
+        layout.addWidget(self.filter_card)
+
         self.tabs = QTabWidget()
         self.channel_list = QListWidget()
+        self.channel_list.setObjectName("channel_list")
         self.favorites_list = QListWidget()
+        self.favorites_list.setObjectName("favorites_list")
+        self.recent_list = QListWidget()
+        self.recent_list.setObjectName("recent_list")
+
+        for widget in (self.channel_list, self.favorites_list, self.recent_list):
+            widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
 
         self.tabs.addTab(self.channel_list, "Channels")
         self.tabs.addTab(self.favorites_list, "Favorites")
-        layout.addWidget(self.tabs)
+        self.tabs.addTab(self.recent_list, "Recent")
+        layout.addWidget(self.tabs, stretch=1)
 
-        # Add EPG widget
+        self.epg_status_label = QLabel("EPG unavailable")
+        self.epg_status_label.setObjectName("epg_status")
+        layout.addWidget(self.epg_status_label)
+
         self.epg_widget = EPGWidget()
         layout.addWidget(self.epg_widget)
 
-    def clear_channels(self):
-        self.channel_list.clear()
-        self.favorites_list.clear()
+    def add_channels(
+        self,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None = None,
+        show_now_playing: bool = True,
+        favorites: set[str] | None = None,
+        current_channel_url: str = "",
+    ) -> None:
+        self._populate_list(
+            self.channel_list,
+            channels,
+            current_programs=current_programs,
+            show_now_playing=show_now_playing,
+            favorites=favorites,
+            current_channel_url=current_channel_url,
+            empty_message="Load a playlist to browse channels.",
+        )
 
-    def add_channels(self, channels):
-        self.channel_list.clear()
-        for channel in channels:
-            item = self._channel_item(channel.name, channel)
-            self.channel_list.addItem(item)
+    def add_favorites(
+        self,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None = None,
+        show_now_playing: bool = True,
+        current_channel_url: str = "",
+    ) -> None:
+        self._populate_list(
+            self.favorites_list,
+            channels,
+            current_programs=current_programs,
+            show_now_playing=show_now_playing,
+            favorites={channel.url for channel in channels},
+            current_channel_url=current_channel_url,
+            empty_message="Favorite channels appear here.",
+        )
 
-    def add_favorites(self, channels):
-        self.favorites_list.clear()
+    def add_recent_channels(
+        self,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None = None,
+        show_now_playing: bool = True,
+        favorites: set[str] | None = None,
+        current_channel_url: str = "",
+    ) -> None:
+        self._populate_list(
+            self.recent_list,
+            channels,
+            current_programs=current_programs,
+            show_now_playing=show_now_playing,
+            favorites=favorites,
+            current_channel_url=current_channel_url,
+            empty_message="Recently played channels appear here.",
+        )
+
+    def set_epg_status(self, message: str) -> None:
+        self.epg_status_label.setText(message)
+
+    def set_sort_mode(self, mode: str) -> None:
+        index = self.sort_combo.findData(mode)
+        if index >= 0:
+            self.sort_combo.setCurrentIndex(index)
+
+    def highlight_channel(self, channel_url: str) -> None:
+        for widget in (self.channel_list, self.favorites_list, self.recent_list):
+            self._select_channel(widget, channel_url)
+
+    def _populate_list(
+        self,
+        widget: QListWidget,
+        channels: list[Channel],
+        *,
+        current_programs: dict[str, Program] | None,
+        show_now_playing: bool,
+        favorites: set[str] | None,
+        current_channel_url: str,
+        empty_message: str,
+    ) -> None:
+        widget.clear()
+        favorites = favorites or set()
+        current_programs = current_programs or {}
+        if not channels:
+            widget.addItem(self._empty_item(empty_message))
+            return
+
         for channel in channels:
-            item = self._channel_item(channel.name, channel)
-            self.favorites_list.addItem(item)
+            program = current_programs.get(channel.epg_id)
+            item = self._channel_item(
+                channel,
+                program=program,
+                show_now_playing=show_now_playing,
+                is_favorite=channel.url in favorites,
+                is_current=channel.url == current_channel_url,
+            )
+            widget.addItem(item)
+
+        if current_channel_url:
+            self._select_channel(widget, current_channel_url)
 
     @staticmethod
-    def _channel_item(name, channel):
-        item = QListWidgetItem(name)
+    def _channel_item(
+        channel: Channel,
+        *,
+        program: Program | None,
+        show_now_playing: bool,
+        is_favorite: bool,
+        is_current: bool,
+    ) -> QListWidgetItem:
+        title = channel.name
+        if is_current:
+            title = f"{title} [PLAYING]"
+        elif is_favorite:
+            title = f"{title} [FAV]"
+
+        details = []
+        if show_now_playing and program:
+            details.append(program.title)
+        elif channel.group:
+            details.append(channel.group)
+
+        if channel.last_played_at:
+            played_at = datetime.fromtimestamp(channel.last_played_at).strftime("%Y-%m-%d %H:%M")
+            details.append(f"Last played {played_at}")
+
+        text = "\n".join([title, *details]) if details else title
+        item = QListWidgetItem(text)
         item.setData(Qt.ItemDataRole.UserRole, channel)
+        item.setToolTip(
+            "\n".join(
+                [
+                    f"Name: {channel.name}",
+                    f"Group: {channel.group or 'Uncategorized'}",
+                    f"URL: {channel.url}",
+                    f"Playlist: {channel.playlist_path or 'Active playlist'}",
+                ]
+            )
+        )
+        size_hint = item.sizeHint()
+        item.setSizeHint(QSize(size_hint.width(), 62 if details else 52))
         return item
+
+    @staticmethod
+    def _empty_item(message: str) -> QListWidgetItem:
+        item = QListWidgetItem(message)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        item.setSizeHint(QSize(100, 52))
+        return item
+
+    @staticmethod
+    def _select_channel(widget: QListWidget, channel_url: str) -> None:
+        if not channel_url:
+            widget.clearSelection()
+            return
+        for index in range(widget.count()):
+            item = widget.item(index)
+            data = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(data, Channel) and data.url == channel_url:
+                widget.setCurrentRow(index)
+                return
