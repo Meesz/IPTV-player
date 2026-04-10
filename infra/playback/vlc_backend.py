@@ -68,3 +68,39 @@ class VLCBackend:
         if not cls._instance:
             raise RuntimeError("VLC not initialized. Call initialize() first.")
         return cls._instance.media_player_new()
+
+    @classmethod
+    def bind_video_output(cls, player: Any, window_id: int) -> Optional[str]:
+        """Bind VLC video output to a widget and report platform caveats."""
+        if not player:
+            return "VLC media player is unavailable"
+
+        if sys.platform == "win32":
+            player.set_hwnd(window_id)
+            return None
+
+        if sys.platform.startswith("linux"):
+            session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
+            has_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or session_type == "wayland"
+            display = os.environ.get("DISPLAY", "").strip()
+            if has_wayland and not display:
+                warning = (
+                    "Wayland session detected without XWayland; embedded video may be unavailable."
+                )
+                logger.warning(warning)
+                return warning
+
+            player.set_xwindow(int(window_id))
+            if has_wayland:
+                warning = "Wayland session detected; using XWayland video embedding."
+                logger.warning(warning)
+                return warning
+            return None
+
+        if sys.platform == "darwin":
+            player.set_nsobject(int(window_id))
+            return None
+
+        warning = f"Unsupported video embedding platform: {sys.platform}"
+        logger.warning(warning)
+        return warning
