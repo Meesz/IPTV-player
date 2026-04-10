@@ -10,6 +10,10 @@ class SettingsController(QObject):
         val = self.service.get_setting(key)
         return val if val is not None else default
 
+    def save_settings(self, settings: dict[str, object]) -> None:
+        for key, value in settings.items():
+            self.service.save_setting(key, value)
+
     def save_setting(self, key: str, value):
         self.service.save_setting(key, value)
 
