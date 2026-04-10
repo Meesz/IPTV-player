@@ -63,6 +63,23 @@ class SettingsService:
                 channel_sort_mode=self.repository.get_setting(
                     "channel_sort_mode", self._settings.channel_sort_mode
                 ),
+                splitter_sizes=self._parse_splitter_sizes(
+                    self.repository.get_setting("splitter_sizes", "")
+                ),
+                active_tab_index=int(
+                    self.repository.get_setting(
+                        "active_tab_index", str(self._settings.active_tab_index)
+                    )
+                ),
+                selected_category=self.repository.get_setting(
+                    "selected_category", self._settings.selected_category
+                ),
+                search_text=self.repository.get_setting(
+                    "search_text", self._settings.search_text
+                ),
+                left_panel_visible=self._to_bool(
+                    self.repository.get_setting("left_panel_visible", "true")
+                ),
             )
         except RepositoryError:
             self._settings = Settings.defaults()
@@ -92,19 +109,37 @@ class SettingsService:
     def _to_bool(value: str) -> bool:
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
+    @staticmethod
+    def _parse_splitter_sizes(value: str) -> tuple[int, int]:
+        raw = str(value).strip()
+        if not raw:
+            return Settings.defaults().splitter_sizes
+
+        parts = [part.strip() for part in raw.split(",") if part.strip()]
+        if len(parts) != 2:
+            return Settings.defaults().splitter_sizes
+
+        first, second = (int(parts[0]), int(parts[1]))
+        if first <= 0 or second <= 0:
+            return Settings.defaults().splitter_sizes
+        return (first, second)
+
     def get_setting(self, key: str, default: Any = None) -> Any:
         if not hasattr(self._settings, key):
             return default
         return getattr(self._settings, key)
 
     def save_setting(self, key: str, value: Any) -> None:
-        self.repository.save_setting(key, str(value))
+        serialized_value = self._serialize_value(key, value)
+        self.repository.save_setting(key, serialized_value)
         if hasattr(self._settings, key):
             self._settings = self._settings.with_updates(**{key: value})
 
         normalized_key = key
         if isinstance(value, bool):
             normalized_value = "true" if value else "false"
+        elif key == "splitter_sizes" and isinstance(value, tuple):
+            normalized_value = ",".join(str(part) for part in value)
         else:
             normalized_value = str(value)
 
@@ -129,6 +164,14 @@ class SettingsService:
             self._settings = self._settings.with_updates(last_epg_url=normalized_value)
             self.repository.save_setting("epg_url", normalized_value)
             self.repository.save_setting("last_epg_url", normalized_value)
+
+    @staticmethod
+    def _serialize_value(key: str, value: Any) -> str:
+        if key == "splitter_sizes":
+            if isinstance(value, (tuple, list)):
+                return ",".join(str(part) for part in value)
+            return str(value)
+        return str(value)
 
     @property
     def settings(self) -> Settings:
