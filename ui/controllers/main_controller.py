@@ -1,22 +1,15 @@
-from PyQt6.QtCore import QObject
-from ui.controllers.playlist_controller import PlaylistController
-from ui.controllers.epg_controller import EPGController
-from ui.controllers.settings_controller import SettingsController
-
-class MainController(QObject):
-    def __init__(self, 
-                 playlist_controller: PlaylistController,
-                 epg_controller: EPGController,
-                 settings_controller: SettingsController):
-        super().__init__()
+class MainController:
+    def __init__(self, playlist_controller, settings_controller):
         self.playlist_controller = playlist_controller
-        self.epg_controller = epg_controller
         self.settings_controller = settings_controller
 
-    def start(self):
-        # Load last playlist if available
-        last_playlist = self.settings_controller.get_setting("last_playlist")
-        is_url = self.settings_controller.get_setting("last_playlist_is_url") == "True"
-        
+    def start(self) -> None:
+        last_playlist = self.settings_controller.get_setting("last_playlist_path", "") or self.settings_controller.get_setting("last_playlist", "")
+        last_playlist_is_url = str(
+            self.settings_controller.get_setting("last_playlist_is_url", "false")
+        ).strip().lower()
+        is_url = last_playlist_is_url in {"1", "true", "yes", "on"}
+        if last_playlist_is_url not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
+            is_url = str(last_playlist).startswith(("http://", "https://"))
         if last_playlist:
             self.playlist_controller.load_playlist(last_playlist, is_url)
