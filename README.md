@@ -9,7 +9,7 @@ Simple IPTV Player is a PyQt desktop application for loading IPTV playlists, bro
 - Browse channels by group, search within the current category or across the full playlist, and sort the visible list.
 - Save favorite channels and keep a recent playback history.
 - Show current program information directly in the channel list when EPG data is available.
-- Play streams with VLC, including buffering status, automatic reconnect attempts, fullscreen toggle, and volume control.
+- Play streams with VLC, including buffering status, automatic reconnect attempts, fullscreen toggle, mute, retry, and copyable stream URLs.
 - Persist playlist metadata and playback preferences between sessions.
 
 ## Requirements
@@ -98,7 +98,7 @@ Use `Ctrl+R` to refresh the last EPG source.
 
 - Double-click a channel to start playback.
 - If you prefer single-click playback, enable **View -> Play on Single Click**.
-- Use the player controls to play, stop, and change volume.
+- Use the player controls to play, stop, retry, mute, favorite, copy the stream URL, and change volume.
 - Double-click the video area to toggle fullscreen while a stream is playing.
 
 ### 5. Save favorites and history
@@ -109,7 +109,13 @@ Use `Ctrl+R` to refresh the last EPG source.
 
 ### 6. Show current program details
 
-When EPG data is loaded, the app can display the current program next to channels in the list. Toggle this with **View -> Show Current Program in Lists**.
+When EPG data is loaded, the app can display the current program next to channels in the list and in the Now Playing panel. Toggle list rendering with **View -> Show Current Program in Lists**.
+
+### 7. Validate playlist sources
+
+- Open **File -> Playlist Manager** to inspect saved playlists.
+- Use **Test Source** to verify a file or URL, parse it without switching the active playlist, and update the stored metadata.
+- The details pane shows the last known load status, channel count, and the latest validation result.
 
 ## Supported Inputs
 
@@ -123,7 +129,7 @@ When EPG data is loaded, the app can display the current program next to channel
 - `core/`: domain models and business services
 - `infra/`: SQLite repositories, playlist and EPG parsers, VLC backend
 - `ui/`: Qt windows, widgets, dialogs, styles, and controllers
-- `tests/`: smoke and service-level tests
+- `tests/`: smoke, service, controller, and selected UI behavior tests
 
 For the architecture walkthrough and refactoring notes, see [walkthrough.md](walkthrough.md).
 
