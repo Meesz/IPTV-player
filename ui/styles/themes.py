@@ -1,254 +1,344 @@
 class Themes:
     """Utility class for managing themes."""
 
-    @staticmethod
-    def get_dark_theme() -> str:
-        """Get the CSS for the dark theme."""
-        return """
-            QMainWindow, QWidget {
-                background-color: #1a1a1a;
-                color: #ffffff;
-            }
-            
-            QPushButton {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                padding: 8px 16px;
-                border-radius: 4px;
-                color: #ffffff;
-                font-weight: 500;
-                min-width: 80px;
-            }
-            
-            QPushButton:hover {
-                background-color: #404040;
-                border: 1px solid #505050;
-            }
-            
-            QPushButton:pressed {
-                background-color: #505050;
-            }
-            
-            QPushButton:checked {
-                background-color: #404040;
-                border: 2px solid #666666;
-            }
-            
-            QLineEdit {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                padding: 8px 12px;
-                border-radius: 4px;
-                color: #ffffff;
-                selection-background-color: #404040;
-            }
-            
-            QLineEdit:focus {
-                border: 2px solid #666666;
-            }
-            
-            QComboBox {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                padding: 8px;
-                border-radius: 4px;
-                color: #ffffff;
-                min-width: 120px;
-            }
-            
-            QComboBox:hover {
-                border: 1px solid #505050;
-            }
-            
-            QComboBox::drop-down {
-                border: none;
-                padding-right: 8px;
-            }
-            
-            QListWidget {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                border-radius: 4px;
-                color: #ffffff;
-                padding: 4px;
-            }
-            
-            QListWidget::item {
-                padding: 8px;
-                border-radius: 2px;
-            }
-            
-            QListWidget::item:hover {
-                background-color: #383838;
-            }
-            
-            QListWidget::item:selected {
-                background-color: #404040;
-            }
-            
-            QSlider::groove:horizontal {
-                background-color: #404040;
-                height: 4px;
-                border-radius: 2px;
-            }
-            
-            QSlider::handle:horizontal {
-                background-color: #666666;
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
-            }
-            
-            QSlider::handle:horizontal:hover {
-                background-color: #808080;
-            }
-            
-            QFrame#epg_widget {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                border-radius: 4px;
-                padding: 12px;
-            }
-            
-            QLabel {
-                padding: 4px;
-            }
-            
-            QLabel#current_title {
-                font-size: 14px;
-                font-weight: bold;
-                color: #ffffff;
-            }
-            
-            QLabel#current_time {
-                color: #aaaaaa;
-            }
-        """
+    _DARK = {
+        "window_start": "#081216",
+        "window_end": "#132029",
+        "text": "#edf5f7",
+        "muted": "#89a2af",
+        "panel": "#15232d",
+        "panel_alt": "#1a2b36",
+        "card": "#203440",
+        "border": "#2d4958",
+        "border_soft": "#243b48",
+        "accent": "#4ad7c4",
+        "accent_strong": "#1fb9a6",
+        "accent_text": "#062c29",
+        "accent_soft": "#183e43",
+        "warning": "#f1b766",
+        "error": "#f26d78",
+        "success": "#71d6a4",
+        "surface": "rgba(10, 18, 22, 0.26)",
+        "surface_hover": "rgba(37, 65, 80, 0.30)",
+        "selection": "#244a56",
+        "input": "#1b2b35",
+        "tab": "#10202a",
+        "tab_active": "#1d3642",
+        "tab_text_muted": "#7e95a1",
+        "toolbar": "rgba(12, 22, 28, 0.82)",
+        "overlay": "rgba(5, 12, 16, 0.76)",
+    }
+
+    _LIGHT = {
+        "window_start": "#f6fbfc",
+        "window_end": "#e8f1f4",
+        "text": "#20313b",
+        "muted": "#627986",
+        "panel": "#ffffff",
+        "panel_alt": "#f4f8fa",
+        "card": "#eef5f8",
+        "border": "#cddbe2",
+        "border_soft": "#dbe7ec",
+        "accent": "#129d8d",
+        "accent_strong": "#0f8477",
+        "accent_text": "#ffffff",
+        "accent_soft": "#d8f3ef",
+        "warning": "#b57f29",
+        "error": "#c45160",
+        "success": "#2f9d67",
+        "surface": "rgba(18, 48, 64, 0.04)",
+        "surface_hover": "rgba(18, 48, 64, 0.08)",
+        "selection": "#d7efea",
+        "input": "#ffffff",
+        "tab": "#edf4f7",
+        "tab_active": "#ffffff",
+        "tab_text_muted": "#738a97",
+        "toolbar": "rgba(255, 255, 255, 0.88)",
+        "overlay": "rgba(238, 245, 248, 0.86)",
+    }
+
+    @classmethod
+    def get_dark_theme(cls) -> str:
+        return cls._build_theme(cls._DARK)
+
+    @classmethod
+    def get_light_theme(cls) -> str:
+        return cls._build_theme(cls._LIGHT)
 
     @staticmethod
-    def get_light_theme() -> str:
-        """Get the CSS for the light theme."""
+    def _build_theme(tokens: dict[str, str]) -> str:
         return """
-            QMainWindow, QWidget {
-                background-color: #f5f5f5;
-                color: #333333;
-            }
-            
-            QPushButton {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-                padding: 8px 16px;
-                border-radius: 4px;
-                color: #333333;
-                font-weight: 500;
-                min-width: 80px;
-            }
-            
-            QPushButton:hover {
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-            }
-            
-            QPushButton:pressed {
-                background-color: #e0e0e0;
-            }
-            
-            QPushButton:checked {
-                background-color: #e0e0e0;
-                border: 2px solid #999999;
-            }
-            
-            QLineEdit {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-                padding: 8px 12px;
-                border-radius: 4px;
-                color: #333333;
-                selection-background-color: #e0e0e0;
-            }
-            
-            QLineEdit:focus {
-                border: 2px solid #999999;
-            }
-            
-            QComboBox {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-                padding: 8px;
-                border-radius: 4px;
-                color: #333333;
-                min-width: 120px;
-            }
-            
-            QComboBox:hover {
-                border: 1px solid #cccccc;
-            }
-            
-            QComboBox::drop-down {
+            QMainWindow#main_window {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {window_start},
+                    stop: 1 {window_end}
+                );
+            }}
+
+            QWidget {{
+                color: {text};
+                font-size: 13px;
+                background: transparent;
+            }}
+
+            QWidget#content_shell {{
+                background: transparent;
+            }}
+
+            QFrame#library_panel,
+            QFrame#player_panel,
+            QFrame#filter_card,
+            QFrame#now_playing_card,
+            QFrame#player_surface,
+            QFrame#control_bar,
+            QFrame#epg_widget,
+            QFrame#playlist_dialog_card,
+            QFrame#playlist_detail_card {{
+                background-color: {panel};
+                border: 1px solid {border_soft};
+                border-radius: 18px;
+            }}
+
+            QFrame#player_surface {{
+                background-color: {panel_alt};
+                border: 1px solid {border};
+            }}
+
+            QFrame#control_bar,
+            QFrame#filter_card,
+            QFrame#playlist_detail_card {{
+                background-color: {panel_alt};
+            }}
+
+            QToolBar#main_toolbar {{
+                spacing: 12px;
+                padding: 10px 14px;
+                border: 1px solid {border_soft};
+                border-radius: 16px;
+                background: {toolbar};
+            }}
+
+            QLabel#section_title,
+            QLabel#dialog_title,
+            QLabel#panel_heading,
+            QLabel#current_title {{
+                font-size: 16px;
+                font-weight: 700;
+                color: {text};
+            }}
+
+            QLabel#player_channel_title {{
+                font-size: 24px;
+                font-weight: 700;
+                color: {text};
+                padding: 0;
+            }}
+
+            QLabel#player_program_title {{
+                font-size: 15px;
+                font-weight: 600;
+                color: {text};
+                padding: 0;
+            }}
+
+            QLabel#player_meta,
+            QLabel#current_time,
+            QLabel#epg_status,
+            QLabel#playlist_detail_label,
+            QLabel#placeholder_hint {{
+                color: {muted};
+                padding: 0;
+            }}
+
+            QLabel#status_chip,
+            QLabel#playlist_status_chip,
+            QLabel#epg_status_chip,
+            QLabel#playback_state_chip {{
+                background-color: {accent_soft};
+                color: {accent};
+                border: 1px solid {border};
+                border-radius: 12px;
+                padding: 6px 12px;
+                font-weight: 700;
+            }}
+
+            QLabel#playlist_status_chip[stateTone="warning"],
+            QLabel#epg_status_chip[stateTone="warning"],
+            QLabel#playback_state_chip[stateTone="warning"] {{
+                color: {warning};
+            }}
+
+            QLabel#playlist_status_chip[stateTone="error"],
+            QLabel#epg_status_chip[stateTone="error"],
+            QLabel#playback_state_chip[stateTone="error"] {{
+                color: {error};
+            }}
+
+            QLabel#playlist_status_chip[stateTone="success"],
+            QLabel#epg_status_chip[stateTone="success"],
+            QLabel#playback_state_chip[stateTone="success"] {{
+                color: {success};
+            }}
+
+            QLineEdit,
+            QComboBox,
+            QListWidget,
+            QTabWidget::pane,
+            QScrollArea {{
+                background-color: {input};
+                border: 1px solid {border_soft};
+                border-radius: 14px;
+            }}
+
+            QLineEdit {{
+                padding: 10px 14px;
+                color: {text};
+                selection-background-color: {selection};
+            }}
+
+            QLineEdit:focus,
+            QComboBox:focus {{
+                border: 1px solid {accent};
+            }}
+
+            QComboBox {{
+                padding: 9px 12px;
+                min-height: 20px;
+            }}
+
+            QComboBox::drop-down {{
                 border: none;
-                padding-right: 8px;
-            }
-            
-            QListWidget {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-                border-radius: 4px;
-                color: #333333;
-                padding: 4px;
-            }
-            
-            QListWidget::item {
+                width: 24px;
+            }}
+
+            QPushButton {{
+                background-color: {card};
+                border: 1px solid {border_soft};
+                border-radius: 14px;
+                padding: 10px 16px;
+                color: {text};
+                font-weight: 600;
+                min-width: 82px;
+            }}
+
+            QPushButton:hover {{
+                background-color: {surface_hover};
+                border: 1px solid {border};
+            }}
+
+            QPushButton:pressed {{
+                background-color: {selection};
+            }}
+
+            QPushButton[accent="true"] {{
+                background-color: {accent};
+                color: {accent_text};
+                border: 1px solid {accent_strong};
+            }}
+
+            QPushButton[accent="true"]:hover {{
+                background-color: {accent_strong};
+            }}
+
+            QPushButton[ghost="true"] {{
+                background-color: transparent;
+                color: {muted};
+            }}
+
+            QPushButton:disabled {{
+                color: {tab_text_muted};
+                background-color: {surface};
+            }}
+
+            QTabBar::tab {{
+                background-color: {tab};
+                color: {tab_text_muted};
+                border: 1px solid {border_soft};
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                padding: 10px 16px;
+                margin-right: 6px;
+                min-width: 88px;
+                font-weight: 600;
+            }}
+
+            QTabBar::tab:selected {{
+                background-color: {tab_active};
+                color: {text};
+                border: 1px solid {border};
+            }}
+
+            QListWidget {{
                 padding: 8px;
-                border-radius: 2px;
-            }
-            
-            QListWidget::item:hover {
-                background-color: #f5f5f5;
-            }
-            
-            QListWidget::item:selected {
-                background-color: #e0e0e0;
-            }
-            
-            QSlider::groove:horizontal {
-                background-color: #dddddd;
-                height: 4px;
-                border-radius: 2px;
-            }
-            
-            QSlider::handle:horizontal {
-                background-color: #ffffff;
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
-                border: 1px solid #cccccc;
-            }
-            
-            QSlider::handle:horizontal:hover {
-                background-color: #f0f0f0;
-                border: 1px solid #bbbbbb;
-            }
-            
-            QFrame#epg_widget {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-                border-radius: 4px;
+                outline: none;
+            }}
+
+            QListWidget::item {{
+                background-color: {surface};
+                border: 1px solid transparent;
+                border-radius: 14px;
                 padding: 12px;
-            }
-            
-            QLabel {
-                padding: 4px;
-            }
-            
-            QLabel#current_title {
-                font-size: 14px;
-                font-weight: bold;
-                color: #333333;
-            }
-            
-            QLabel#current_time {
-                color: #666666;
-            }
-        """
+                margin: 4px 0;
+            }}
+
+            QListWidget::item:hover {{
+                background-color: {surface_hover};
+                border: 1px solid {border_soft};
+            }}
+
+            QListWidget::item:selected {{
+                background-color: {selection};
+                border: 1px solid {accent};
+            }}
+
+            QSlider::groove:horizontal {{
+                background-color: {surface};
+                border-radius: 6px;
+                height: 8px;
+            }}
+
+            QSlider::handle:horizontal {{
+                background-color: {accent};
+                width: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
+            }}
+
+            QLabel#player_placeholder {{
+                color: {muted};
+                font-size: 18px;
+                font-weight: 600;
+                padding: 16px;
+            }}
+
+            QLabel#player_overlay {{
+                background-color: {overlay};
+                border: 1px solid {border};
+                border-radius: 16px;
+                color: {text};
+                font-weight: 700;
+                padding: 12px 18px;
+            }}
+
+            QLabel#notification_toast {{
+                border-radius: 14px;
+                padding: 12px 16px;
+                border: 1px solid {border};
+            }}
+
+            QMenu {{
+                background-color: {panel};
+                border: 1px solid {border};
+                padding: 8px;
+            }}
+
+            QMenu::item {{
+                padding: 8px 16px;
+                border-radius: 8px;
+            }}
+
+            QMenu::item:selected {{
+                background-color: {surface_hover};
+            }}
+        """.format(**tokens)
