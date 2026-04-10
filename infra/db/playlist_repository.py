@@ -1,5 +1,5 @@
 import logging
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Sequence
 
 from infra.db.sqlite_connection import SQLiteConnection
 from core.errors import RepositoryError
@@ -12,31 +12,12 @@ class PlaylistRepository:
     def __init__(self, db: SQLiteConnection):
         self.db = db
 
-    def save_playlists(self, playlists: Sequence[Tuple[str, str, bool]]) -> None:
-        """Save a list of playlists (name, path, is_url)."""
+    def save_playlists(self, playlists: Sequence[PlaylistReference]) -> None:
+        """Save a list of playlist references."""
         try:
             with self.db.get_connection() as conn:
-                existing_rows = conn.execute(
-                    """
-                    SELECT path, channel_count, last_loaded_at, last_status, last_error
-                    FROM playlists
-                    """
-                ).fetchall()
-                existing_metadata = {
-                    row["path"]: (
-                        row["channel_count"],
-                        row["last_loaded_at"],
-                        row["last_status"],
-                        row["last_error"],
-                    )
-                    for row in existing_rows
-                }
                 conn.execute("DELETE FROM playlists")
-                for name, path, is_url in playlists:
-                    channel_count, last_loaded_at, last_status, last_error = existing_metadata.get(
-                        path,
-                        (0, "", "", ""),
-                    )
+                for playlist in playlists:
                     conn.execute(
                         """
                         INSERT INTO playlists
@@ -44,13 +25,13 @@ class PlaylistRepository:
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
-                            name,
-                            path,
-                            1 if is_url else 0,
-                            channel_count,
-                            last_loaded_at,
-                            last_status,
-                            last_error,
+                            playlist.name,
+                            playlist.path,
+                            1 if playlist.is_url else 0,
+                            playlist.channel_count,
+                            playlist.last_loaded_at,
+                            playlist.last_status,
+                            playlist.last_error,
                         ),
                     )
         except Exception as exc:
@@ -149,8 +130,7 @@ class PlaylistRepository:
             raise RepositoryError("Failed to load playlist") from exc
 
     def import_playlists(self, playlists: Iterable[PlaylistReference]) -> None:
-        records = [(item.name, item.path, item.is_url) for item in playlists]
-        self.save_playlists(records)
+        self.save_playlists(list(playlists))
 
     def update_playlist_metadata(
         self,
