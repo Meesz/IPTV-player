@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import os
 from typing import Callable, Sequence
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -18,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.models import PlaylistReference
+from ui.controllers.background_tasks import BackgroundTask, create_background_task
 
 
 class PlaylistManagerDialog(QDialog):
@@ -32,7 +35,14 @@ class PlaylistManagerDialog(QDialog):
         self.setMinimumSize(760, 420)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
         self._active_playlist_path = ""
-        self._playlist_validator: Callable[[PlaylistReference], PlaylistReference | None] | None = None
+        self._playlist_validator: Callable[
+            [PlaylistReference], tuple[PlaylistReference | None, str]
+        ] | None = None
+        self._playlist_tester: Callable[..., PlaylistReference] | None = None
+        self._thread_pool = QThreadPool.globalInstance() or QThreadPool()
+        self._tester_task_id = 0
+        self._tester_worker: BackgroundTask | None = None
+        self._validation_messages: dict[tuple[str, bool], tuple[str, str]] = {}
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -43,6 +53,11 @@ class PlaylistManagerDialog(QDialog):
         title = QLabel("Playlist Library")
         title.setObjectName("dialog_title")
         root_layout.addWidget(title)
+
+        self.feedback_label = QLabel("Manage saved playlist sources, validation, and last test results here.")
+        self.feedback_label.setObjectName("playlist_feedback")
+        self.feedback_label.setWordWrap(True)
+        root_layout.addWidget(self.feedback_label)
 
         shell = QFrame()
         shell.setObjectName("playlist_dialog_card")
@@ -79,16 +94,20 @@ class PlaylistManagerDialog(QDialog):
         self.edit_button.setEnabled(False)
         self.remove_button = QPushButton("Remove")
         self.remove_button.setEnabled(False)
+        self.test_button = QPushButton("Test Source")
+        self.test_button.setEnabled(False)
         self.select_button = QPushButton("Select")
         self.select_button.setEnabled(False)
 
         self.edit_button.clicked.connect(self._edit_playlist)
         self.remove_button.clicked.connect(self._remove_playlist)
+        self.test_button.clicked.connect(self._test_selected_playlist)
         self.select_button.clicked.connect(self._select_playlist)
 
         button_row.addWidget(self.add_button)
         button_row.addWidget(self.edit_button)
         button_row.addWidget(self.remove_button)
+        button_row.addWidget(self.test_button)
         button_row.addStretch()
         button_row.addWidget(self.select_button)
 
@@ -111,6 +130,7 @@ class PlaylistManagerDialog(QDialog):
         self.detail_channels = self._detail_label("Channels")
         self.detail_loaded = self._detail_label("Last loaded")
         self.detail_status = self._detail_label("Status")
+        self.detail_validation = self._detail_label("Validation")
 
         for label in (
             self.detail_name,
@@ -119,6 +139,7 @@ class PlaylistManagerDialog(QDialog):
             self.detail_channels,
             self.detail_loaded,
             self.detail_status,
+            self.detail_validation,
         ):
             details_layout.addWidget(label)
         details_layout.addStretch()
@@ -148,6 +169,7 @@ class PlaylistManagerDialog(QDialog):
         self.remove_button.setEnabled(has_selection)
         self.select_button.setEnabled(has_selection)
         self.edit_button.setEnabled(has_selection)
+        self.test_button.setEnabled(has_selection and self._tester_worker is None)
 
         item = self.playlist_list.currentItem()
         data = item.data(Qt.ItemDataRole.UserRole) if item else None
@@ -186,6 +208,7 @@ class PlaylistManagerDialog(QDialog):
         if not playlist or self._has_duplicate(playlist):
             return
         self._add_playlist_item(playlist)
+        self._set_feedback("ready", "Playlist added to the library. Use Test Source to verify it.")
 
     def _add_playlist_item(self, playlist: PlaylistReference) -> None:
         item = QListWidgetItem(self._item_title(playlist))
@@ -208,6 +231,7 @@ class PlaylistManagerDialog(QDialog):
         )
         if confirm == QMessageBox.StandardButton.Yes:
             self.playlist_list.takeItem(self.playlist_list.row(current_item))
+            self._set_feedback("warning", "Playlist removed from the library.")
             self._set_details(None)
 
     def _select_playlist(self) -> None:
@@ -280,6 +304,7 @@ class PlaylistManagerDialog(QDialog):
 
         current_item.setData(Qt.ItemDataRole.UserRole, playlist)
         current_item.setText(self._item_title(playlist))
+        self._set_feedback("ready", "Playlist updated.")
         self._set_details(playlist)
 
     def _show_context_menu(self, position) -> None:
@@ -288,10 +313,13 @@ class PlaylistManagerDialog(QDialog):
             return
         menu = QMenu()
         edit_action = menu.addAction("Edit")
+        test_action = menu.addAction("Test Source")
         remove_action = menu.addAction("Remove")
         action = menu.exec(self.playlist_list.mapToGlobal(position))
         if action == edit_action:
             self._edit_playlist()
+        elif action == test_action:
+            self._test_selected_playlist()
         elif action == remove_action:
             self._remove_playlist()
 
@@ -332,14 +360,23 @@ class PlaylistManagerDialog(QDialog):
 
     def set_playlist_validator(
         self,
-        validator: Callable[[PlaylistReference], PlaylistReference | None],
+        validator: Callable[[PlaylistReference], tuple[PlaylistReference | None, str]],
     ) -> None:
         self._playlist_validator = validator
+
+    def set_playlist_tester(
+        self,
+        tester: Callable[..., PlaylistReference],
+    ) -> None:
+        self._playlist_tester = tester
 
     def _validated_playlist(self, playlist: PlaylistReference) -> PlaylistReference | None:
         if self._playlist_validator is None:
             return playlist
-        return self._playlist_validator(playlist)
+        validated, error = self._playlist_validator(playlist)
+        if not validated and error:
+            self._set_feedback("error", error)
+        return validated
 
     def _has_duplicate(
         self,
@@ -359,13 +396,94 @@ class PlaylistManagerDialog(QDialog):
                 return True
         return False
 
+    def _test_selected_playlist(self) -> None:
+        if self._playlist_tester is None:
+            self._set_feedback("warning", "Playlist testing is unavailable.")
+            return
+        current_item = self.playlist_list.currentItem()
+        if not current_item:
+            return
+        playlist = current_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(playlist, PlaylistReference):
+            return
+
+        self._tester_task_id += 1
+        task_id = self._tester_task_id
+        self._tester_worker = create_background_task(task_id, self._playlist_tester, playlist)
+        self._tester_worker.signals.progress.connect(self._on_test_progress)
+        self._tester_worker.signals.succeeded.connect(self._on_test_succeeded)
+        self._tester_worker.signals.failed.connect(self._on_test_failed)
+        self._tester_worker.signals.finished.connect(self._on_test_finished)
+        self.test_button.setEnabled(False)
+        self._set_feedback("warning", "Testing playlist source...")
+        self._thread_pool.start(self._tester_worker)
+
+    def _on_test_progress(self, task_id: int, message: str) -> None:
+        if self._tester_worker is None or task_id != self._tester_task_id:
+            return
+        self._set_feedback("warning", message)
+
+    def _on_test_succeeded(self, task_id: int, result: object) -> None:
+        if self._tester_worker is None or task_id != self._tester_task_id:
+            return
+        if not isinstance(result, PlaylistReference):
+            return
+
+        current_item = self.playlist_list.currentItem()
+        if not current_item:
+            return
+        current_item.setData(Qt.ItemDataRole.UserRole, result)
+        current_item.setText(self._item_title(result))
+        self._validation_messages[(result.path, result.is_url)] = (
+            result.last_status or "ready",
+            result.last_error or f"Verified successfully ({result.channel_count} channels detected).",
+        )
+        if result.last_status == "warning" and result.last_error:
+            self._set_feedback(
+                "warning",
+                f"Playlist verified with warnings. {result.channel_count} channels detected.",
+            )
+        else:
+            self._set_feedback(
+                "ready",
+                f"Playlist verified successfully. {result.channel_count} channels detected.",
+            )
+        self._set_details(result)
+
+    def _on_test_failed(self, task_id: int, message: str) -> None:
+        if self._tester_worker is None or task_id != self._tester_task_id:
+            return
+        current_item = self.playlist_list.currentItem()
+        playlist = (
+            current_item.data(Qt.ItemDataRole.UserRole)
+            if current_item is not None
+            else None
+        )
+        if isinstance(playlist, PlaylistReference):
+            self._validation_messages[(playlist.path, playlist.is_url)] = ("error", message)
+            self._set_details(playlist)
+        self._set_feedback("error", message)
+
+    def _on_test_finished(self, task_id: int) -> None:
+        if task_id != self._tester_task_id:
+            return
+        self._tester_worker = None
+        self.test_button.setEnabled(bool(self.playlist_list.selectedItems()))
+
     def _show_warning(self, message: str) -> None:
+        self._set_feedback("error", message)
         QMessageBox.warning(self, "Playlist Manager", message)
 
     def _item_title(self, playlist: PlaylistReference) -> str:
         source_kind = "URL" if playlist.is_url else "FILE"
         suffix = " [ACTIVE]" if playlist.path == self._active_playlist_path else ""
         return f"{playlist.name} [{source_kind}]{suffix}"
+
+    def _set_feedback(self, tone: str, message: str) -> None:
+        self.feedback_label.setText(message)
+        self.feedback_label.setProperty("stateTone", tone)
+        self.feedback_label.style().unpolish(self.feedback_label)
+        self.feedback_label.style().polish(self.feedback_label)
 
     def _set_details(self, playlist: PlaylistReference | None) -> None:
         if not playlist:
@@ -375,6 +493,7 @@ class PlaylistManagerDialog(QDialog):
             self.detail_channels.setText("Channels: -")
             self.detail_loaded.setText("Last loaded: -")
             self.detail_status.setText("Status: -")
+            self.detail_validation.setText("Validation: -")
             return
 
         self.detail_name.setText(f"Name: {playlist.name}")
@@ -390,3 +509,17 @@ class PlaylistManagerDialog(QDialog):
         if playlist.path == self._active_playlist_path:
             status = f"{status} / Active"
         self.detail_status.setText(f"Status: {status}")
+
+        validation_status, validation_message = self._validation_messages.get(
+            (playlist.path, playlist.is_url),
+            ("pending", "Use Test Source to verify reachability and parsing."),
+        )
+        if validation_status == "ready":
+            text = validation_message
+        elif validation_status == "warning":
+            text = validation_message
+        elif validation_status == "error":
+            text = validation_message
+        else:
+            text = validation_message
+        self.detail_validation.setText(f"Validation: {text}")
