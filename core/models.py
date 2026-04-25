@@ -42,7 +42,7 @@ class XtreamCredentials:
         return XtreamCredentials(
             server_url=self.normalize_server_url(self.server_url),
             username=self.username.strip(),
-            password=self.password,
+            password=self.password.strip(),
             output=self.output.strip().lower() or "ts",
         )
 
