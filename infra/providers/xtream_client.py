@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 import requests
 from requests import Response
@@ -111,11 +111,17 @@ class XtreamClient:
             category_id = str(item.get("category_id", "")).strip()
             group_name = categories.get(category_id) or str(item.get("category_name", "")).strip()
             channel_number = self._to_int(item.get("num"))
+            effective_credentials = self.last_effective_credentials or credentials
+            logger.debug(
+                "Mapping Xtream live stream %s for %s",
+                stream_id,
+                effective_credentials.redacted_summary(),
+            )
 
             channels.append(
                 Channel(
                     name=name,
-                    url=self._build_live_stream_url(self.last_effective_credentials or credentials, stream_id),
+                    url=self._build_live_stream_url(effective_credentials, stream_id),
                     group=group_name,
                     logo=str(item.get("stream_icon", "") or "").strip(),
                     epg_id=str(
@@ -301,9 +307,12 @@ class XtreamClient:
     @staticmethod
     def _build_live_stream_url(credentials: XtreamCredentials, stream_id: str) -> str:
         normalized = credentials.normalized()
+        username = quote(normalized.username, safe="")
+        password = quote(normalized.password, safe="")
+        encoded_stream_id = quote(str(stream_id).strip(), safe="")
         return (
             f"{normalized.server_url}/live/"
-            f"{normalized.username}/{normalized.password}/{stream_id}.{normalized.output}"
+            f"{username}/{password}/{encoded_stream_id}.{normalized.output}"
         )
 
     @staticmethod
