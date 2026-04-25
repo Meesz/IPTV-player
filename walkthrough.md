@@ -1,38 +1,47 @@
-# IPTV Player v2 Refactoring Walkthrough
+# Refactoring Walkthrough
 
-## Overview
-The IPTV Player has been refactored to a clean v2 architecture, separating concerns into Domain (`core`), Infrastructure (`infra`), and UI (`ui`) layers.
+This note records the high-level v2 refactor direction. For current architecture details, use [docs/architecture.md](docs/architecture.md). For setup and commands, use [README.md](README.md) and [docs/development.md](docs/development.md).
 
-## Directory Structure
-- **app/**: Application entry point (`main.py`).
-- **core/**: Domain logic.
-  - **models.py**: Data models (`Channel`, `Playlist`, `Settings`, etc.).
-  - **services/**: Business logic (`PlaylistService`, `EPGService`, etc.).
-- **infra/**: Infrastructure and side effects.
-  - **db/**: Database repositories (`PlaylistRepository`, `SQLiteConnection`, etc.).
-  - **parsers/**: File parsers (`M3UParser`, `EPGParser`).
-  - **playback/**: VLC backend (`VLCBackend`).
-- **ui/**: User Interface (Qt).
-  - **windows/**: Main window (`MainWindow`).
-  - **widgets/**: Reusable widgets (`PlayerWidget`, `EPGWidget`, etc.).
-  - **dialogs/**: Dialogs (`PlaylistManagerDialog`).
-  - **controllers/**: UI logic (`MainController`, `PlaylistController`, etc.).
-  - **styles/**: Themes and styles.
+## Refactor Goal
 
-## Key Changes
-1. **Separation of Concerns**: UI code no longer accesses the database or VLC directly. It uses Controllers, which use Services, which use Repositories/Parsers.
-2. **Dependency Injection**: Dependencies are injected from `app/main.py`.
-3. **Unified Playback**: `VLCBackend` provides a clean interface for VLC, and `PlayerWidget` handles the UI aspect.
-4. **Standardized Parsers**: `M3UParser` and `EPGParser` are now in `infra/parsers` and return domain models.
+The app was moved toward a layered desktop architecture:
 
-## How to Run
-1. Ensure you have the dependencies installed (including `python-vlc` and VLC media player).
-2. Run the application from the root directory:
-   ```bash
-   python -m app.main
-   ```
+- `app/` wires dependencies and starts the Qt application.
+- `core/` owns domain models, errors, and services.
+- `infra/` owns side effects such as SQLite, parsers, HTTP providers, and VLC.
+- `ui/` owns windows, widgets, dialogs, controllers, and styling.
 
-## Verification
-- **Imports**: Verified that all modules can be imported without errors.
-- **Database**: Verified that the database initializes correctly.
-- **UI**: The UI structure is in place, connecting controllers and widgets.
+The important maintenance rule is that UI widgets should not directly manage persistence, playlist parsing, Xtream HTTP calls, or VLC setup. Those concerns should stay behind controllers, services, repositories, providers, parsers, and playback infrastructure.
+
+## Current Dependency Shape
+
+```text
+app/main.py
+  -> repositories, services, controllers
+  -> ui/windows/main_window.py
+      -> ui/controllers/*
+          -> core/services/*
+              -> infra/db, infra/parsers, infra/providers
+      -> ui/widgets/player_widget.py
+          -> infra/playback/vlc_backend.py
+```
+
+## Notable Outcomes
+
+- Playlist, EPG, settings, favorites, and history behavior now have service/repository seams.
+- Playlist and EPG loading are started from controllers and run in background tasks.
+- The channel list uses a model/delegate list view for large playlist performance.
+- Playback is split between VLC infrastructure and the player widget UI.
+- Settings and source metadata are persisted in SQLite instead of being only in memory.
+
+## Verification Pointers
+
+Useful checks for future refactors:
+
+```bash
+python -m pytest -q
+pylint --fail-under=9.5 $(git ls-files '*.py')
+python -m compileall app core infra ui tests
+```
+
+If Qt or VLC runtime dependencies are missing locally, document the limitation in the change summary rather than claiming full verification.
