@@ -218,7 +218,7 @@ class PlaylistRepository:
                 username=row["xtream_username"] or "",
                 password=row["xtream_password"] or "",
                 output=row["xtream_output"] or "ts",
-            )
+            ).normalized()
         return PlaylistReference(
             name=row["name"],
             path=row["path"] or "",
