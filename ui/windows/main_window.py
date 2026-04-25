@@ -182,10 +182,10 @@ class MainWindow(QMainWindow):
             self._on_search_scope_changed
         )
         self.left_panel.tabs.currentChanged.connect(self._on_active_tab_changed)
-        self.left_panel.channel_list.itemDoubleClicked.connect(self._on_channel_selected)
+        self.left_panel.channel_list.channel_activated.connect(self._on_channel_selected)
         self.left_panel.favorites_list.itemDoubleClicked.connect(self._on_channel_selected)
         self.left_panel.recent_list.itemDoubleClicked.connect(self._on_channel_selected)
-        self.left_panel.channel_list.itemClicked.connect(self._on_channel_clicked)
+        self.left_panel.channel_list.channel_clicked.connect(self._on_channel_clicked)
         self.left_panel.favorites_list.itemClicked.connect(self._on_channel_clicked)
         self.left_panel.recent_list.itemClicked.connect(self._on_channel_clicked)
         self.left_panel.search_bar.search_changed.connect(self._refresh_channel_list)
@@ -209,6 +209,8 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             Themes.get_dark_theme() if self._theme == "dark" else Themes.get_light_theme()
         )
+        if hasattr(self, "left_panel"):
+            self.left_panel.set_theme_mode(self._theme)
 
     def _apply_saved_preferences(self) -> None:
         settings = self.settings_controller.settings
@@ -266,7 +268,7 @@ class MainWindow(QMainWindow):
             sort_mode=self.left_panel.sort_combo.currentData() or "name_asc",
             favorite_keys=self._favorite_keys(),
         )
-        self.left_panel.populate_channels_incrementally(
+        self.left_panel.set_channel_results(
             channels,
             current_program_resolver=self._current_programs_for_channels,
             show_now_playing=self.settings_controller.get_setting(
@@ -501,13 +503,13 @@ class MainWindow(QMainWindow):
                 NotificationType.SUCCESS,
             )
 
-    def _on_channel_clicked(self, item: QListWidgetItem) -> None:
+    def _on_channel_clicked(self, payload) -> None:
         if self.settings_controller.get_setting("play_on_single_click", False):
-            self._on_channel_selected(item)
+            self._on_channel_selected(payload)
 
-    def _on_channel_selected(self, item: QListWidgetItem) -> None:
-        channel = item.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(channel, Channel):
+    def _on_channel_selected(self, payload) -> None:
+        channel = self._extract_channel(payload)
+        if channel is None:
             return
 
         if channel.playlist_path and channel.playlist_path != self._active_playlist_path:
@@ -537,6 +539,16 @@ class MainWindow(QMainWindow):
         if self._active_playlist_path:
             self.history_controller.record_channel(channel, self._active_playlist_path)
         self._update_epg(channel.epg_id)
+
+    @staticmethod
+    def _extract_channel(payload) -> Channel | None:
+        if isinstance(payload, Channel):
+            return payload
+        if isinstance(payload, QListWidgetItem):
+            channel = payload.data(Qt.ItemDataRole.UserRole)
+            if isinstance(channel, Channel):
+                return channel
+        return None
 
     def _update_epg(self, channel_id: str) -> Program | None:
         program = self.epg_controller.get_current_program(channel_id)
