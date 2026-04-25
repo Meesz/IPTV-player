@@ -214,6 +214,7 @@ class Themes:
             QLineEdit,
             QComboBox,
             QListWidget,
+            QListView,
             QTabWidget::pane,
             QScrollArea {{
                 background-color: {input};
@@ -299,7 +300,8 @@ class Themes:
                 border: 1px solid {border};
             }}
 
-            QListWidget {{
+            QListWidget,
+            QListView {{
                 padding: 8px;
                 outline: none;
             }}
