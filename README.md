@@ -1,45 +1,42 @@
 # Simple IPTV Player
 
-Simple IPTV Player is a PyQt desktop application for loading IPTV playlists, browsing channels, viewing XMLTV program data, and playing live streams through VLC. It keeps playlists, favorites, recent channels, and user preferences in a local SQLite database so the app state survives restarts.
+Simple IPTV Player is a local PyQt6 desktop app for loading IPTV sources, browsing channels, viewing XMLTV program data, and playing live streams through VLC. It stores playlists, favorites, recent channels, EPG cache data, and UI preferences in a local SQLite database.
 
-## Highlights
+This repo is a desktop application, not a web service. There is no backend server, cloud sync, account system, or packaged release workflow configured in the current codebase.
 
-- Load M3U and M3U8 playlists from a local file or an HTTP(S) URL.
-- Load XMLTV EPG data from a local file or a remote URL.
-- Browse channels by group, search within the current category or across the full playlist, and sort the visible list.
-- Save favorite channels and keep a recent playback history.
-- Show current program information directly in the channel list when EPG data is available.
-- Play streams with VLC, including buffering status, automatic reconnect attempts, fullscreen toggle, mute, retry, and copyable stream URLs.
-- Persist playlist metadata and playback preferences between sessions.
+## Current Features
+
+- Load M3U/M3U8 playlists from local files or HTTP(S) URLs.
+- Add Xtream-compatible live TV sources through `player_api.php` credentials.
+- Test playlist sources from the playlist manager without replacing the active playlist.
+- Load XMLTV EPG data from local XML/XML.GZ files or HTTP(S) URLs.
+- Browse channels by category, search by name/group, sort results, and show current program metadata when EPG data is available.
+- Render large channel lists through a `QListView` model/delegate instead of one widget per row.
+- Play streams through native VLC with buffering status, retry handling, reconnect caps, mute, fullscreen, copy URL, and manual retry controls.
+- Save favorites and recent channels with source-aware channel identity.
+- Persist UI state such as theme, window size, splitter sizes, active tab, selected category, search text, sort mode, mute state, and list display preferences.
+- Log application activity to `iptv_player.log`.
+
+## Tech Stack
+
+- Python desktop application
+- PyQt6 for the UI
+- SQLite through the standard `sqlite3` module
+- VLC playback through `python-vlc` plus the native VLC runtime
+- `requests` for playlist, EPG, and Xtream HTTP calls
+- pytest for tests; the test runner is not currently pinned in `requirements.txt`
+- Pylint in GitHub Actions
+- Black and isort are included in `requirements.txt`, but no project-specific formatter config is currently present
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.10 or newer. The current GitHub Actions workflow uses Python 3.12.
 - `pip`
-- VLC media player installed on your system
+- Native VLC media player installed on the machine
 
-The Python dependency `python-vlc` does not bundle the VLC application itself. The native VLC runtime must already be installed and available on your machine.
+`python-vlc` does not bundle VLC itself. Install the VLC desktop/runtime package separately before expecting playback to work.
 
-## Quick Start
-
-```bash
-git clone https://github.com/Meesz/IPTV-player.git
-cd IPTV-player
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m app.main
-```
-
-On Windows PowerShell, activate the virtual environment with:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-## Install VLC
-
-Install VLC before launching the app. Examples:
+Install VLC examples:
 
 ```bash
 # Ubuntu / Debian
@@ -48,126 +45,116 @@ sudo apt install vlc
 # Fedora
 sudo dnf install vlc
 
-# macOS (Homebrew)
+# macOS with Homebrew
 brew install --cask vlc
 ```
 
-On Windows, install VLC from the official VideoLAN distribution and then start the application again.
+On Windows, install VLC from VideoLAN. The app looks in the standard `C:\Program Files\VideoLAN\VLC` or `C:\Program Files (x86)\VideoLAN\VLC` paths depending on Python architecture.
 
-## Running the App
+## Installation
 
-Run the application from the repository root:
+Run from the repository root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+On Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+## Run The App
 
 ```bash
 python -m app.main
 ```
 
-On first launch the app will:
+On first launch the app creates:
 
-- create a SQLite database at `~/.simple_iptv/database.db`
-- create the parent directory automatically if it does not exist
-- write application logs to `iptv_player.log` in the current working directory
+- SQLite database: `~/.simple_iptv/database.db`
+- Log file in the current working directory: `iptv_player.log`
 
-## Usage
-
-### 1. Add and load a playlist
-
-Open **File -> Playlist Manager** or press `Ctrl+P`.
-
-- Use **Add Playlist -> From File** for local `.m3u` or `.m3u8` files.
-- Use **Add Playlist -> From URL** for remote HTTP(S) playlists.
-- Select a saved playlist to load its channels into the main view.
-
-### 2. Load EPG data
-
-You can load EPG data in two ways:
-
-- **EPG -> Load from File** for local XMLTV files
-- enter an EPG URL in the top toolbar and click **Load**
-
-Use `Ctrl+R` to refresh the last EPG source.
-
-### 3. Browse and search channels
-
-- Filter channels by category from the left panel.
-- Use the search bar to narrow the list.
-- Toggle whether search stays inside the current category.
-- Sort the visible channels by name, group, or favorites-first ordering.
-
-### 4. Start playback
-
-- Double-click a channel to start playback.
-- If you prefer single-click playback, enable **View -> Play on Single Click**.
-- Use the player controls to play, stop, retry, mute, favorite, copy the stream URL, and change volume.
-- Double-click the video area to toggle fullscreen while a stream is playing.
-
-### 5. Save favorites and history
-
-- Use the star button in the right panel to add or remove the current channel from favorites.
-- The app automatically stores recent channels with their playlist source.
-- Favorites and recent history remain available after restart.
-
-### 6. Show current program details
-
-When EPG data is loaded, the app can display the current program next to channels in the list and in the Now Playing panel. Toggle list rendering with **View -> Show Current Program in Lists**.
-
-### 7. Validate playlist sources
-
-- Open **File -> Playlist Manager** to inspect saved playlists.
-- Use **Test Source** to verify a file or URL, parse it without switching the active playlist, and update the stored metadata.
-- The details pane shows the last known load status, channel count, and the latest validation result.
-
-## Supported Inputs
-
-- Playlist files: `.m3u`, `.m3u8`
-- Playlist URLs: `http://`, `https://`
-- EPG sources: XMLTV files and XMLTV URLs
-
-## Project Layout
-
-- `app/`: application startup and dependency wiring
-- `core/`: domain models and business services
-- `infra/`: SQLite repositories, playlist and EPG parsers, VLC backend
-- `ui/`: Qt windows, widgets, dialogs, styles, and controllers
-- `tests/`: smoke, service, controller, and selected UI behavior tests
-
-For the architecture walkthrough and refactoring notes, see [walkthrough.md](walkthrough.md).
-
-## Troubleshooting
-
-### VLC backend unavailable
-
-If the player area shows a VLC initialization error:
-
-- make sure the VLC desktop application is installed, not just the Python package
-- restart the app after installing VLC
-- verify that VLC is available to the current user session
-
-### Playlist URL fails to load
-
-- make sure the URL starts with `http://` or `https://`
-- confirm the playlist is reachable from your network
-- verify that the remote source returns valid M3U content
-
-### Playlist or EPG parsing fails
-
-- confirm the file format is valid M3U, M3U8, or XMLTV
-- check `iptv_player.log` for the underlying error
-- reload the source after fixing malformed metadata
-
-### Reset local app data
-
-If you want to clear saved playlists, favorites, history, and settings, remove the database file:
+To reset local app state, stop the app and remove the database:
 
 ```bash
 rm ~/.simple_iptv/database.db
 ```
 
-The database will be recreated automatically on the next launch.
+The database is recreated on the next launch.
 
-## Contributing
+## Environment Variables
 
-Contributions are welcome. Keep changes aligned with the current layered structure in `app`, `core`, `infra`, and `ui`.
+| Name | Used by | Default | Purpose |
+|------|---------|---------|---------|
+| `IPTV_LOG_LEVEL` | `app/main.py` | `INFO` | Sets Python logging level. Invalid values fall back to `INFO`. |
+| `QT_QPA_PLATFORM` | Qt/tests | unset | Set to `offscreen` for headless test runs when needed. The pytest fixture sets this if it is missing. |
+| `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | VLC embedding on Linux | system-provided | Used to detect Wayland/XWayland embedding caveats. |
+
+There is no `.env` file or secret-management system in the repo.
+
+## Common Commands
+
+Run commands from the repository root unless noted.
+
+| Task | Command |
+|------|---------|
+| Install dependencies | `pip install -r requirements.txt` |
+| Install test runner if missing | `pip install pytest` |
+| Run app | `python -m app.main` |
+| Run tests | `python -m pytest -q` |
+| Run CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` |
+| Format Python files | `black .` |
+| Sort imports | `isort .` |
+| Syntax/import sanity check | `python -m compileall app core infra ui tests` |
+
+No packaged build command is configured. `py2app` is listed in dependencies, but there is no checked-in packaging configuration documenting a release build. `pytest` is used by tests but is not currently listed in `requirements.txt`.
+
+## Project Structure
+
+- `app/` - application startup, logging, dependency wiring, and top-level error dialogs.
+- `core/` - domain models, typed settings, service logic, and domain error types.
+- `infra/db/` - SQLite connection management and repositories.
+- `infra/parsers/` - M3U/M3U8 and XMLTV parsing.
+- `infra/providers/` - Xtream-compatible API client.
+- `infra/playback/` - VLC initialization and platform-specific video embedding.
+- `ui/controllers/` - Qt signal-based controllers and background task orchestration.
+- `ui/windows/` - main application window.
+- `ui/widgets/` - player, panels, channel list view, notifications, loading overlay, and EPG widgets.
+- `ui/dialogs/` - playlist manager and Xtream source dialogs.
+- `ui/styles/` - theme tokens and Qt stylesheets.
+- `tests/` - pytest coverage for models, services, repositories, parsers, controllers, and selected UI behavior.
+- `docs/` - product, architecture, development, and roadmap notes.
+
+## Current Limitations
+
+- Playback depends on native VLC and platform-specific embedding. Linux Wayland sessions may require XWayland for embedded video.
+- Xtream passwords are stored in the local SQLite database so sources can be reloaded. Logs are expected to redact passwords, but the database itself is not encrypted.
+- There is no account system, remote sync, or multi-device state.
+- Playlist and EPG downloads use blocking HTTP calls inside worker tasks; cancellation ignores stale results but cannot always abort an in-flight network request immediately.
+- CI currently runs Pylint only. Tests are available locally but are not configured in the GitHub Actions workflow.
+- Packaging/release distribution is not defined.
+
+## Roadmap Summary
+
+Near-term work should focus on dependency/tooling cleanup, stronger integration test coverage, clearer packaging decisions, and continued polish around source validation, error reporting, and playback edge cases. Longer-term ideas such as cloud sync, recording, and advanced provider features are speculative.
+
+See [docs/roadmap.md](docs/roadmap.md) for the detailed roadmap.
+
+## Deeper Docs
+
+- [Product notes](docs/product.md)
+- [Architecture](docs/architecture.md)
+- [Development guide](docs/development.md)
+- [Roadmap](docs/roadmap.md)
+- [Phase 3 status](docs/phase3.md)
+- [Refactoring walkthrough](walkthrough.md)
+- [Coding agent guide](AGENTS.md)
 
 ## License
 
