@@ -1,111 +1,65 @@
-## Phase 3 backlog
+# Phase 3 Status
 
-### P0 --- fix correctness and reliability first
+This file used to be the Phase 3 backlog. It now records which Phase 3 items are implemented and which follow-up risks remain. Use [roadmap.md](roadmap.md) as the canonical future-work list.
 
-1.  **Fix the playback retry loop**
+## Completed
 
-    The biggest functional issue is in `PlayerWidget`: `_handle_playback_error()` increments `reconnect_attempts`, but `_reconnect()` calls `play()`, and `play()` immediately resets `reconnect_attempts = 0`. That means the retry cap is effectively broken and reconnects can loop forever under persistent failure. This should be refactored so reconnect state is only reset after a successful `media_playing` event, not before every retry attempt.
+### Correctness and reliability
 
-2.  **Stop swallowing database initialization failures**
+- Playback retry state now has a reconnect cap and resets after a successful playing event.
+- SQLite initialization fails fast and startup failures are surfaced through a startup error dialog.
+- Channel identity is source-aware through `(url, playlist_path)`, and favorites use the same distinction.
+- EPG parse failures and repository persistence failures are no longer collapsed into the same parsing error path.
+- EPG lookups accept an explicit current time and normalize to UTC-aware datetimes.
+- Playlist manager operations validate source references, detect duplicates, and protect the active playlist from unsafe source edits/removal.
 
-    `SQLiteConnection._init_database()` catches exceptions and only logs them instead of failing fast. That can leave the app booted with a broken persistence layer and produce misleading downstream errors later in controllers/services. Database initialization should raise on failure and surface a startup error dialog.
+### UI responsiveness and state
 
-3.  **Make channel identity source-aware**
+- Playlist and EPG loading run through `QThreadPool` background tasks via `PlaylistController` and `EPGController`.
+- Stale worker results are ignored when a newer load starts.
+- More UI state is persisted, including splitter sizes, active tab, selected category, search text, sort mode, left-panel visibility, mute state, theme, and window size.
+- Playback detail text is explicitly cleared on state changes.
+- Channel filtering and sorting use the service-level query pipeline.
 
-    `Channel.__eq__` and `__hash__` are based only on `url`, and favorites are also keyed only by `url`. That is fragile for IPTV, because the same stream URL can appear in multiple playlists with different names, groups, logos, or EPG mappings. Identity should be based on a composite key such as `(url, playlist_path)` or a generated source-specific id.
+### Parsing and data quality
 
-4.  **Separate parse errors from persistence errors**
+- XMLTV parsing supports gzip-compressed files and namespace-tolerant child lookup.
+- XMLTV timestamps are normalized to timezone-aware UTC datetimes.
+- M3U parsing supports multiple encodings, single-quoted and double-quoted attributes, and non-fatal parse warnings for malformed numeric metadata and orphan stream URLs.
 
-    `EPGService.load_epg_from_path()` catches broad exceptions and rethrows them as `ParsingError`, even when the real failure might be repository/database persistence. That will produce the wrong user-facing error and complicate debugging. Parsing, download, and persistence failures should stay distinct.
+### Product and UX
 
-5.  **Unify EPG time behavior**
+- Channel rows are rendered through a virtualized `QListView`, `QAbstractListModel`, and custom delegate.
+- Channel rows can show logo placeholders, group/current program text, and live/favorite badges.
+- The right panel includes playback controls for play, stop, retry, mute, fullscreen, favorite, copy URL, channel info, and volume.
+- Loading and empty states exist for the main channel surfaces.
+- Notifications queue and reposition on parent resize.
+- Playlist manager validation feedback, test-source behavior, metadata display, duplicate detection, and active-source safeguards are implemented.
+- Playlist and EPG status chips expose loading, ready, warning, and error states.
 
-    `EPGService.get_program_for_channel(channel_id, current_time)` passes `current_time` only when using in-memory `_channels`, but the repository fallback ignores `current_time` completely and always uses `datetime.now()`. That creates inconsistent behavior and makes testing harder. The repository API should accept an explicit timestamp too.
+### Xtream source hardening
 
-6.  **Validate playlist manager operations**
+- Xtream credentials are normalized before use and persistence.
+- Generated live stream URLs percent-encode username, password, and stream ID segments.
+- Xtream authentication and live-channel fetches log redacted source summaries.
+- HTTP sources can retry over HTTPS when the provider requires it.
+- Saved Xtream rows are normalized on repository reads.
 
-    The playlist manager currently allows adding duplicates, editing paths freely, and removing entries without active-playlist safeguards. It also rebuilds playlist objects from only `name/path/is_url`, which is workable only because metadata is later preserved by path in the repository. That is too indirect and brittle. Add duplicate detection, invalid-path/URL validation, and protection when removing or editing the active playlist.
+### Documentation and packaging cleanup
 
-### P1 --- remove UI freezes and state inconsistencies
+- `README.md` now describes the current `app/`, `core/`, `infra/`, and `ui/` structure.
+- `MANIFEST.in` includes the current package directories.
+- `requirements.txt` no longer lists PyQt5 alongside PyQt6.
 
-1.  **Move playlist and EPG loading off the UI thread**
+## Remaining Risks
 
-    Remote playlist downloads, EPG downloads, large XML parsing, and database writes are all synchronous right now. Since controllers call services directly and the services use blocking `requests.get(...)`, the UI can freeze during larger loads. Phase 3 should introduce worker threads or `QThreadPool` jobs for playlist/EPG load flows, with cancellable progress states.
+- Playback embedding can still be platform-sensitive, especially under Linux Wayland without XWayland.
+- Playlist and EPG downloads use blocking `requests` calls inside background tasks. UI responsiveness is protected, but cancellation cannot forcibly terminate an in-flight request.
+- SQLite schema migration logic lives in startup code rather than in explicit migration files.
+- Pylint is the only configured GitHub Actions check; pytest is not run in CI.
+- There is no documented packaging or release build.
+- Full app integration coverage is still thin around playlist switching, fullscreen, playback events, and database migration failures.
 
-2.  **Persist more UI state**
+## Current Follow-Up Direction
 
-    On close, the app saves theme, window width/height, and mute state, but not splitter sizes, active tab, selected category, search text, sort mode changes beyond current setting save, or last visible panel state. Persisting those would make the app feel much more "real" on reopen.
-
-3.  **Fix stale playback detail text**
-
-    `RightPanel.set_playback_state()` only updates `playback_detail_label` when `detail` is non-empty, so stale text can survive into later states. That is small but noticeable. Every state change should explicitly set the detail label, even if that means clearing it.
-
-4.  **Consolidate channel filtering/search logic**
-
-    Search/filter behavior currently lives in `MainWindow._resolve_visible_channels()`, while `PlaylistController.search_channels()` implements a different, simpler search that only checks names. That is a maintenance trap. There should be one canonical query/filter pipeline.
-
-5.  **Harden fullscreen behavior**
-
-    Fullscreen currently hides every visible widget in the window tree, reparents the player, and restores visibility by a temporary `was_visible` property. It works, but it is easy to break with future UI additions and can interact badly with dialogs/toolbars. This should be turned into a more explicit fullscreen shell or dedicated player window mode.
-
-6.  **Improve Linux/Wayland playback embedding robustness**
-
-    On Linux, VLC is bound with `set_xwindow(int(self.winId()))`. That is historically X11-oriented and can be fragile under Wayland environments. This is a platform-risk area that should be tested and possibly wrapped with better backend detection/fallback behavior.
-
-### P1 --- improve parsing and data quality
-
-1.  **Make the EPG parser more compatible**
-
-    The XMLTV parser strips namespace only from the root tag check, but uses plain `find("title")`, `find("desc")`, and `find("category")` on children. Some XMLTV feeds with namespaces may not parse correctly. It also lacks support for common compressed EPG feeds like `.xml.gz`.
-
-2.  **Make timezone handling explicit**
-
-    `EPGParser.parse_date()` converts offset timestamps by subtracting the offset and stores naive datetimes. Since the rest of the app also uses naive `datetime.now()`, this may appear to work, but it is brittle around DST and cross-timezone assumptions. Phase 3 should standardize on timezone-aware UTC internally and convert only in the UI layer.
-
-3.  **Strengthen M3U parsing**
-
-    The parser is reasonable, but still optimistic: only a few encodings are supported, attribute parsing assumes double quotes, entries without proper `#EXTINF` context are silently skipped, and malformed `tvg-chno` / `tvg-shift` values can invalidate entries. This is a good place to improve resilience and produce structured parse warnings.
-
-### P2 --- UX improvements that will noticeably improve the product
-
-1.  **Replace plain text channel rows with richer list items**
-
-    Right now rows are rendered as plain `QListWidgetItem` text with `[PLAYING]` and `[FAV]` markers. Phase 3 should move to custom item widgets or delegates showing channel logo, name, group, current program, and lightweight status badges. That would materially improve scanability.
-
-2.  **Upgrade the "Now Playing" controls**
-
-    The right panel has Play, Stop, Favorite, and volume only. Good Phase 3 additions would be mute, retry now, copy stream URL, fullscreen button, and possibly an "open source playlist" or "channel info" action.
-
-3.  **Add loading and empty states instead of relying on toast messages**
-
-    The app currently leans heavily on notifications and status chips. For bigger operations like playlist load and EPG refresh, add visible inline loading states and placeholders in the channel/EPG panels.
-
-4.  **Make notifications smarter**
-
-    `NotificationWidget` positions itself only when shown and does not appear to re-center on parent resize. It would be better to support queueing, deduping, resize-aware repositioning, and a consistent placement system.
-
-5.  **Improve playlist manager usability**
-
-    The dialog already has a solid structure, but it needs validation feedback, duplicate detection, last validation result, "test URL/file" behavior, and clearer active playlist affordances. It is close to useful, but still feels internal rather than productized.
-
-6.  **Expose more playback/EPG context in the UI**
-
-    The app already stores channel count, last loaded time, status, and EPG loaded timestamp. Surface more of that directly: EPG source type, last refresh source, number of programs parsed, playlist validation state, and last error.
-
-### P2 --- codebase cleanup and maintenance
-
-1.  **Fix outdated docs and packaging metadata**
-
-    The README still references the old `simple_iptv/...` structure and outdated run command, and `MANIFEST.in` points at `simple_iptv/playback/*.py` even though the actual code is now under `app/`, `core/`, `infra/`, and `ui/`. This should be cleaned up before shipping or sharing the repo further.
-
-2.  **Remove dead or legacy dependency drift**
-
-    `requirements.txt` includes both PyQt5 and PyQt6 even though the code imports PyQt6. That increases install weight and confusion for no obvious benefit.
-
-3.  **Tighten startup/bootstrap behavior**
-
-    `app/main.py` bootstraps the app cleanly enough, but it would benefit from a top-level exception hook, better startup diagnostics, and graceful handling for missing VLC or broken DB init before the main window opens.
-
-4.  **Expand test coverage beyond smoke/service tests**
-
-    Current tests cover smoke imports, parser basics, settings sync, history round-trips, and a playlist download failure path. What is missing are UI/controller/integration tests for playlist switching, retry behavior, fullscreen enter/exit, favorites/history interactions, and migration failures.
+Use [roadmap.md](roadmap.md) for active planning. Near-term work should focus on dependency/tooling cleanup, CI test coverage, packaging decisions, diagnostics, and continued playback/platform hardening.
