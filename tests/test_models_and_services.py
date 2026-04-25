@@ -9,8 +9,9 @@ import requests
 from requests.exceptions import Timeout
 
 import pytest
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtGui import QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
 
 import app.main as app_main
 from core.errors import NetworkError, ParsingError, RepositoryError, ValidationError
@@ -41,6 +42,7 @@ from ui.controllers.main_controller import MainController
 from ui.controllers.playlist_controller import PlaylistController
 from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
 from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
+from ui.widgets.channel_list_view import ChannelListModel
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.right_panel import RightPanel
@@ -596,7 +598,7 @@ def test_right_panel_always_clears_playback_detail():
     assert detail.text == ""
 
 
-def test_left_panel_renders_custom_channel_rows(qapp):
+def test_left_panel_uses_virtualized_channel_model(qapp):
     panel = LeftPanel()
     channel = Channel(
         name="News Live",
@@ -610,21 +612,47 @@ def test_left_panel_renders_custom_channel_rows(qapp):
         end_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
     )
 
-    panel.add_channels(
+    panel.set_channel_results(
         [channel],
         current_programs={"news": program},
         favorites={channel.identity_key()},
         current_channel_key=channel.identity_key(),
     )
 
-    item = panel.channel_list.item(0)
-    widget = panel.channel_list.itemWidget(item)
+    model = panel.channel_list.model()
+    index = model.index(0, 0)
 
-    assert item.data(0x0100) == channel
-    assert widget is not None
-    assert widget.title_label.text() == "News Live"
-    assert widget.subtitle_label.text() == "Morning Briefing"
-    assert "News" in widget.meta_label.text()
+    assert model.rowCount() == 1
+    assert index.data(ChannelListModel.ChannelRole) == channel
+    assert index.data(ChannelListModel.TitleRole) == "News Live"
+    assert index.data(ChannelListModel.SubtitleRole) == "Morning Briefing"
+    assert "News" in index.data(ChannelListModel.MetaRole)
+
+
+def test_channel_row_delegate_paints_offscreen_without_errors(qapp):
+    panel = LeftPanel()
+    channel = Channel(
+        name="News Live",
+        url="https://example.com/news",
+        group="News",
+        epg_id="news",
+    )
+    panel.set_channel_results([channel])
+    index = panel.channel_list.model().index(0, 0)
+    delegate = panel.channel_list.itemDelegate()
+
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, 420, 96)
+    option.font = panel.font()
+    pixmap = QPixmap(420, 96)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    try:
+        delegate.paint(painter, option, index)
+    finally:
+        painter.end()
+
+    assert not pixmap.isNull()
 
 
 def test_left_panel_loading_state(qapp):
@@ -637,7 +665,7 @@ def test_left_panel_loading_state(qapp):
     assert state.detail_label.text() == "Parsing 200 channels"
 
 
-def test_left_panel_populates_channels_incrementally(qapp):
+def test_left_panel_sets_channel_results_without_row_widgets(qapp):
     panel = LeftPanel()
     channels = [
         Channel(name=f"Channel {index}", url=f"https://example.com/{index}", group="News")
@@ -646,40 +674,33 @@ def test_left_panel_populates_channels_incrementally(qapp):
     progress: list[tuple[int, int]] = []
     completed: list[bool] = []
 
-    panel.populate_channels_incrementally(
+    panel.set_channel_results(
         channels,
-        batch_size=2,
         progress_callback=lambda loaded, total: progress.append((loaded, total)),
         completion_callback=lambda: completed.append(True),
     )
 
-    for _ in range(10):
-        qapp.processEvents()
+    qapp.processEvents()
 
-    assert panel.channel_list.count() == 5
+    assert panel.channel_list.model().rowCount() == 5
     assert progress[-1] == (5, 5)
     assert completed == [True]
 
-
-def test_left_panel_incremental_population_cancels_stale_batches(qapp):
+def test_left_panel_highlight_channel_selects_virtualized_row(qapp):
     panel = LeftPanel()
-    first_batch = [
-        Channel(name=f"Old {index}", url=f"https://example.com/old/{index}")
-        for index in range(4)
+    channels = [
+        Channel(name="First", url="https://example.com/1"),
+        Channel(name="Fresh", url="https://example.com/fresh"),
     ]
-    second_batch = [Channel(name="Fresh", url="https://example.com/fresh")]
 
-    panel.populate_channels_incrementally(first_batch, batch_size=1)
-    panel.populate_channels_incrementally(second_batch, batch_size=1)
+    panel.set_channel_results(channels)
+    panel.highlight_channel(channels[1])
 
-    for _ in range(10):
-        qapp.processEvents()
-
-    assert panel.channel_list.count() == 1
-    item = panel.channel_list.item(0)
-    channel = item.data(0x0100)
-    assert isinstance(channel, Channel)
-    assert channel.name == "Fresh"
+    current_index = panel.channel_list.currentIndex()
+    assert current_index.isValid()
+    selected = current_index.data(ChannelListModel.ChannelRole)
+    assert isinstance(selected, Channel)
+    assert selected.name == "Fresh"
 
 
 def test_notification_widget_queues_messages_and_repositions(qapp):
@@ -757,6 +778,22 @@ def test_playlist_reference_source_identity_and_safe_summary():
     assert "secret" not in xtream.to_settings_value()
 
 
+def test_xtream_credentials_normalize_password_whitespace():
+    credentials = XtreamCredentials(
+        server_url=" https://provider.example/ ",
+        username=" alice ",
+        password=" secret ",
+        output=" TS ",
+    )
+
+    normalized = credentials.normalized()
+
+    assert normalized.server_url == "https://provider.example"
+    assert normalized.username == "alice"
+    assert normalized.password == "secret"
+    assert normalized.output == "ts"
+
+
 def test_xtream_client_success_path(monkeypatch):
     client = XtreamClient(timeout=5)
     credentials = XtreamCredentials(
@@ -809,6 +846,20 @@ def test_xtream_client_success_path(monkeypatch):
     assert channels[0].channel_number == 12
     assert channels[0].url == "https://provider.example/live/alice/secret/100.ts"
     assert any("player_api.php" in call for call in calls)
+
+
+def test_xtream_client_encodes_live_stream_url_segments():
+    credentials = XtreamCredentials(
+        server_url="https://provider.example/",
+        username=" alice ",
+        password=" secret value ",
+        output="ts",
+    )
+
+    url = XtreamClient._build_live_stream_url(credentials, "12 34")
+
+    assert url == "https://provider.example/live/alice/secret%20value/12%2034.ts"
+    assert " " not in url
 
 
 def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
@@ -1118,6 +1169,30 @@ def test_playlist_repository_persists_xtream_references(tmp_path):
     assert saved.channel_count == 88
 
 
+def test_playlist_repository_normalizes_saved_xtream_credentials(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "playlist-xtream-whitespace.sqlite")
+    repository = PlaylistRepository(connection)
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url=" https://provider.example/ ",
+            username=" alice ",
+            password=" secret ",
+            output="ts",
+        ),
+    )
+
+    repository.upsert_playlist(reference)
+    saved = repository.get_playlist_by_identity("xtream::https://provider.example::alice::ts")
+
+    assert saved is not None
+    assert saved.xtream is not None
+    assert saved.xtream.server_url == "https://provider.example"
+    assert saved.xtream.username == "alice"
+    assert saved.xtream.password == "secret"
+
+
 def test_playlist_repository_migrates_legacy_rows(tmp_path):
     db_path = tmp_path / "legacy-playlists.sqlite"
     connection = SQLiteConnection(db_path=db_path)
@@ -1143,6 +1218,37 @@ def test_playlist_repository_migrates_legacy_rows(tmp_path):
     assert len(playlists) == 1
     assert playlists[0].source_type == PlaylistSourceType.URL
     assert playlists[0].path == "https://example.com/list.m3u"
+
+
+def test_playlist_repository_loads_legacy_xtream_password_without_whitespace(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "legacy-xtream-whitespace.sqlite")
+    repository = PlaylistRepository(connection)
+    reference = PlaylistReference(
+        name="Provider",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials(
+            server_url="https://provider.example",
+            username="alice",
+            password="secret",
+            output="ts",
+        ),
+    )
+    repository.upsert_playlist(reference)
+
+    with connection.get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE playlists
+            SET xtream_password = ' secret '
+            WHERE source_identity = ?
+            """,
+            (reference.source_identity,),
+        )
+
+    saved = repository.get_playlist_by_identity(reference.source_identity)
+    assert saved is not None
+    assert saved.xtream is not None
+    assert saved.xtream.password == "secret"
 
 
 def test_main_controller_restores_xtream_source():
