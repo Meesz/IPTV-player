@@ -1,8 +1,8 @@
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
-import time
 
-from PyQt6.QtCore import QEvent, QTimer, Qt
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtWidgets import QLabel
 
 
@@ -106,10 +106,15 @@ class NotificationWidget(QLabel):
             self.move((parent_rect.width() - self.width()) // 2, 28)
 
     def eventFilter(self, watched, event):
-        if watched is self.parent() and event.type() in {
-            QEvent.Type.Resize,
-            QEvent.Type.Move,
-            QEvent.Type.Show,
-        } and self.isVisible():
+        if (
+            watched is self.parent()
+            and event.type()
+            in {
+                QEvent.Type.Resize,
+                QEvent.Type.Move,
+                QEvent.Type.Show,
+            }
+            and self.isVisible()
+        ):
             self._reposition()
         return super().eventFilter(watched, event)
