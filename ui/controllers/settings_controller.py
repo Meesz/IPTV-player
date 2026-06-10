@@ -1,5 +1,7 @@
 from PyQt6.QtCore import QObject
+
 from core.services.settings_service import SettingsService
+
 
 class SettingsController(QObject):
     def __init__(self, settings_service: SettingsService):
