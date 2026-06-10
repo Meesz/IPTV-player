@@ -1,14 +1,7 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QFrame,
-    QLabel,
-    QListWidget,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QVBoxLayout, QWidget
 
 from core.models import Program
 
@@ -107,8 +100,7 @@ class EPGWidget(QFrame):
             return
 
         time_str = (
-            f"{self._format_display_time(program.start_time)} - "
-            f"{self._format_display_time(program.end_time)}"
+            f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
         )
         self.current_title.setText(program.title)
         self.current_time.setText(time_str)
