@@ -431,4 +431,6 @@ class Themes:
             QMenu::item:selected {{
                 background-color: {surface_hover};
             }}
-        """.format(**tokens)
+        """.format(
+            **tokens
+        )
