@@ -24,9 +24,9 @@ This repo is a desktop application, not a web service. There is no backend serve
 - SQLite through the standard `sqlite3` module
 - VLC playback through `python-vlc` plus the native VLC runtime
 - `requests` for playlist, EPG, and Xtream HTTP calls
-- pytest for tests; the test runner is not currently pinned in `requirements.txt`
-- Pylint in GitHub Actions
-- Black and isort are included in `requirements.txt`, but no project-specific formatter config is currently present
+- pytest for tests, pinned in `requirements-dev.txt`
+- Pylint and pytest in GitHub Actions CI
+- Black and isort for formatting, configured in `pyproject.toml`
 
 ## Requirements
 
@@ -58,7 +58,8 @@ Run from the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt       # runtime deps only
+pip install -r requirements-dev.txt   # adds pytest, black, isort, pylint
 ```
 
 On Windows PowerShell:
@@ -67,6 +68,7 @@ On Windows PowerShell:
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ## Run The App
@@ -96,7 +98,7 @@ The database is recreated on the next launch.
 | `QT_QPA_PLATFORM` | Qt/tests | unset | Set to `offscreen` for headless test runs when needed. The pytest fixture sets this if it is missing. |
 | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | VLC embedding on Linux | system-provided | Used to detect Wayland/XWayland embedding caveats. |
 
-There is no `.env` file or secret-management system in the repo.
+See `.env.example` for a template. None of these variables are required for normal use.
 
 ## Common Commands
 
@@ -104,16 +106,16 @@ Run commands from the repository root unless noted.
 
 | Task | Command |
 |------|---------|
-| Install dependencies | `pip install -r requirements.txt` |
-| Install test runner if missing | `pip install pytest` |
+| Install runtime deps | `pip install -r requirements.txt` |
+| Install dev/test deps | `pip install -r requirements-dev.txt` |
 | Run app | `python -m app.main` |
 | Run tests | `python -m pytest -q` |
+| Check formatting | `black --check . && isort --check .` |
+| Format Python files | `black . && isort .` |
 | Run CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` |
-| Format Python files | `black .` |
-| Sort imports | `isort .` |
 | Syntax/import sanity check | `python -m compileall app core infra ui tests` |
 
-No packaged build command is configured. `py2app` is listed in dependencies, but there is no checked-in packaging configuration documenting a release build. `pytest` is used by tests but is not currently listed in `requirements.txt`.
+No packaged build command is configured. Packaging/release distribution is not defined.
 
 ## Project Structure
 
@@ -137,7 +139,6 @@ No packaged build command is configured. `py2app` is listed in dependencies, but
 - Xtream passwords are stored in the local SQLite database so sources can be reloaded. Logs are expected to redact passwords, but the database itself is not encrypted.
 - There is no account system, remote sync, or multi-device state.
 - Playlist and EPG downloads use blocking HTTP calls inside worker tasks; cancellation ignores stale results but cannot always abort an in-flight network request immediately.
-- CI currently runs Pylint only. Tests are available locally but are not configured in the GitHub Actions workflow.
 - Packaging/release distribution is not defined.
 
 ## Roadmap Summary
