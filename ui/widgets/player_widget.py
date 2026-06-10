@@ -1,10 +1,9 @@
 import logging
 
-from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
 from infra.playback.vlc_backend import VLCBackend
-
 
 logger = logging.getLogger(__name__)
 
@@ -155,10 +154,13 @@ class PlayerWidget(QFrame):
 
         try:
             self.video_surface.winId()
-            self._embedding_warning = VLCBackend.bind_video_output(
-                self.player,
-                int(self.video_surface.winId()),
-            ) or ""
+            self._embedding_warning = (
+                VLCBackend.bind_video_output(
+                    self.player,
+                    int(self.video_surface.winId()),
+                )
+                or ""
+            )
             self.player.video_set_key_input(False)
             self.player.video_set_mouse_input(False)
         except Exception as exc:
@@ -277,7 +279,7 @@ class PlayerWidget(QFrame):
 
         if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
             self.reconnect_attempts += 1
-            delay = min(2 ** self.reconnect_attempts, 30)
+            delay = min(2**self.reconnect_attempts, 30)
             detail = f"Retrying in {delay}s"
             self._show_status(detail, duration=delay * 1000)
             self._set_state("reconnecting", detail)
