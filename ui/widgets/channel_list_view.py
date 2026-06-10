@@ -2,20 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PyQt6.QtCore import (
-    QAbstractListModel,
-    QEvent,
-    QModelIndex,
-    QPoint,
-    QRect,
-    QRectF,
-    QSize,
-    Qt,
-    QTimer,
-    pyqtSignal,
-)
+from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PyQt6.QtWidgets import QListView, QStyledItemDelegate, QStyle, QStyleOptionViewItem, QWidget
+from PyQt6.QtWidgets import QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from core.models import Channel, Program
 from ui.styles.themes import Themes
@@ -179,9 +168,7 @@ class ChannelRowDelegate(QStyledItemDelegate):
             selected = bool(option.state & QStyle.StateFlag.State_Selected)
             hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
 
-            background = QColor(
-                self._tokens["surface_hover"] if hovered else self._tokens["surface"]
-            )
+            background = QColor(self._tokens["surface_hover"] if hovered else self._tokens["surface"])
             border = QColor(self._tokens["border_soft"])
             if selected:
                 background = QColor(self._tokens["selection"])
