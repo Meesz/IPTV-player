@@ -10,14 +10,7 @@ import requests
 from requests.exceptions import RequestException, Timeout
 
 from core.errors import NetworkError, ParsingError, ValidationError
-from core.models import (
-    Channel,
-    ChannelQuery,
-    Playlist,
-    PlaylistReference,
-    PlaylistSourceType,
-    XtreamCredentials,
-)
+from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType, XtreamCredentials
 from infra.db.playlist_repository import PlaylistRepository
 from infra.parsers.m3u_parser import M3UParser
 from infra.providers.xtream_client import XtreamClient
@@ -117,9 +110,7 @@ class PlaylistService:
         is_url: bool | None = None,
     ) -> PlaylistReference | None:
         reference = self._resolve_reference(source, is_url=is_url)
-        return self.repository.get_playlist_by_identity(
-            self._normalize_reference(reference).source_identity
-        )
+        return self.repository.get_playlist_by_identity(self._normalize_reference(reference).source_identity)
 
     def query_channels(self, playlist: Playlist, query: ChannelQuery) -> list[Channel]:
         selected_category = query.category or "All"
@@ -136,8 +127,7 @@ class PlaylistService:
             channels = [
                 channel
                 for channel in channels
-                if search_text in channel.name.lower()
-                or search_text in channel.group.lower()
+                if search_text in channel.name.lower() or search_text in channel.group.lower()
             ]
 
         return self._sort_channels(channels, query.sort_mode, query.favorite_keys)
@@ -232,7 +222,9 @@ class PlaylistService:
             cancel_callback=cancel_callback,
             update_current=False,
         )
-        xtream = normalized.normalized_xtream() if normalized.source_type == PlaylistSourceType.XTREAM else normalized.xtream
+        xtream = (
+            normalized.normalized_xtream() if normalized.source_type == PlaylistSourceType.XTREAM else normalized.xtream
+        )
         return PlaylistReference(
             name=normalized.name,
             path=normalized.path if normalized.source_type != PlaylistSourceType.FILE else normalized.normalized_path(),
@@ -345,9 +337,7 @@ class PlaylistService:
         self._emit_progress(progress_callback, "Authenticating Xtream source")
         try:
             self.xtream_client.validate_credentials(credentials)
-            effective_credentials = (
-                self.xtream_client.last_effective_credentials or credentials
-            )
+            effective_credentials = self.xtream_client.last_effective_credentials or credentials
             logger.debug(
                 "Xtream authentication phase succeeded for %s",
                 effective_credentials.redacted_summary(),
@@ -362,9 +352,7 @@ class PlaylistService:
         self._emit_progress(progress_callback, "Fetching Xtream live channels")
         try:
             channels = self.xtream_client.fetch_live_channels(effective_credentials)
-            effective_credentials = (
-                self.xtream_client.last_effective_credentials or effective_credentials
-            )
+            effective_credentials = self.xtream_client.last_effective_credentials or effective_credentials
         except (ValidationError, NetworkError, ParsingError):
             logger.exception(
                 "Xtream live channel fetch failed for %s",
@@ -423,9 +411,7 @@ class PlaylistService:
         seen_keys: set[tuple[str, ...]] = set()
         normalized: List[PlaylistReference] = []
         for playlist in playlists:
-            normalized.append(
-                self.validate_playlist_reference(playlist, existing_keys=seen_keys)
-            )
+            normalized.append(self.validate_playlist_reference(playlist, existing_keys=seen_keys))
         return normalized
 
     def _normalize_reference(self, reference: PlaylistReference) -> PlaylistReference:
