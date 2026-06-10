@@ -1,9 +1,10 @@
+import logging
 import os
 import sys
-import logging
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
 
 class VLCBackend:
     """Manages VLC initialization and provides a clean interface for media playback."""
@@ -20,15 +21,10 @@ class VLCBackend:
 
             # Set up Windows environment first
             if sys.platform == "win32":
-                vlc_path = (
-                    "C:\\Program Files\\VideoLAN\\VLC"
-                    if is_64bits
-                    else "C:\\Program Files (x86)\\VideoLAN\\VLC"
-                )
+                vlc_path = "C:\\Program Files\\VideoLAN\\VLC" if is_64bits else "C:\\Program Files (x86)\\VideoLAN\\VLC"
                 if not os.path.exists(vlc_path):
                     error_msg = (
-                        f"Error: VLC not found in {vlc_path}\n"
-                        f"Please install {'64' if is_64bits else '32'}-bit VLC"
+                        f"Error: VLC not found in {vlc_path}\n" f"Please install {'64' if is_64bits else '32'}-bit VLC"
                     )
                     return False, error_msg
 
@@ -38,6 +34,7 @@ class VLCBackend:
             # Now try to import VLC
             try:
                 import vlc
+
                 cls._vlc = vlc
                 # Add some default options?
                 cls._instance = cls._vlc.Instance()
@@ -84,9 +81,7 @@ class VLCBackend:
             has_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or session_type == "wayland"
             display = os.environ.get("DISPLAY", "").strip()
             if has_wayland and not display:
-                warning = (
-                    "Wayland session detected without XWayland; embedded video may be unavailable."
-                )
+                warning = "Wayland session detected without XWayland; embedded video may be unavailable."
                 logger.warning(warning)
                 return warning
 
