@@ -23,6 +23,7 @@ from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.settings_controller import SettingsController
 from ui.windows.main_window import MainWindow
 
+
 def _resolve_log_level() -> int:
     raw_level = os.getenv("IPTV_LOG_LEVEL", "INFO").strip().upper()
     return getattr(logging, raw_level, logging.INFO)
