@@ -165,22 +165,14 @@ class MainWindow(QMainWindow):
         self.menu_bar.load_epg_file_action.triggered.connect(self._load_epg_file)
         self.menu_bar.load_epg_url_button.clicked.connect(self._load_epg_url)
         self.menu_bar.refresh_epg_action.triggered.connect(self._refresh_epg)
-        self.menu_bar.play_on_single_click_action.toggled.connect(
-            self._on_play_on_single_click_changed
-        )
-        self.menu_bar.show_now_playing_action.toggled.connect(
-            self._on_show_now_playing_changed
-        )
-        self.menu_bar.show_library_panel_action.toggled.connect(
-            self._on_left_panel_visibility_changed
-        )
+        self.menu_bar.play_on_single_click_action.toggled.connect(self._on_play_on_single_click_changed)
+        self.menu_bar.show_now_playing_action.toggled.connect(self._on_show_now_playing_changed)
+        self.menu_bar.show_library_panel_action.toggled.connect(self._on_left_panel_visibility_changed)
 
         self.left_panel.category_combo.currentTextChanged.connect(self._refresh_channel_list)
         self.left_panel.category_combo.currentTextChanged.connect(self._on_category_changed)
         self.left_panel.sort_combo.currentIndexChanged.connect(self._on_sort_mode_changed)
-        self.left_panel.search_current_group_checkbox.toggled.connect(
-            self._on_search_scope_changed
-        )
+        self.left_panel.search_current_group_checkbox.toggled.connect(self._on_search_scope_changed)
         self.left_panel.tabs.currentChanged.connect(self._on_active_tab_changed)
         self.left_panel.channel_list.channel_activated.connect(self._on_channel_selected)
         self.left_panel.favorites_list.itemDoubleClicked.connect(self._on_channel_selected)
@@ -201,14 +193,10 @@ class MainWindow(QMainWindow):
         self.right_panel.info_button.clicked.connect(self._on_channel_info)
         self.right_panel.volume_slider.valueChanged.connect(self._on_volume_changed)
         self.right_panel.favorite_button.clicked.connect(self._on_toggle_favorite)
-        self.right_panel.player_widget.playback_state_changed.connect(
-            self._on_playback_state_changed
-        )
+        self.right_panel.player_widget.playback_state_changed.connect(self._on_playback_state_changed)
 
     def _apply_theme(self) -> None:
-        self.setStyleSheet(
-            Themes.get_dark_theme() if self._theme == "dark" else Themes.get_light_theme()
-        )
+        self.setStyleSheet(Themes.get_dark_theme() if self._theme == "dark" else Themes.get_light_theme())
         if hasattr(self, "left_panel"):
             self.left_panel.set_theme_mode(self._theme)
 
@@ -217,9 +205,7 @@ class MainWindow(QMainWindow):
         self.menu_bar.play_on_single_click_action.setChecked(settings.play_on_single_click)
         self.menu_bar.show_now_playing_action.setChecked(settings.show_now_playing_in_list)
         self.menu_bar.show_library_panel_action.setChecked(settings.left_panel_visible)
-        self.left_panel.search_current_group_checkbox.setChecked(
-            settings.search_current_category_only
-        )
+        self.left_panel.search_current_group_checkbox.setChecked(settings.search_current_category_only)
         self.left_panel.set_sort_mode(settings.channel_sort_mode)
         self.left_panel.tabs.setCurrentIndex(settings.active_tab_index)
         self.left_panel.search_bar.setText(settings.search_text)
@@ -271,9 +257,7 @@ class MainWindow(QMainWindow):
         self.left_panel.set_channel_results(
             channels,
             current_program_resolver=self._current_programs_for_channels,
-            show_now_playing=self.settings_controller.get_setting(
-                "show_now_playing_in_list", True
-            ),
+            show_now_playing=self.settings_controller.get_setting("show_now_playing_in_list", True),
             favorites=self._favorite_keys(),
             current_channel_key=self._current_channel_key(),
             progress_callback=None if not self._playlist_render_active else self._on_playlist_render_progress,
@@ -286,9 +270,7 @@ class MainWindow(QMainWindow):
         self.left_panel.add_favorites(
             favorites,
             current_programs=program_map,
-            show_now_playing=self.settings_controller.get_setting(
-                "show_now_playing_in_list", True
-            ),
+            show_now_playing=self.settings_controller.get_setting("show_now_playing_in_list", True),
             current_channel_key=self._current_channel_key(),
         )
         if self._current_channel:
@@ -302,9 +284,7 @@ class MainWindow(QMainWindow):
         self.left_panel.add_recent_channels(
             recent,
             current_programs=program_map,
-            show_now_playing=self.settings_controller.get_setting(
-                "show_now_playing_in_list", True
-            ),
+            show_now_playing=self.settings_controller.get_setting("show_now_playing_in_list", True),
             favorites=self._favorite_keys(),
             current_channel_key=self._current_channel_key(),
         )
@@ -392,16 +372,12 @@ class MainWindow(QMainWindow):
                 {
                     "last_playlist_path": reference.path,
                     "last_playlist": reference.path,
-                    "last_playlist_is_url": "true"
-                    if reference.source_type == PlaylistSourceType.URL
-                    else "false",
+                    "last_playlist_is_url": "true" if reference.source_type == PlaylistSourceType.URL else "false",
                 }
             )
         self.settings_controller.save_settings(settings_payload)
 
-        existing_reference = self.playlist_controller.get_saved_playlist_by_identity(
-            reference.source_identity
-        )
+        existing_reference = self.playlist_controller.get_saved_playlist_by_identity(reference.source_identity)
         if existing_reference:
             reference_name = existing_reference.name
         elif reference.source_type == PlaylistSourceType.URL:
@@ -572,9 +548,7 @@ class MainWindow(QMainWindow):
 
         self.right_panel.favorite_button.setEnabled(True)
         is_favorite = self.favorites_controller.is_favorite(self._current_channel)
-        self.right_panel.favorite_button.setText(
-            "Unfavorite" if is_favorite else "Favorite"
-        )
+        self.right_panel.favorite_button.setText("Unfavorite" if is_favorite else "Favorite")
 
     def _on_play_button(self) -> None:
         if self._current_channel:
@@ -645,9 +619,7 @@ class MainWindow(QMainWindow):
     def _on_sort_mode_changed(self, *_args) -> None:
         if self._playlist_loading_active:
             return
-        self.settings_controller.save_setting(
-            "channel_sort_mode", self.left_panel.sort_combo.currentData()
-        )
+        self.settings_controller.save_setting("channel_sort_mode", self.left_panel.sort_combo.currentData())
         self._refresh_channel_list()
 
     def _on_category_changed(self, category: str) -> None:
@@ -809,9 +781,7 @@ class MainWindow(QMainWindow):
         self.right_panel.control_bar.setEnabled(enabled)
 
     def _on_playlist_render_progress(self, loaded_count: int, total_count: int) -> None:
-        self.loading_overlay.update_detail(
-            f"Rendering channel list ({loaded_count:,} / {total_count:,})"
-        )
+        self.loading_overlay.update_detail(f"Rendering channel list ({loaded_count:,} / {total_count:,})")
         self._set_status_chip(
             self.playlist_status_label,
             f"Playlist: rendering {loaded_count:,}/{total_count:,}",
@@ -826,9 +796,7 @@ class MainWindow(QMainWindow):
             self._set_main_interaction_enabled(True)
             return
 
-        playlist_name = (
-            playlist.source_reference.display_label() if playlist.source_reference else playlist.name
-        )
+        playlist_name = playlist.source_reference.display_label() if playlist.source_reference else playlist.name
         self._persist_playlist_state(playlist)
         self._refresh_favorites(refresh_channels=False)
         self._refresh_recent_channels()
@@ -849,6 +817,4 @@ class MainWindow(QMainWindow):
                 NotificationType.WARNING,
             )
         else:
-            self.show_notification(
-                f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS
-            )
+            self.show_notification(f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS)
