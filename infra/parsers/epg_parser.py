@@ -38,9 +38,7 @@ class EPGParser:
         normalized_tz = tz.replace(":", "")
         sign = 1 if normalized_tz.startswith("+") else -1
         offset = sign * (int(normalized_tz[1:3]) * 60 + int(normalized_tz[3:5]))
-        aware = dt.replace(
-            tzinfo=timezone(timedelta(minutes=offset))
-        )
+        aware = dt.replace(tzinfo=timezone(timedelta(minutes=offset)))
         return aware.astimezone(timezone.utc)
 
     @staticmethod
@@ -110,7 +108,9 @@ class EPGParser:
         if not epg_data:
             raise ValueError("No programs found in EPG file")
 
-        logger.info("EPG loaded: %s channels, %s programs", len(epg_data), sum(len(v.programs) for v in epg_data.values()))
+        logger.info(
+            "EPG loaded: %s channels, %s programs", len(epg_data), sum(len(v.programs) for v in epg_data.values())
+        )
         return epg_data, warnings
 
     @staticmethod
