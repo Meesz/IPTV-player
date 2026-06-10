@@ -1,10 +1,11 @@
-import sqlite3
 import logging
-from pathlib import Path
-from typing import Optional, Generator
+import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Generator, Optional
 
 logger = logging.getLogger(__name__)
+
 
 class SQLiteConnection:
     """Manages SQLite database connection and initialization."""
@@ -14,7 +15,7 @@ class SQLiteConnection:
             self.db_path = Path.home() / ".simple_iptv" / "database.db"
         else:
             self.db_path = db_path
-        
+
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
 
@@ -43,7 +44,8 @@ class SQLiteConnection:
                 conn.execute("PRAGMA cache_size=-2000")
                 conn.execute("PRAGMA temp_store=MEMORY")
 
-                conn.executescript("""
+                conn.executescript(
+                    """
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
                         value TEXT
@@ -110,7 +112,8 @@ class SQLiteConnection:
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('selected_category', 'All');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('search_text', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('left_panel_visible', 'true');
-                """)
+                """
+                )
                 self._ensure_playlists_table(conn)
                 self._ensure_favorites_table(conn)
                 logger.info("Database initialized successfully")
@@ -120,26 +123,16 @@ class SQLiteConnection:
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
-        columns = {
-            row["name"]
-            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-        }
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
         if column_name in columns:
             return
-        conn.execute(
-            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
-        )
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
     @staticmethod
     def _ensure_favorites_table(conn: sqlite3.Connection) -> None:
-        columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(favorites)").fetchall()
-        }
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(favorites)").fetchall()}
         if "playlist_path" in columns:
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS ix_favorites_identity ON favorites (url, playlist_path)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_favorites_identity ON favorites (url, playlist_path)")
             return
 
         conn.executescript(
@@ -166,10 +159,7 @@ class SQLiteConnection:
 
     @staticmethod
     def _ensure_playlists_table(conn: sqlite3.Connection) -> None:
-        columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(playlists)").fetchall()
-        }
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(playlists)").fetchall()}
         if not columns:
             conn.executescript(
                 """
@@ -195,7 +185,14 @@ class SQLiteConnection:
             )
             return
 
-        if {"source_type", "source_identity", "xtream_server_url", "xtream_username", "xtream_password", "xtream_output"} <= columns:
+        if {
+            "source_type",
+            "source_identity",
+            "xtream_server_url",
+            "xtream_username",
+            "xtream_password",
+            "xtream_output",
+        } <= columns:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_source_identity ON playlists (source_identity)"
             )
@@ -211,9 +208,7 @@ class SQLiteConnection:
             "last_status" if "last_status" in columns else "'' AS last_status",
             "last_error" if "last_error" in columns else "'' AS last_error",
         ]
-        legacy_rows = conn.execute(
-            f"SELECT {', '.join(select_fields)} FROM playlists"
-        ).fetchall()
+        legacy_rows = conn.execute(f"SELECT {', '.join(select_fields)} FROM playlists").fetchall()
 
         conn.executescript(
             """
