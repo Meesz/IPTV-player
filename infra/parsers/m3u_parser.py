@@ -123,9 +123,7 @@ class M3UParser:
                 pending_channel = None
 
         if not playlist.channels:
-            raise ParsingError(
-                "Playlist contains no channels"
-            )
+            raise ParsingError("Playlist contains no channels")
 
         if parse_warnings:
             logger.warning(
