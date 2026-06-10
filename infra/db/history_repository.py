@@ -6,7 +6,6 @@ from core.errors import RepositoryError
 from core.models import Channel
 from infra.db.sqlite_connection import SQLiteConnection
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -74,9 +73,7 @@ class HistoryRepository:
     def get_last_played_at(self) -> datetime | None:
         try:
             with self.db.get_connection() as conn:
-                row = conn.execute(
-                    "SELECT MAX(played_at) AS played_at FROM recent_channels"
-                ).fetchone()
+                row = conn.execute("SELECT MAX(played_at) AS played_at FROM recent_channels").fetchone()
                 if not row or row["played_at"] is None:
                     return None
                 return datetime.fromtimestamp(row["played_at"])
