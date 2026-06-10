@@ -1,7 +1,7 @@
 import logging
 
-from infra.db.sqlite_connection import SQLiteConnection
 from core.errors import RepositoryError
+from infra.db.sqlite_connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +13,7 @@ class SettingsRepository:
     def save_setting(self, key: str, value: str) -> None:
         try:
             with self.db.get_connection() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                    (key, value)
-                )
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         except Exception as exc:
             logger.error("Failed to save setting %s: %s", key, exc)
             raise RepositoryError(f"Failed to save setting '{key}'") from exc
