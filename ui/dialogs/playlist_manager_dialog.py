@@ -38,9 +38,7 @@ class PlaylistManagerDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         self._active_playlist_path = ""
-        self._playlist_validator: Callable[
-            [PlaylistReference], tuple[PlaylistReference | None, str]
-        ] | None = None
+        self._playlist_validator: Callable[[PlaylistReference], tuple[PlaylistReference | None, str]] | None = None
         self._playlist_tester: Callable[..., PlaylistReference] | None = None
         self._thread_pool = QThreadPool.globalInstance() or QThreadPool()
         self._tester_task_id = 0
@@ -180,16 +178,12 @@ class PlaylistManagerDialog(QDialog):
         self._set_details(data if isinstance(data, PlaylistReference) else None)
 
     def _add_playlist_file(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open M3U Playlist", "", "M3U Files (*.m3u *.m3u8)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open M3U Playlist", "", "M3U Files (*.m3u *.m3u8)")
         if file_path:
             self._add_playlist_entry(file_path, is_url=False)
 
     def _add_playlist_url(self) -> None:
-        url, ok = QInputDialog.getText(
-            self, "Add Playlist URL", "Enter the M3U playlist URL:"
-        )
+        url, ok = QInputDialog.getText(self, "Add Playlist URL", "Enter the M3U playlist URL:")
         if ok and url:
             self._add_playlist_entry(url.strip(), is_url=True)
 
@@ -240,10 +234,7 @@ class PlaylistManagerDialog(QDialog):
         if not current_item:
             return
         playlist = current_item.data(Qt.ItemDataRole.UserRole)
-        if (
-            isinstance(playlist, PlaylistReference)
-            and playlist.source_identity == self._active_playlist_path
-        ):
+        if isinstance(playlist, PlaylistReference) and playlist.source_identity == self._active_playlist_path:
             self._show_warning("The active playlist cannot be removed.")
             return
         confirm = QMessageBox.question(
@@ -275,9 +266,7 @@ class PlaylistManagerDialog(QDialog):
         data = current_item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(data, PlaylistReference):
             return
-        name, ok = QInputDialog.getText(
-            self, "Edit Playlist Name", "Enter new name:", text=data.name
-        )
+        name, ok = QInputDialog.getText(self, "Edit Playlist Name", "Enter new name:", text=data.name)
         if not ok or not name:
             return
 
@@ -298,10 +287,7 @@ class PlaylistManagerDialog(QDialog):
             playlist = self._validated_playlist(dialog.to_reference())
             if not playlist:
                 return
-            if (
-                data.source_identity == self._active_playlist_path
-                and playlist.identity_key() != data.identity_key()
-            ):
+            if data.source_identity == self._active_playlist_path and playlist.identity_key() != data.identity_key():
                 self._show_warning("The active playlist source cannot be changed while it is active.")
                 return
             if self._has_duplicate(playlist, ignore_item=current_item):
@@ -509,11 +495,7 @@ class PlaylistManagerDialog(QDialog):
         if self._tester_worker is None or task_id != self._tester_task_id:
             return
         current_item = self.playlist_list.currentItem()
-        playlist = (
-            current_item.data(Qt.ItemDataRole.UserRole)
-            if current_item is not None
-            else None
-        )
+        playlist = current_item.data(Qt.ItemDataRole.UserRole) if current_item is not None else None
         if isinstance(playlist, PlaylistReference):
             self._validation_messages[playlist.source_identity] = ("error", message)
             self._set_details(playlist)
@@ -559,12 +541,8 @@ class PlaylistManagerDialog(QDialog):
         }
         self.detail_source.setText(f"Source: {source_map.get(playlist.source_type, 'Unknown')}")
         self.detail_path.setText(f"Path: {playlist.source_summary()}")
-        self.detail_channels.setText(
-            f"Channels: {playlist.channel_count if playlist.channel_count else 'Unknown'}"
-        )
-        self.detail_loaded.setText(
-            f"Last loaded: {playlist.last_loaded_at or 'Never loaded'}"
-        )
+        self.detail_channels.setText(f"Channels: {playlist.channel_count if playlist.channel_count else 'Unknown'}")
+        self.detail_loaded.setText(f"Last loaded: {playlist.last_loaded_at or 'Never loaded'}")
         status = playlist.last_status or "Not validated yet"
         if playlist.source_identity == self._active_playlist_path:
             status = f"{status} / Active"
