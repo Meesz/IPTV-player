@@ -5,7 +5,6 @@ from core.errors import RepositoryError
 from core.models import PlaylistReference, PlaylistSourceType, XtreamCredentials
 from infra.db.sqlite_connection import SQLiteConnection
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -195,7 +194,11 @@ class PlaylistRepository:
         return (
             playlist.name,
             playlist.source_type.value,
-            playlist.normalized_url() if playlist.source_type == PlaylistSourceType.URL else playlist.normalized_path() if playlist.source_type == PlaylistSourceType.FILE else "",
+            (
+                playlist.normalized_url()
+                if playlist.source_type == PlaylistSourceType.URL
+                else playlist.normalized_path() if playlist.source_type == PlaylistSourceType.FILE else ""
+            ),
             1 if playlist.source_type == PlaylistSourceType.URL else 0,
             playlist.source_identity,
             xtream.server_url if xtream else "",
