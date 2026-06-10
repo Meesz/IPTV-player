@@ -11,7 +11,6 @@ from requests.exceptions import ConnectionError, HTTPError, RequestException, SS
 from core.errors import NetworkError, ParsingError, ValidationError
 from core.models import Channel, XtreamCredentials
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -125,10 +124,7 @@ class XtreamClient:
                     group=group_name,
                     logo=str(item.get("stream_icon", "") or "").strip(),
                     epg_id=str(
-                        item.get("epg_channel_id")
-                        or item.get("epg_channel")
-                        or item.get("channel_id")
-                        or ""
+                        item.get("epg_channel_id") or item.get("epg_channel") or item.get("channel_id") or ""
                     ).strip(),
                     channel_number=channel_number,
                 )
@@ -180,9 +176,7 @@ class XtreamClient:
                 action,
                 credentials.redacted_summary(),
                 getattr(response, "status_code", "unknown"),
-                getattr(getattr(response, "headers", {}), "get", lambda *_args, **_kwargs: "")(
-                    "Content-Type", ""
-                ),
+                getattr(getattr(response, "headers", {}), "get", lambda *_args, **_kwargs: "")("Content-Type", ""),
             )
             return (
                 self._parse_json(response, source=credentials.redacted_summary(), action=action),
@@ -232,9 +226,7 @@ class XtreamClient:
                         "Xtream HTTPS retry also failed for %s",
                         fallback_credentials.redacted_summary(),
                     )
-                    raise NetworkError(
-                        "Failed to contact Xtream source over HTTP or HTTPS"
-                    ) from exc
+                    raise NetworkError("Failed to contact Xtream source over HTTP or HTTPS") from exc
             logger.warning(
                 "Xtream %s request failed for %s: %s",
                 action,
@@ -310,10 +302,7 @@ class XtreamClient:
         username = quote(normalized.username, safe="")
         password = quote(normalized.password, safe="")
         encoded_stream_id = quote(str(stream_id).strip(), safe="")
-        return (
-            f"{normalized.server_url}/live/"
-            f"{username}/{password}/{encoded_stream_id}.{normalized.output}"
-        )
+        return f"{normalized.server_url}/live/" f"{username}/{password}/{encoded_stream_id}.{normalized.output}"
 
     @staticmethod
     def _to_int(value: Any) -> int:
