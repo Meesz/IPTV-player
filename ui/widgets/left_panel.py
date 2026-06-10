@@ -22,10 +22,9 @@ from PyQt6.QtWidgets import (
 )
 
 from core.models import Channel, Program
+from ui.widgets.channel_list_view import ChannelListView
 from ui.widgets.epg_widget import EPGWidget
 from ui.widgets.search_bar import SearchBar
-from ui.widgets.channel_list_view import ChannelListView
-
 
 SORT_OPTIONS = [
     ("A-Z", "name_asc"),
@@ -596,8 +595,7 @@ class LeftPanel(QFrame):
         if show_now_playing and program:
             subtitle = program.title
             meta_parts.append(
-                f"{self._format_display_time(program.start_time)} - "
-                f"{self._format_display_time(program.end_time)}"
+                f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
             )
             meta_parts.append(group_name)
 
