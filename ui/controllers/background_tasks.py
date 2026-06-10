@@ -31,9 +31,7 @@ class BackgroundTask(QRunnable):
         try:
             result = self.fn(
                 *self.args,
-                progress_callback=lambda message: self.signals.progress.emit(
-                    self.task_id, message
-                ),
+                progress_callback=lambda message: self.signals.progress.emit(self.task_id, message),
                 **self.kwargs,
             )
             self.signals.succeeded.emit(self.task_id, result)
