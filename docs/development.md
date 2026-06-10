@@ -7,7 +7,7 @@ Use a virtual environment from the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # includes runtime + test/lint/format tools
 ```
 
 On Windows PowerShell:
@@ -15,18 +15,12 @@ On Windows PowerShell:
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 Install native VLC separately. The Python package `python-vlc` is only a binding.
 
-Tests use pytest, but `pytest` is not currently pinned in `requirements.txt`. Install it separately if your environment does not already provide it:
-
-```bash
-pip install pytest
-```
-
-The GitHub Actions lint workflow uses Python 3.12. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
+The GitHub Actions workflows use Python 3.12. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
 
 ## Run
 
@@ -44,7 +38,7 @@ The app writes logs to `iptv_player.log` in the current working directory and st
 | `QT_QPA_PLATFORM=offscreen` | Useful for headless Qt test runs. The pytest fixture sets it if missing. |
 | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | Read by VLC embedding code on Linux to detect Wayland/XWayland caveats. |
 
-There is no `.env` file.
+See `.env.example` for available variables. The app does not require a `.env` file — these variables are optional overrides.
 
 ## Commands
 
@@ -52,13 +46,12 @@ Run from repo root.
 
 | Task | Command | Notes |
 |------|---------|-------|
-| Install | `pip install -r requirements.txt` | Installs app, lint, and format dependencies. |
-| Install pytest if missing | `pip install pytest` | Test runner is not pinned in `requirements.txt`. |
+| Install dev deps | `pip install -r requirements-dev.txt` | Includes runtime + pytest, pylint, black, isort. |
 | Run app | `python -m app.main` | Requires native VLC for playback. |
 | Tests | `python -m pytest -q` | Requires PyQt6 import support. |
 | CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` | Matches `.github/workflows/pylint.yml`. |
-| Format | `black .` | Tool is installed, but no project config is checked in. |
-| Sort imports | `isort .` | Tool is installed, but no project config is checked in. |
+| Format | `black . && isort .` | Config lives in `pyproject.toml` (line-length 120, isort black profile). |
+| Check formatting | `black --check . && isort --check .` | Useful in CI or before committing. |
 | Syntax check | `python -m compileall app core infra ui tests` | Useful when Qt runtime is unavailable. |
 
 No packaging build command is configured. Do not document or automate release packaging until the repo has an explicit packaging configuration.
@@ -86,7 +79,7 @@ Current tests cover:
 - selected PyQt widget and delegate behavior
 - startup and VLC-unavailable dialog behavior
 
-CI currently runs Pylint only on pull requests. Local test coverage is important because the workflow does not run pytest yet.
+CI runs both Pylint and pytest on pull requests (`.github/workflows/pylint.yml` and `.github/workflows/tests.yml`).
 
 ## Debugging Tips
 
