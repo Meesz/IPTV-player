@@ -5,25 +5,16 @@ import pathlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-import requests
-from requests.exceptions import Timeout
-
 import pytest
+import requests
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
+from requests.exceptions import Timeout
 
 import app.main as app_main
 from core.errors import NetworkError, ParsingError, RepositoryError, ValidationError
-from core.models import (
-    Channel,
-    Playlist,
-    PlaylistReference,
-    PlaylistSourceType,
-    Program,
-    Settings,
-    XtreamCredentials,
-)
+from core.models import Channel, Playlist, PlaylistReference, PlaylistSourceType, Program, Settings, XtreamCredentials
 from core.services.epg_service import EPGService
 from core.services.history_service import HistoryService
 from core.services.playlist_service import PlaylistService
@@ -45,8 +36,8 @@ from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
 from ui.widgets.channel_list_view import ChannelListModel
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.notification import NotificationType, NotificationWidget
-from ui.widgets.right_panel import RightPanel
 from ui.widgets.player_widget import PlayerWidget
+from ui.widgets.right_panel import RightPanel
 
 
 @pytest.fixture(scope="session")
@@ -56,6 +47,7 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
+
 
 class _DummyPlaylistRepository:
     def __init__(self):
@@ -117,6 +109,7 @@ class _FailingEPGRepository:
 
     def get_upcoming_programs(self, _channel_id, limit=5):
         return []
+
 
 def test_settings_round_trip():
     settings = Settings.defaults()
@@ -291,9 +284,7 @@ def test_epg_parser_supports_namespaces_and_gzip(tmp_path):
 
     assert warnings == []
     assert parsed["news.us"].programs[0].title == "Breaking News"
-    assert parsed["news.us"].programs[0].start_time == datetime(
-        2026, 3, 31, 22, 0, tzinfo=timezone.utc
-    )
+    assert parsed["news.us"].programs[0].start_time == datetime(2026, 3, 31, 22, 0, tzinfo=timezone.utc)
 
 
 def test_epg_service_keeps_persistence_errors_distinct(tmp_path):
@@ -375,6 +366,7 @@ def test_settings_service_persists_extended_ui_state(tmp_path):
     assert reloaded.get_setting("selected_category") == "News"
     assert reloaded.get_setting("search_text") == "sports"
     assert reloaded.get_setting("left_panel_visible") is False
+
 
 def test_recent_history_round_trip(tmp_path):
     connection = SQLiteConnection(db_path=tmp_path / "history.sqlite")
@@ -668,8 +660,7 @@ def test_left_panel_loading_state(qapp):
 def test_left_panel_sets_channel_results_without_row_widgets(qapp):
     panel = LeftPanel()
     channels = [
-        Channel(name=f"Channel {index}", url=f"https://example.com/{index}", group="News")
-        for index in range(5)
+        Channel(name=f"Channel {index}", url=f"https://example.com/{index}", group="News") for index in range(5)
     ]
     progress: list[tuple[int, int]] = []
     completed: list[bool] = []
@@ -685,6 +676,7 @@ def test_left_panel_sets_channel_results_without_row_widgets(qapp):
     assert panel.channel_list.model().rowCount() == 5
     assert progress[-1] == (5, 5)
     assert completed == [True]
+
 
 def test_left_panel_highlight_channel_selects_virtualized_row(qapp):
     panel = LeftPanel()
@@ -1043,9 +1035,7 @@ def test_xtream_client_reports_dual_transport_failure(monkeypatch):
     monkeypatch.setattr(
         client.session,
         "get",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            requests.exceptions.ConnectionError("reset")
-        ),
+        lambda *args, **kwargs: (_ for _ in ()).throw(requests.exceptions.ConnectionError("reset")),
     )
 
     with pytest.raises(NetworkError, match="HTTP or HTTPS"):
@@ -1401,6 +1391,9 @@ def test_main_warns_when_vlc_is_unavailable(monkeypatch):
     )
 
     assert app_main.main() == 0
-    assert ("VLC Unavailable", "Playback will be unavailable until VLC is installed and importable.\n\nVLC backend unavailable") in dialogs
+    assert (
+        "VLC Unavailable",
+        "Playback will be unavailable until VLC is installed and importable.\n\nVLC backend unavailable",
+    ) in dialogs
     assert calls["window_shown"] is True
     assert calls["exec_called"] is True
