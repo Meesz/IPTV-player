@@ -1,14 +1,7 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QSlider,
-    QVBoxLayout,
-)
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
 
 from core.models import Channel, Program
 from ui.widgets.player_widget import PlayerWidget
@@ -180,9 +173,7 @@ class RightPanel(QFrame):
         if not channel:
             self.channel_title_label.setText("Nothing selected")
             self.channel_meta_label.setText("Load a playlist and pick a channel to begin.")
-            self.program_title_label.setText(
-                "Program information appears here when EPG is available."
-            )
+            self.program_title_label.setText("Program information appears here when EPG is available.")
             self.program_description_label.setText("")
             self.stream_detail_label.setText("No source selected.")
             self.playback_detail_label.setText("Awaiting stream selection.")
@@ -201,20 +192,15 @@ class RightPanel(QFrame):
 
         if program:
             schedule = (
-                f"{self._format_display_time(program.start_time)} - "
-                f"{self._format_display_time(program.end_time)}"
+                f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
             )
             self.program_title_label.setText(f"{program.title} ({schedule})")
-            self.program_description_label.setText(
-                program.description or "No program description available."
-            )
+            self.program_description_label.setText(program.description or "No program description available.")
         else:
             self.program_title_label.setText("No live guide information for this channel.")
             self.program_description_label.setText("Load EPG data to enrich channel context.")
 
-        self.stream_detail_label.setText(
-            f"Source playlist: {playlist_name}  |  Stream URL ready to copy"
-        )
+        self.stream_detail_label.setText(f"Source playlist: {playlist_name}  |  Stream URL ready to copy")
 
     def set_source_context(self, playlist_label: str) -> None:
         self._current_stream_url = ""
