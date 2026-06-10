@@ -19,9 +19,7 @@ class SettingsService:
                 is_muted=self._to_bool(self.repository.get_setting("is_muted", "false")),
                 last_playlist_path=self.repository.get_setting(
                     "last_playlist_path",
-                    self.repository.get_setting(
-                        "last_playlist", self._settings.last_playlist_path
-                    ),
+                    self.repository.get_setting("last_playlist", self._settings.last_playlist_path),
                 ),
                 last_playlist_source_type=self.repository.get_setting(
                     "last_playlist_source_type", self._settings.last_playlist_source_type
@@ -29,63 +27,29 @@ class SettingsService:
                 last_playlist_identity=self.repository.get_setting(
                     "last_playlist_identity", self._settings.last_playlist_identity
                 ),
-                last_channel_url=self.repository.get_setting(
-                    "last_channel_url", self._settings.last_channel_url
-                ),
-                last_channel_group=self.repository.get_setting(
-                    "last_channel_group", self._settings.last_channel_group
-                ),
+                last_channel_url=self.repository.get_setting("last_channel_url", self._settings.last_channel_url),
+                last_channel_group=self.repository.get_setting("last_channel_group", self._settings.last_channel_group),
                 last_epg_path=self.repository.get_setting(
                     "last_epg_path",
-                    self.repository.get_setting(
-                        "last_epg_file", self._settings.last_epg_path
-                    ),
+                    self.repository.get_setting("last_epg_file", self._settings.last_epg_path),
                 ),
-                last_epg_url=self.repository.get_setting(
-                    "last_epg_url", self.repository.get_setting("epg_url", "")
-                ),
-                last_epg_loaded_at=self.repository.get_setting(
-                    "last_epg_loaded_at", self._settings.last_epg_loaded_at
-                ),
-                window_width=int(
-                    self.repository.get_setting(
-                        "window_width", str(self._settings.window_width)
-                    )
-                ),
-                window_height=int(
-                    self.repository.get_setting(
-                        "window_height", str(self._settings.window_height)
-                    )
-                ),
-                play_on_single_click=self._to_bool(
-                    self.repository.get_setting("play_on_single_click", "false")
-                ),
-                show_now_playing_in_list=self._to_bool(
-                    self.repository.get_setting("show_now_playing_in_list", "true")
-                ),
+                last_epg_url=self.repository.get_setting("last_epg_url", self.repository.get_setting("epg_url", "")),
+                last_epg_loaded_at=self.repository.get_setting("last_epg_loaded_at", self._settings.last_epg_loaded_at),
+                window_width=int(self.repository.get_setting("window_width", str(self._settings.window_width))),
+                window_height=int(self.repository.get_setting("window_height", str(self._settings.window_height))),
+                play_on_single_click=self._to_bool(self.repository.get_setting("play_on_single_click", "false")),
+                show_now_playing_in_list=self._to_bool(self.repository.get_setting("show_now_playing_in_list", "true")),
                 search_current_category_only=self._to_bool(
                     self.repository.get_setting("search_current_category_only", "true")
                 ),
-                channel_sort_mode=self.repository.get_setting(
-                    "channel_sort_mode", self._settings.channel_sort_mode
-                ),
-                splitter_sizes=self._parse_splitter_sizes(
-                    self.repository.get_setting("splitter_sizes", "")
-                ),
+                channel_sort_mode=self.repository.get_setting("channel_sort_mode", self._settings.channel_sort_mode),
+                splitter_sizes=self._parse_splitter_sizes(self.repository.get_setting("splitter_sizes", "")),
                 active_tab_index=int(
-                    self.repository.get_setting(
-                        "active_tab_index", str(self._settings.active_tab_index)
-                    )
+                    self.repository.get_setting("active_tab_index", str(self._settings.active_tab_index))
                 ),
-                selected_category=self.repository.get_setting(
-                    "selected_category", self._settings.selected_category
-                ),
-                search_text=self.repository.get_setting(
-                    "search_text", self._settings.search_text
-                ),
-                left_panel_visible=self._to_bool(
-                    self.repository.get_setting("left_panel_visible", "true")
-                ),
+                selected_category=self.repository.get_setting("selected_category", self._settings.selected_category),
+                search_text=self.repository.get_setting("search_text", self._settings.search_text),
+                left_panel_visible=self._to_bool(self.repository.get_setting("left_panel_visible", "true")),
             )
         except RepositoryError:
             self._settings = Settings.defaults()
@@ -102,12 +66,8 @@ class SettingsService:
         self.repository.save_setting("last_playlist", self._settings.last_playlist_path)
         self.repository.save_setting("last_epg_file", self._settings.last_epg_path)
         self.repository.save_setting("epg_url", self._settings.last_epg_url)
-        self.repository.save_setting(
-            "last_playlist_source_type", self._settings.last_playlist_source_type
-        )
-        self.repository.save_setting(
-            "last_playlist_identity", self._settings.last_playlist_identity
-        )
+        self.repository.save_setting("last_playlist_source_type", self._settings.last_playlist_source_type)
+        self.repository.save_setting("last_playlist_identity", self._settings.last_playlist_identity)
         playlist_is_url = self.repository.get_setting("last_playlist_is_url", "false")
         normalized_value = str(playlist_is_url).strip().lower()
         is_recognized_bool = normalized_value in {"0", "1", "true", "false", "yes", "no", "on", "off"}
@@ -157,9 +117,7 @@ class SettingsService:
 
         if normalized_key == "last_playlist_path":
             source_type = (
-                PlaylistSourceType.URL
-                if str(value).startswith(("http://", "https://"))
-                else PlaylistSourceType.FILE
+                PlaylistSourceType.URL if str(value).startswith(("http://", "https://")) else PlaylistSourceType.FILE
             )
             source_identity = PlaylistReference(
                 name="Playlist",
@@ -186,9 +144,7 @@ class SettingsService:
             )
         elif normalized_key == "last_playlist":
             source_type = (
-                PlaylistSourceType.URL
-                if str(value).startswith(("http://", "https://"))
-                else PlaylistSourceType.FILE
+                PlaylistSourceType.URL if str(value).startswith(("http://", "https://")) else PlaylistSourceType.FILE
             )
             source_identity = PlaylistReference(
                 name="Playlist",
@@ -214,9 +170,7 @@ class SettingsService:
                 source_type.value,
             )
         elif normalized_key == "last_playlist_source_type":
-            self._settings = self._settings.with_updates(
-                last_playlist_source_type=normalized_value
-            )
+            self._settings = self._settings.with_updates(last_playlist_source_type=normalized_value)
         elif normalized_key == "last_playlist_identity":
             self._settings = self._settings.with_updates(last_playlist_identity=normalized_value)
         elif normalized_key == "last_epg_path":
