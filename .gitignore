@@ -160,3 +160,4 @@ repomix-output.*
 # History files
 .simple_iptv/
 *.json
+.claude
