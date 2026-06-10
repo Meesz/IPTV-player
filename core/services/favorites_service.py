@@ -1,6 +1,8 @@
 from typing import List
+
 from core.models import Channel
 from infra.db.favorites_repository import FavoritesRepository
+
 
 class FavoritesService:
     def __init__(self, repository: FavoritesRepository):
