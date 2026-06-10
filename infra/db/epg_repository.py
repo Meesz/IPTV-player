@@ -89,12 +89,8 @@ class EPGRepository:
                 if row:
                     return Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(
-                            row["start_time"], tz=timezone.utc
-                        ),
-                        end_time=datetime.fromtimestamp(
-                            row["end_time"], tz=timezone.utc
-                        ),
+                        start_time=datetime.fromtimestamp(row["start_time"], tz=timezone.utc),
+                        end_time=datetime.fromtimestamp(row["end_time"], tz=timezone.utc),
                         description=row["description"],
                     )
             return None
@@ -128,12 +124,8 @@ class EPGRepository:
                 return [
                     Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(
-                            row["start_time"], tz=timezone.utc
-                        ),
-                        end_time=datetime.fromtimestamp(
-                            row["end_time"], tz=timezone.utc
-                        ),
+                        start_time=datetime.fromtimestamp(row["start_time"], tz=timezone.utc),
+                        end_time=datetime.fromtimestamp(row["end_time"], tz=timezone.utc),
                         description=row["description"],
                     )
                     for row in cursor.fetchall()
