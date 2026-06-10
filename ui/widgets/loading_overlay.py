@@ -50,4 +50,3 @@ class LoadingOverlay(QFrame):
 
     def update_detail(self, detail: str) -> None:
         self.detail_label.setText(detail)
-
