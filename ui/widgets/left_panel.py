@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap
@@ -222,15 +222,11 @@ class LeftPanel(QFrame):
             "Channels",
         )
         self.tabs.addTab(
-            self._wrap_collection(
-                self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL
-            ),
+            self._wrap_collection(self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL),
             "Favorites",
         )
         self.tabs.addTab(
-            self._wrap_collection(
-                self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL
-            ),
+            self._wrap_collection(self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL),
             "Recent",
         )
         layout.addWidget(self.tabs, stretch=1)
@@ -280,7 +276,7 @@ class LeftPanel(QFrame):
             empty_detail=_EMPTY_CHANNELS_DETAIL,
         )
 
-    def set_channel_results(
+    def set_channel_results(  # noqa: PLR0913  (cohesive view-update options)
         self,
         channels: list[Channel],
         *,
@@ -342,17 +338,12 @@ class LeftPanel(QFrame):
         current_programs = current_programs or {}
         if not channels:
             self.favorites_list.clear_channels()
-            self._set_collection_state(
-                self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL
-            )
+            self._set_collection_state(self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL)
             return
 
         self._show_collection(self.favorites_list)
         favorites_set = {channel.identity_key() for channel in channels}
-        meta_suffixes = {
-            i: f"Source {Path(ch.playlist_path or 'active').name}"
-            for i, ch in enumerate(channels)
-        }
+        meta_suffixes = {i: f"Source {Path(ch.playlist_path or 'active').name}" for i, ch in enumerate(channels)}
         self.favorites_list.set_channels(
             channels,
             favorite_keys=favorites_set,
@@ -376,9 +367,7 @@ class LeftPanel(QFrame):
         current_programs = current_programs or {}
         if not channels:
             self.recent_list.clear_channels()
-            self._set_collection_state(
-                self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL
-            )
+            self._set_collection_state(self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL)
             return
 
         self._show_collection(self.recent_list)
