@@ -1,9 +1,45 @@
-[tool.black]
+[tool.ruff]
 line-length = 120
+target-version = "py312"
 
-[tool.isort]
-profile = "black"
-line_length = 120
+[tool.ruff.lint]
+# Ruff is the single linter + formatter for this project (black, isort, and pylint
+# were retired). Curated rule set: pycodestyle (E/W), pyflakes (F), isort (I),
+# pyupgrade (UP), bugbear (B), comprehensions (C4), simplify (SIM), ruff-specific
+# (RUF), and the pylint port (PL). Naming (N), docstrings (D), and blind-except
+# (BLE) are intentionally not selected, matching the project's prior style choices
+# (Qt-style method names, no enforced docstrings, deliberate broad excepts).
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF", "PL"]
+ignore = [
+    "E501",    # line length is enforced by the formatter; long URLs/strings tolerated
+    "PLR2004", # magic-value-in-comparison — too noisy for GUI/parser code
+    "UP042",   # str-enum: keep PlaylistSourceType as (str, Enum); StrEnum changes str()/f-string output
+]
+
+[tool.ruff.lint.pylint]
+# Mirror the design tolerances from the retired .pylintrc so nothing churns.
+max-args = 10
+max-locals = 20
+max-branches = 15
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert literal values, are long by nature, use mutable fixture-class
+# attributes, import inside functions (import smoke tests), and wrap callables in
+# lambdas for mocks — all idiomatic for test code.
+"tests/*" = ["PLR2004", "PLR0913", "PLR0915", "RUF012", "PLC0415", "PLW0108"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+# Pragmatic, non-blocking rollout. PyQt6 stubs are imperfect and python-vlc ships
+# none, so missing imports are ignored; strict/disallow-untyped-defs are left off
+# for now and can be tightened once the tree is clean.
+python_version = "3.12"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
