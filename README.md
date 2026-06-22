@@ -25,12 +25,12 @@ This repo is a desktop application, not a web service. There is no backend serve
 - VLC playback through `python-vlc` plus the native VLC runtime
 - `requests` for playlist, EPG, and Xtream HTTP calls
 - pytest for tests, pinned in `requirements-dev.txt`
-- Pylint and pytest in GitHub Actions CI
-- Black and isort for formatting, configured in `pyproject.toml`
+- Ruff (lint + format) and pytest in GitHub Actions CI; mypy runs informationally
+- Ruff for linting and formatting, configured in `pyproject.toml`
 
 ## Requirements
 
-- Python 3.10 or newer. The current GitHub Actions workflow uses Python 3.12.
+- Python 3.11 or newer (the GitHub Actions workflows and Ruff's target version use Python 3.12).
 - `pip`
 - Native VLC media player installed on the machine
 
@@ -59,7 +59,7 @@ Run from the repository root:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt       # runtime deps only
-pip install -r requirements-dev.txt   # adds pytest, black, isort, pylint
+pip install -r requirements-dev.txt   # adds pytest, ruff, mypy, pre-commit
 ```
 
 On Windows PowerShell:
@@ -110,9 +110,11 @@ Run commands from the repository root unless noted.
 | Install dev/test deps | `pip install -r requirements-dev.txt` |
 | Run app | `python -m app.main` |
 | Run tests | `python -m pytest -q` |
-| Check formatting | `black --check . && isort --check .` |
-| Format Python files | `black . && isort .` |
-| Run CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` |
+| Lint | `ruff check .` |
+| Check formatting | `ruff format --check .` |
+| Format Python files | `ruff format .` |
+| Type check (non-blocking) | `mypy app core infra ui` |
+| Install git hooks | `pre-commit install` |
 | Syntax/import sanity check | `python -m compileall app core infra ui tests` |
 
 No packaged build command is configured. Packaging/release distribution is not defined.
