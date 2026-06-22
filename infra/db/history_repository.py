@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import List
 
 from core.errors import RepositoryError
 from core.models import Channel
@@ -42,7 +41,7 @@ class HistoryRepository:
             logger.error("Failed to record channel history %s: %s", channel.url, exc)
             raise RepositoryError("Failed to record recent channel") from exc
 
-    def get_recent_channels(self, limit: int = 12) -> List[Channel]:
+    def get_recent_channels(self, limit: int = 12) -> list[Channel]:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
