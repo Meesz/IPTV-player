@@ -1,8 +1,5 @@
-from typing import List
-
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
-from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import ParseWarning, Program
 from core.services.epg_service import EPGService
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
@@ -39,7 +36,7 @@ class EPGController(QObject):
             return None
         return self.service.get_program_for_channel(channel_id)
 
-    def get_upcoming_programs(self, channel_id: str) -> List[Program]:
+    def get_upcoming_programs(self, channel_id: str) -> list[Program]:
         if not channel_id:
             return []
         return self.service.get_upcoming_programs(channel_id)
