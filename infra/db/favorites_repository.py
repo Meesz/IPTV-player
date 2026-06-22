@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 from core.errors import RepositoryError
 from core.models import Channel
@@ -16,8 +15,8 @@ class FavoritesRepository:
         try:
             with self.db.get_connection() as conn:
                 conn.execute(
-                    """INSERT OR REPLACE INTO favorites 
-                       (name, url, playlist_path, group_name, logo, epg_id) 
+                    """INSERT OR REPLACE INTO favorites
+                       (name, url, playlist_path, group_name, logo, epg_id)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (
                         channel.name,
@@ -45,7 +44,7 @@ class FavoritesRepository:
             logger.error("Failed to remove favorite %s: %s", channel.url, exc)
             raise RepositoryError("Failed to remove favorite") from exc
 
-    def get_favorites(self) -> List[Channel]:
+    def get_favorites(self) -> list[Channel]:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.execute("SELECT * FROM favorites")
