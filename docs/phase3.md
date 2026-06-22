@@ -56,7 +56,7 @@ This file used to be the Phase 3 backlog. It now records which Phase 3 items are
 - Playback embedding can still be platform-sensitive, especially under Linux Wayland without XWayland.
 - Playlist and EPG downloads use blocking `requests` calls inside background tasks. UI responsiveness is protected, but cancellation cannot forcibly terminate an in-flight request.
 - SQLite schema migration logic lives in startup code rather than in explicit migration files.
-- Pylint is the only configured GitHub Actions check; pytest is not run in CI.
+- CI runs Ruff (lint + format) and pytest on pull requests; mypy also runs but is currently informational (non-blocking).
 - There is no documented packaging or release build.
 - Full app integration coverage is still thin around playlist switching, fullscreen, playback events, and database migration failures.
 
