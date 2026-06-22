@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QVBoxLayout, QWidget
 
 from core.models import Program
+from ui.utils.time_format import format_display_time
 
 
 class EPGWidget(QFrame):
@@ -13,7 +12,7 @@ class EPGWidget(QFrame):
         super().__init__()
         self.setObjectName("epg_widget")
         self.setFrameStyle(QFrame.Shape.NoFrame)
-        self.setMinimumHeight(280)
+        self.setMinimumHeight(160)
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -100,7 +99,7 @@ class EPGWidget(QFrame):
             return
 
         time_str = (
-            f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
+            f"{format_display_time(program.start_time)} - " f"{format_display_time(program.end_time)}"
         )
         self.current_title.setText(program.title)
         self.current_time.setText(time_str)
@@ -114,11 +113,5 @@ class EPGWidget(QFrame):
             self.upcoming_list.addItem("No upcoming schedule available.")
             return
         for program in programs:
-            time_str = self._format_display_time(program.start_time)
+            time_str = format_display_time(program.start_time)
             self.upcoming_list.addItem(f"{time_str}  {program.title}")
-
-    @staticmethod
-    def _format_display_time(value: datetime) -> str:
-        if value.tzinfo is None:
-            return value.strftime("%H:%M")
-        return value.astimezone().strftime("%H:%M")
