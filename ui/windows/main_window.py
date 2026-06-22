@@ -24,7 +24,6 @@ from ui.controllers.main_controller import MainController
 from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.settings_controller import SettingsController
 from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
-from ui.styles.styles import ToolbarStyle
 from ui.styles.themes import Themes
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.loading_overlay import LoadingOverlay
@@ -76,7 +75,7 @@ class MainWindow(QMainWindow):
         settings = self.settings_controller.settings
         self.setWindowTitle("Simple IPTV Player")
         self.resize(settings.window_width, settings.window_height)
-        self.setMinimumSize(980, 640)
+        self.setMinimumSize(1024, 720)
         self._theme = settings.theme
 
     def _init_ui(self) -> None:
@@ -102,7 +101,7 @@ class MainWindow(QMainWindow):
         self.right_panel.volume_slider.setValue(volume)
         self.right_panel.player_widget.set_volume(volume)
         self.right_panel.player_widget.set_muted(is_muted)
-        self.right_panel.mute_button.setText("Unmute" if is_muted else "Mute")
+        self.right_panel.set_muted(is_muted)
 
         self.splitter.addWidget(self.left_panel)
         self.splitter.addWidget(self.right_panel)
@@ -111,6 +110,7 @@ class MainWindow(QMainWindow):
 
         self.notification = NotificationWidget(self)
         self.loading_overlay = LoadingOverlay(self.central_widget)
+        self.loading_overlay.cancel_requested.connect(self._on_loading_cancel_requested)
         self._sync_loading_overlay_geometry()
 
     def _setup_toolbar(self) -> None:
@@ -118,7 +118,6 @@ class MainWindow(QMainWindow):
         self.toolbar.setObjectName("main_toolbar")
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
-        self.toolbar.setStyleSheet(ToolbarStyle.TOOLBAR)
 
         epg_widget = QWidget()
         epg_layout = QHBoxLayout(epg_widget)
@@ -132,9 +131,11 @@ class MainWindow(QMainWindow):
         self.playlist_status_label = QLabel("Playlist: none")
         self.playlist_status_label.setObjectName("playlist_status_chip")
         self.playlist_status_label.setProperty("stateTone", "default")
+        self.playlist_status_label.setMaximumWidth(280)
         self.epg_status_label = QLabel("EPG not loaded")
         self.epg_status_label.setObjectName("epg_status_chip")
         self.epg_status_label.setProperty("stateTone", "warning")
+        self.epg_status_label.setMaximumWidth(280)
 
         self.toolbar.addWidget(self.playlist_status_label)
         self.toolbar.addWidget(self.epg_status_label)
@@ -175,11 +176,11 @@ class MainWindow(QMainWindow):
         self.left_panel.search_current_group_checkbox.toggled.connect(self._on_search_scope_changed)
         self.left_panel.tabs.currentChanged.connect(self._on_active_tab_changed)
         self.left_panel.channel_list.channel_activated.connect(self._on_channel_selected)
-        self.left_panel.favorites_list.itemDoubleClicked.connect(self._on_channel_selected)
-        self.left_panel.recent_list.itemDoubleClicked.connect(self._on_channel_selected)
+        self.left_panel.favorites_list.channel_activated.connect(self._on_channel_selected)
+        self.left_panel.recent_list.channel_activated.connect(self._on_channel_selected)
         self.left_panel.channel_list.channel_clicked.connect(self._on_channel_clicked)
-        self.left_panel.favorites_list.itemClicked.connect(self._on_channel_clicked)
-        self.left_panel.recent_list.itemClicked.connect(self._on_channel_clicked)
+        self.left_panel.favorites_list.channel_clicked.connect(self._on_channel_clicked)
+        self.left_panel.recent_list.channel_clicked.connect(self._on_channel_clicked)
         self.left_panel.search_bar.search_changed.connect(self._refresh_channel_list)
         self.left_panel.search_bar.search_changed.connect(self._on_search_text_changed)
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
@@ -504,7 +505,6 @@ class MainWindow(QMainWindow):
         self._current_channel = channel
         self.left_panel.highlight_channel(channel)
         self.right_panel.player_widget.play(channel.url)
-        self.right_panel.set_stream_url(channel.url)
         self._refresh_favorite_button()
         self.settings_controller.save_settings(
             {
@@ -543,12 +543,12 @@ class MainWindow(QMainWindow):
     def _refresh_favorite_button(self) -> None:
         if not self._current_channel:
             self.right_panel.favorite_button.setEnabled(False)
-            self.right_panel.favorite_button.setText("Favorite")
+            self.right_panel.set_favorite(False)
             return
 
         self.right_panel.favorite_button.setEnabled(True)
         is_favorite = self.favorites_controller.is_favorite(self._current_channel)
-        self.right_panel.favorite_button.setText("Unfavorite" if is_favorite else "Favorite")
+        self.right_panel.set_favorite(is_favorite)
 
     def _on_play_button(self) -> None:
         if self._current_channel:
@@ -565,7 +565,7 @@ class MainWindow(QMainWindow):
 
     def _on_toggle_mute(self) -> None:
         muted = self.right_panel.player_widget.toggle_mute()
-        self.right_panel.mute_button.setText("Unmute" if muted else "Mute")
+        self.right_panel.set_muted(muted)
         self.settings_controller.save_setting("is_muted", muted)
 
     def _on_retry_now(self) -> None:
@@ -723,7 +723,9 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _set_status_chip(label: QLabel, text: str, tone: str) -> None:
-        label.setText(text)
+        metrics = label.fontMetrics()
+        label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, 260))
+        label.setToolTip(text)
         label.setProperty("stateTone", tone)
         label.style().unpolish(label)
         label.style().polish(label)
@@ -743,6 +745,27 @@ class MainWindow(QMainWindow):
         duration: int = 3000,
     ) -> None:
         self.notification.show_message(message, type, duration=duration)
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        mods = event.modifiers()
+        if key == Qt.Key.Key_Space:
+            self._on_play_button()
+            event.accept()
+            return
+        if key == Qt.Key.Key_M and not mods:
+            self._on_toggle_mute()
+            event.accept()
+            return
+        if key == Qt.Key.Key_F and not mods:
+            self._on_toggle_fullscreen()
+            event.accept()
+            return
+        if key == Qt.Key.Key_L and mods == Qt.KeyboardModifier.ControlModifier:
+            self.left_panel.search_bar.setFocus()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
         is_muted = (
@@ -775,10 +798,13 @@ class MainWindow(QMainWindow):
             self.loading_overlay.setGeometry(self.central_widget.rect())
 
     def _set_main_interaction_enabled(self, enabled: bool) -> None:
-        self.menu_bar.setEnabled(enabled)
         self.toolbar.setEnabled(enabled)
         self.left_panel.setEnabled(enabled)
         self.right_panel.control_bar.setEnabled(enabled)
+
+    def _on_loading_cancel_requested(self) -> None:
+        self.playlist_controller.cancel_loading(emit_signal=True)
+        self.epg_controller.cancel_loading(emit_signal=True)
 
     def _on_playlist_render_progress(self, loaded_count: int, total_count: int) -> None:
         self.loading_overlay.update_detail(f"Rendering channel list ({loaded_count:,} / {total_count:,})")
