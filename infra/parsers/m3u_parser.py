@@ -11,7 +11,12 @@ logger = logging.getLogger(__name__)
 
 
 _EXTINF_RE = re.compile(
-    r"#EXTINF:-1(?P<attrs>[^,]*),(?P<name>.*)$",
+    # Duration is any number per the M3U spec (e.g. -1 for live, 0, or a real
+    # length). Only the duration field is validated here; channels with a
+    # non "-1" duration must not be dropped as malformed. The remainder (the
+    # attributes plus the title) is split later, quote-aware, so a comma inside
+    # a quoted attribute value does not get mistaken for the title separator.
+    r"#EXTINF:\s*(?P<duration>-?\d+(?:\.\d+)?)(?P<rest>.*)$",
     re.IGNORECASE,
 )
 _ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)=(?:"([^"]*)"|\'([^\']*)\')')
@@ -52,7 +57,10 @@ class M3UParser:
 
             if value.startswith("#EXTINF"):
                 match = _EXTINF_RE.match(value)
-                if not match:
+                attrs_blob, raw_name = (
+                    M3UParser._split_extinf_tail(match.group("rest")) if match else (None, None)
+                )
+                if not match or raw_name is None:
                     parse_warnings.append(
                         ParseWarning(
                             code="invalid_extinf",
@@ -63,8 +71,8 @@ class M3UParser:
                     pending_channel = None
                     continue
 
-                attrs = M3UParser._parse_attributes(match.group("attrs"))
-                channel_name = (match.group("name") or "").strip() or attrs.get("tvg-name") or "Unknown Channel"
+                attrs = M3UParser._parse_attributes(attrs_blob)
+                channel_name = raw_name.strip() or attrs.get("tvg-name") or "Unknown Channel"
                 pending_channel = {
                     "name": channel_name,
                     "group": attrs.get("group-title", "Uncategorized"),
@@ -151,6 +159,26 @@ class M3UParser:
             except UnicodeDecodeError:
                 continue
         raise ParsingError(f"Could not decode playlist with supported encodings: {source}")
+
+    @staticmethod
+    def _split_extinf_tail(rest: str) -> tuple[Optional[str], Optional[str]]:
+        """Split the EXTINF tail into ``(attributes, title)``.
+
+        The title is separated from the attribute block by the first comma that
+        is not inside a quoted attribute value, so commas inside values such as
+        ``group-title="News, World"`` do not corrupt the channel name. Returns
+        ``(rest, None)`` when no title separator exists (a malformed entry).
+        """
+        quote: Optional[str] = None
+        for index, char in enumerate(rest):
+            if quote is not None:
+                if char == quote:
+                    quote = None
+            elif char in ('"', "'"):
+                quote = char
+            elif char == ",":
+                return rest[:index], rest[index + 1 :]
+        return rest, None
 
     @staticmethod
     def _parse_attributes(raw: str) -> Dict[str, str]:
