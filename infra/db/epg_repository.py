@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from core.errors import RepositoryError
 from core.models import Program
@@ -34,7 +33,7 @@ class EPGRepository:
             logger.error("Failed to save program for channel %s: %s", channel_id, exc)
             raise RepositoryError("Failed to save EPG program") from exc
 
-    def save_all(self, programs_by_channel: Dict[str, List[Program]]) -> None:
+    def save_all(self, programs_by_channel: dict[str, list[Program]]) -> None:
         try:
             with self.db.get_connection() as conn:
                 conn.execute("DELETE FROM epg_data")
@@ -70,7 +69,7 @@ class EPGRepository:
         self,
         channel_id: str,
         current_time: datetime | None = None,
-    ) -> Optional[Program]:
+    ) -> Program | None:
         try:
             effective_time = int(self._normalize_time(current_time).timestamp())
             with self.db.get_connection() as conn:
@@ -89,8 +88,8 @@ class EPGRepository:
                 if row:
                     return Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(row["start_time"], tz=timezone.utc),
-                        end_time=datetime.fromtimestamp(row["end_time"], tz=timezone.utc),
+                        start_time=datetime.fromtimestamp(row["start_time"], tz=UTC),
+                        end_time=datetime.fromtimestamp(row["end_time"], tz=UTC),
                         description=row["description"],
                     )
             return None
@@ -107,7 +106,7 @@ class EPGRepository:
         channel_id: str,
         limit: int = 5,
         current_time: datetime | None = None,
-    ) -> List[Program]:
+    ) -> list[Program]:
         try:
             effective_time = int(self._normalize_time(current_time).timestamp())
             with self.db.get_connection() as conn:
@@ -128,8 +127,8 @@ class EPGRepository:
                 return [
                     Program(
                         title=row["title"],
-                        start_time=datetime.fromtimestamp(row["start_time"], tz=timezone.utc),
-                        end_time=datetime.fromtimestamp(row["end_time"], tz=timezone.utc),
+                        start_time=datetime.fromtimestamp(row["start_time"], tz=UTC),
+                        end_time=datetime.fromtimestamp(row["end_time"], tz=UTC),
                         description=row["description"],
                     )
                     for row in cursor.fetchall()
@@ -145,7 +144,7 @@ class EPGRepository:
     @staticmethod
     def _normalize_time(current_time: datetime | None) -> datetime:
         if current_time is None:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         if current_time.tzinfo is None:
-            return current_time.replace(tzinfo=timezone.utc)
-        return current_time.astimezone(timezone.utc)
+            return current_time.replace(tzinfo=UTC)
+        return current_time.astimezone(UTC)
