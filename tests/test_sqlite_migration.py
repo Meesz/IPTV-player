@@ -77,9 +77,7 @@ def test_migration_preserves_legacy_url_rows(tmp_path):
     """URL rows still migrate verbatim (no path resolution)."""
     db_path = tmp_path / "legacy-url.sqlite"
     conn = _make_legacy_db(db_path)
-    conn.execute(
-        "INSERT INTO playlists (name, path, is_url) VALUES ('Remote', 'https://example.com/list.m3u', 1)"
-    )
+    conn.execute("INSERT INTO playlists (name, path, is_url) VALUES ('Remote', 'https://example.com/list.m3u', 1)")
     conn.commit()
     conn.close()
 
