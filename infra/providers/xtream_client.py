@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
@@ -194,7 +195,7 @@ class XtreamClient:
                 "Xtream %s request returned HTTP error for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                exc,
+                self._redact_secrets(exc),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
         except (ConnectionError, SSLError) as exc:
@@ -231,7 +232,7 @@ class XtreamClient:
                 "Xtream %s request failed for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                exc,
+                self._redact_secrets(exc),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
         except RequestException as exc:
@@ -239,7 +240,7 @@ class XtreamClient:
                 "Xtream %s request failed for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                exc,
+                self._redact_secrets(exc),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
 
@@ -310,6 +311,16 @@ class XtreamClient:
             return int(str(value).strip())
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    def _redact_secrets(text: str) -> str:
+        """Mask password query values that requests may embed in exception strings.
+
+        ``requests`` exception representations include the full request URL, which
+        carries ``password=...`` in the Xtream query string. Logging the raw
+        exception would leak credentials, so scrub it before it reaches the log.
+        """
+        return re.sub(r"(?i)(password=)[^&\s'\"]+", r"\1***", str(text))
 
     @staticmethod
     def _sanitize_request_url(url: str) -> str:
