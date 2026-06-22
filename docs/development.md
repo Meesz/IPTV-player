@@ -7,7 +7,7 @@ Use a virtual environment from the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt   # includes runtime + test/lint/format tools
+pip install -r requirements-dev.txt   # includes runtime + pytest, ruff, mypy, pre-commit
 ```
 
 On Windows PowerShell:
@@ -46,12 +46,14 @@ Run from repo root.
 
 | Task | Command | Notes |
 |------|---------|-------|
-| Install dev deps | `pip install -r requirements-dev.txt` | Includes runtime + pytest, pylint, black, isort. |
+| Install dev deps | `pip install -r requirements-dev.txt` | Includes runtime + pytest, ruff, mypy, pre-commit. |
 | Run app | `python -m app.main` | Requires native VLC for playback. |
 | Tests | `python -m pytest -q` | Requires PyQt6 import support. |
-| CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` | Matches `.github/workflows/pylint.yml`. |
-| Format | `black . && isort .` | Config lives in `pyproject.toml` (line-length 120, isort black profile). |
-| Check formatting | `black --check . && isort --check .` | Useful in CI or before committing. |
+| Lint | `ruff check .` | Matches `.github/workflows/lint.yml`. |
+| Format | `ruff format .` | Config lives in `pyproject.toml` (line-length 120, target py312). |
+| Check formatting | `ruff format --check .` | Useful in CI or before committing. |
+| Type check | `mypy app core infra ui` | Non-blocking during rollout; runs in CI with `continue-on-error`. |
+| Install git hooks | `pre-commit install` | Runs ruff (lint + format) and hygiene hooks on commit. |
 | Syntax check | `python -m compileall app core infra ui tests` | Useful when Qt runtime is unavailable. |
 
 No packaging build command is configured. Do not document or automate release packaging until the repo has an explicit packaging configuration.
@@ -79,7 +81,7 @@ Current tests cover:
 - selected PyQt widget and delegate behavior
 - startup and VLC-unavailable dialog behavior
 
-CI runs both Pylint and pytest on pull requests (`.github/workflows/pylint.yml` and `.github/workflows/tests.yml`).
+CI runs lint and tests on pull requests (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy` (the mypy step is informational and does not block the build).
 
 ## Debugging Tips
 
