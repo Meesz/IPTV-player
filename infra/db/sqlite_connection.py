@@ -1,9 +1,9 @@
 import logging
 import os
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class SQLiteConnection:
     """Manages SQLite database connection and initialization."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         if db_path is None:
             self.db_path = Path.home() / ".simple_iptv" / "database.db"
         else:
@@ -51,7 +51,7 @@ class SQLiteConnection:
                         key TEXT PRIMARY KEY,
                         value TEXT
                     );
-                    
+
                     CREATE TABLE IF NOT EXISTS epg_data (
                         channel_id TEXT,
                         start_time INTEGER,
@@ -62,7 +62,7 @@ class SQLiteConnection:
                     );
                     CREATE INDEX IF NOT EXISTS ix_epg_channel_time
                         ON epg_data (channel_id, start_time, end_time);
-                    
+
                     CREATE TABLE IF NOT EXISTS favorites (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL,
@@ -86,7 +86,7 @@ class SQLiteConnection:
                     );
                     CREATE INDEX IF NOT EXISTS ix_recent_channels_played_at
                         ON recent_channels (played_at DESC);
-                    
+
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
