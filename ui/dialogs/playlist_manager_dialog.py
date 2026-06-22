@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QPainter
@@ -54,7 +54,7 @@ class PlaylistManagerDialog(QDialog):
         painter = QPainter(self)
         self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
 
-    def _init_ui(self) -> None:
+    def _init_ui(self) -> None:  # noqa: PLR0915  (Qt UI builder; pre-existing size)
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(14)
@@ -266,7 +266,7 @@ class PlaylistManagerDialog(QDialog):
         self.playlist_selected.emit(playlist)
         self.accept()
 
-    def _edit_playlist(self) -> None:
+    def _edit_playlist(self) -> None:  # noqa: PLR0911, PLR0912  (validation branches; pre-existing)
         current_item = self.playlist_list.currentItem()
         if not current_item:
             return
@@ -556,16 +556,9 @@ class PlaylistManagerDialog(QDialog):
             status = f"{status} / Active"
         self.detail_status.setText(f"Status: {status}")
 
-        validation_status, validation_message = self._validation_messages.get(
+        _validation_status, validation_message = self._validation_messages.get(
             playlist.source_identity,
             ("pending", "Use Test Source to verify reachability and parsing."),
         )
-        if validation_status == "ready":
-            text = validation_message
-        elif validation_status == "warning":
-            text = validation_message
-        elif validation_status == "error":
-            text = validation_message
-        else:
-            text = validation_message
+        text = validation_message
         self.detail_validation.setText(f"Validation: {text}")
