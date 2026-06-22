@@ -1,5 +1,5 @@
 import logging
-from typing import Iterable, List, Sequence
+from collections.abc import Iterable, Sequence
 
 from core.errors import RepositoryError
 from core.models import PlaylistReference, PlaylistSourceType, XtreamCredentials
@@ -22,7 +22,7 @@ class PlaylistRepository:
             logger.error("Failed to save playlists: %s", exc)
             raise RepositoryError("Failed to save playlists") from exc
 
-    def get_playlists(self) -> List[PlaylistReference]:
+    def get_playlists(self) -> list[PlaylistReference]:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
@@ -197,7 +197,9 @@ class PlaylistRepository:
             (
                 playlist.normalized_url()
                 if playlist.source_type == PlaylistSourceType.URL
-                else playlist.normalized_path() if playlist.source_type == PlaylistSourceType.FILE else ""
+                else playlist.normalized_path()
+                if playlist.source_type == PlaylistSourceType.FILE
+                else ""
             ),
             1 if playlist.source_type == PlaylistSourceType.URL else 0,
             playlist.source_identity,
