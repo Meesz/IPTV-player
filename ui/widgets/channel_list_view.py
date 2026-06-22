@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from core.models import Channel, Program
 from ui.styles.themes import Themes
+from ui.utils.time_format import format_display_time
 
 
 class ChannelListModel(QAbstractListModel):
@@ -33,6 +32,7 @@ class ChannelListModel(QAbstractListModel):
         self._programs_by_epg_id: dict[str, Program] = {}
         self._rows_by_logo_source: dict[str, list[int]] = {}
         self._rows_by_epg_id: dict[str, list[int]] = {}
+        self._meta_suffixes: dict[int, str] = {}
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if parent.isValid():
@@ -55,13 +55,15 @@ class ChannelListModel(QAbstractListModel):
                 return program.title
             return channel.group or "Uncategorized"
         if role == self.MetaRole:
+            suffix = self._meta_suffixes.get(index.row(), "")
             if not (self._show_now_playing and program):
-                return ""
-            return (
-                f"{self._format_display_time(program.start_time)} - "
-                f"{self._format_display_time(program.end_time)}  |  "
+                return suffix
+            epg_meta = (
+                f"{format_display_time(program.start_time)} - "
+                f"{format_display_time(program.end_time)}  |  "
                 f"{channel.group or 'Uncategorized'}"
             )
+            return f"{epg_meta}  |  {suffix}" if suffix else epg_meta
         if role == self.BadgesRole:
             badges: list[tuple[str, str]] = []
             if channel.identity_key() == self._current_channel_key:
@@ -73,8 +75,6 @@ class ChannelListModel(QAbstractListModel):
             return channel.logo
         if role == self.LogoPixmapRole:
             return self._logo_provider.request_logo(channel.logo, channel.name)
-        if role == Qt.ItemDataRole.SizeHintRole:
-            return QSize(100, 88)
         return None
 
     def set_channels(
@@ -84,12 +84,14 @@ class ChannelListModel(QAbstractListModel):
         favorite_keys: set[tuple[str, str]] | None = None,
         current_channel_key: tuple[str, str] | None = None,
         show_now_playing: bool = True,
+        meta_suffixes: dict[int, str] | None = None,
     ) -> None:
         self.beginResetModel()
         self._channels = list(channels)
         self._favorite_keys = set(favorite_keys or set())
         self._current_channel_key = current_channel_key
         self._show_now_playing = show_now_playing
+        self._meta_suffixes = meta_suffixes or {}
         self._programs_by_epg_id = {}
         self._rows_by_logo_source = {}
         self._rows_by_epg_id = {}
@@ -136,23 +138,16 @@ class ChannelListModel(QAbstractListModel):
             index = self.index(row)
             self.dataChanged.emit(index, index, [self.LogoPixmapRole])
 
-    @staticmethod
-    def _format_display_time(value: datetime) -> str:
-        if value.tzinfo is None:
-            return value.strftime("%H:%M")
-        return value.astimezone().strftime("%H:%M")
-
 
 class ChannelRowDelegate(QStyledItemDelegate):
-    ROW_HEIGHT = 88
     LOGO_SIZE = 42
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._tokens = Themes._DARK
+        self._tokens = Themes.tokens("dark")
 
     def set_theme_mode(self, mode: str) -> None:
-        self._tokens = Themes._LIGHT if mode == "light" else Themes._DARK
+        self._tokens = Themes.tokens(mode)
 
     def paint(
         self,
@@ -208,15 +203,18 @@ class ChannelRowDelegate(QStyledItemDelegate):
             meta = str(index.data(ChannelListModel.MetaRole) or "")
             badges = list(index.data(ChannelListModel.BadgesRole) or [])
 
+            fm = painter.fontMetrics()
+            line_h = fm.height()
+            gap = 4
             badges_width = self._paint_badges(painter, text_rect, badges)
             title_rect = QRect(
                 text_rect.left(),
                 text_rect.top(),
                 max(0, text_rect.width() - badges_width - 8),
-                22,
+                line_h + 2,
             )
-            subtitle_rect = QRect(text_rect.left(), text_rect.top() + 26, text_rect.width(), 18)
-            meta_rect = QRect(text_rect.left(), text_rect.top() + 48, text_rect.width(), 18)
+            subtitle_rect = QRect(text_rect.left(), text_rect.top() + line_h + gap, text_rect.width(), line_h)
+            meta_rect = QRect(text_rect.left(), text_rect.top() + 2 * (line_h + gap), text_rect.width(), line_h)
 
             title_font = QFont(option.font)
             title_font.setBold(True)
@@ -254,7 +252,9 @@ class ChannelRowDelegate(QStyledItemDelegate):
             painter.restore()
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
-        return QSize(option.rect.width(), self.ROW_HEIGHT)
+        fm = QFontMetrics(option.font)
+        line = fm.height()
+        return QSize(option.rect.width(), max(72, 3 * line + 2 * 4 + 24))
 
     def _paint_badges(
         self,
@@ -341,12 +341,14 @@ class ChannelListView(QListView):
         favorite_keys: set[tuple[str, str]] | None = None,
         current_channel_key: tuple[str, str] | None = None,
         show_now_playing: bool = True,
+        meta_suffixes: dict[int, str] | None = None,
     ) -> None:
         self._model.set_channels(
             channels,
             favorite_keys=favorite_keys,
             current_channel_key=current_channel_key,
             show_now_playing=show_now_playing,
+            meta_suffixes=meta_suffixes,
         )
         self.clearSelection()
         self._schedule_visible_channels_changed()
@@ -379,7 +381,7 @@ class ChannelListView(QListView):
         if bottom_index.isValid():
             end_row = bottom_index.row()
         else:
-            estimated = max(1, self.viewport().height() // ChannelRowDelegate.ROW_HEIGHT + 1)
+            estimated = max(1, self.viewport().height() // 88 + 1)
             end_row = min(row_count - 1, start_row + estimated)
 
         return [
