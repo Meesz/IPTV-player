@@ -30,8 +30,8 @@ Run from repo root.
 | Run CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` |
 | Syntax check | `python -m compileall app core infra ui tests` |
 
-The GitHub Actions workflow currently runs Pylint only. Do not claim CI test coverage unless a pytest workflow exists.
-`pytest` is used by the test suite but is not currently pinned in `requirements.txt`.
+Two GitHub Actions workflows run on pull requests, both on Python 3.12: Pylint (`.github/workflows/pylint.yml`) and pytest (`.github/workflows/tests.yml`).
+`pytest` and the other test/lint/format tools are pinned in `requirements-dev.txt`, not in the runtime `requirements.txt`.
 
 ## Architecture Boundaries
 
@@ -76,7 +76,7 @@ Do not make widgets talk directly to SQLite repositories, M3U/XMLTV parsers, Xtr
 - Linux Wayland playback embedding may require XWayland.
 - Background playlist/EPG cancellation ignores stale results but cannot always stop an in-flight `requests` call immediately.
 - SQLite migrations are embedded in `SQLiteConnection`, not external migration files.
-- `requirements.txt` includes development tools; it is not split into runtime/dev dependency groups.
+- `requirements.txt` is runtime-only; test/lint/format tools live in `requirements-dev.txt`, which pulls in `requirements.txt` via `-r`.
 
 ## Do Not
 
