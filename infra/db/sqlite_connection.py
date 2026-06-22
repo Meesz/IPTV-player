@@ -1,4 +1,5 @@
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -234,15 +235,23 @@ class SQLiteConnection:
             """
         )
 
+        skipped_duplicates = 0
         for row in legacy_rows:
             source_type = "url" if row["is_url"] else "file"
             normalized_path = str(row["path"] or "").strip()
             if source_type == "file" and normalized_path:
-                normalized_path = str(Path(normalized_path).resolve())
+                # Use abspath (not Path.resolve) so migrated identities match the
+                # runtime identity produced by PlaylistReference.normalized_path();
+                # resolve() follows symlinks and would orphan migrated rows.
+                normalized_path = os.path.abspath(normalized_path)
             source_identity = f"{source_type}::{normalized_path}"
-            conn.execute(
+            # INSERT OR IGNORE: distinct legacy paths can collapse to one identity
+            # (e.g. "a.m3u" and "sub/../a.m3u"). Dropping the duplicate keeps the
+            # migration non-fatal instead of aborting startup and locking the user
+            # out of the entire database.
+            cursor = conn.execute(
                 """
-                INSERT INTO playlists (
+                INSERT OR IGNORE INTO playlists (
                     name,
                     source_type,
                     path,
@@ -267,5 +276,12 @@ class SQLiteConnection:
                     row["last_error"],
                 ),
             )
+            if cursor.rowcount == 0:
+                skipped_duplicates += 1
 
+        if skipped_duplicates:
+            logger.warning(
+                "Playlist migration skipped %s duplicate legacy row(s) that collapsed to an existing identity",
+                skipped_duplicates,
+            )
         conn.execute("DROP TABLE playlists_legacy")
