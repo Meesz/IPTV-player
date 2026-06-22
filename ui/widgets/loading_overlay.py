@@ -1,9 +1,11 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QFrame, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 
 class LoadingOverlay(QFrame):
     """Blocking overlay used while long-running UI transitions are in progress."""
+
+    cancel_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,6 +39,11 @@ class LoadingOverlay(QFrame):
         self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
         card_layout.addWidget(self.progress)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setProperty("ghost", True)
+        self.cancel_button.clicked.connect(self.cancel_requested.emit)
+        card_layout.addWidget(self.cancel_button)
 
         layout.addWidget(self.card)
         self.hide()
