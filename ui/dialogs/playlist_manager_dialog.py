@@ -4,6 +4,7 @@ import os
 from typing import Callable, Sequence
 
 from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
+from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -16,6 +17,8 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QStyle,
+    QStyleOption,
     QVBoxLayout,
 )
 
@@ -36,7 +39,6 @@ class PlaylistManagerDialog(QDialog):
         self.setMinimumSize(760, 420)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(True)
         self._active_playlist_path = ""
         self._playlist_validator: Callable[[PlaylistReference], tuple[PlaylistReference | None, str]] | None = None
         self._playlist_tester: Callable[..., PlaylistReference] | None = None
@@ -45,6 +47,12 @@ class PlaylistManagerDialog(QDialog):
         self._tester_worker: BackgroundTask | None = None
         self._validation_messages: dict[str, tuple[str, str]] = {}
         self._init_ui()
+
+    def paintEvent(self, event) -> None:
+        opt = QStyleOption()
+        opt.initFrom(self)
+        painter = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
 
     def _init_ui(self) -> None:
         root_layout = QVBoxLayout(self)
