@@ -4,7 +4,7 @@ from concurrent.futures import CancelledError
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 from requests.exceptions import RequestException, Timeout
@@ -85,13 +85,13 @@ class EPGService:
                 cancel_callback=cancel_callback,
             )
         except Timeout as exc:
-            raise NetworkError(f"Timed out loading EPG URL: {url}") from exc
+            raise NetworkError(f"Timed out loading EPG URL: {self._redact_url(url)}") from exc
         except RequestException as exc:
-            raise NetworkError(f"Failed to download EPG URL: {url}") from exc
+            raise NetworkError(f"Failed to download EPG URL: {self._redact_url(url)}") from exc
         except ParsingError:
             raise
         except Exception as exc:
-            logger.error("Unexpected EPG URL load failure (%s): %s", url, exc)
+            logger.error("Unexpected EPG URL load failure (%s): %s", self._redact_url(url), exc)
             raise
         finally:
             if tmp_path is not None:
@@ -138,6 +138,42 @@ class EPGService:
     @property
     def last_warnings(self) -> list[ParseWarning]:
         return list(self._last_warnings)
+
+    @staticmethod
+    def _redact_url(url: str) -> str:
+        """Mask credentials so EPG source URLs never leak to logs or the UI.
+
+        XMLTV/Xtream EPG endpoints commonly carry credentials either in the query
+        string (``?username=...&password=...``) or as basic-auth userinfo
+        (``http://user:pass@host/...``). Keep the scheme/host/path for diagnostics
+        but redact the password in both forms so it cannot reach the log file or an
+        error notification.
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return url
+
+        netloc = parsed.netloc
+        if parsed.password is not None:
+            host = parsed.hostname or ""
+            if parsed.port is not None:
+                host = f"{host}:{parsed.port}"
+            userinfo = parsed.username or ""
+            netloc = f"{userinfo}:***@{host}" if userinfo else f":***@{host}"
+
+        query = parsed.query
+        if query:
+            query = urlencode(
+                [
+                    (key, "***" if key.lower() in {"password", "pass", "pwd"} else value)
+                    for key, value in parse_qsl(query, keep_blank_values=True)
+                ]
+            )
+
+        if netloc == parsed.netloc and query == parsed.query:
+            return url
+        return urlunparse(parsed._replace(netloc=netloc, query=query))
 
     @staticmethod
     def _emit_progress(
