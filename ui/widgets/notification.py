@@ -1,5 +1,4 @@
 import time
-from dataclasses import dataclass
 from enum import Enum, auto
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
@@ -13,21 +12,15 @@ class NotificationType(Enum):
     ERROR = auto()
 
 
-@dataclass
-class NotificationStyle:
-    background: str
-    border: str
-    text_color: str
+_TONE_MAP = {
+    NotificationType.INFO: "info",
+    NotificationType.SUCCESS: "success",
+    NotificationType.WARNING: "warning",
+    NotificationType.ERROR: "error",
+}
 
 
 class NotificationWidget(QLabel):
-    STYLES = {
-        NotificationType.INFO: NotificationStyle("#183742", "#2e6e80", "#edf5f7"),
-        NotificationType.SUCCESS: NotificationStyle("#17392d", "#2b8b68", "#effaf5"),
-        NotificationType.WARNING: NotificationStyle("#43331a", "#b07f32", "#fff3de"),
-        NotificationType.ERROR: NotificationStyle("#482028", "#b14858", "#fff1f3"),
-    }
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("notification_toast")
@@ -68,21 +61,15 @@ class NotificationWidget(QLabel):
         notification_type: NotificationType,
         duration: int,
     ) -> None:
-        style = self.STYLES[notification_type]
-        self.setStyleSheet(
-            f"""
-            QLabel#notification_toast {{
-                background-color: {style.background};
-                border: 1px solid {style.border};
-                color: {style.text_color};
-                padding: 12px 16px;
-                border-radius: 14px;
-                font-weight: 700;
-            }}
-            """
-        )
+        self.setProperty("stateTone", _TONE_MAP[notification_type])
+        self.style().unpolish(self)
+        self.style().polish(self)
 
         self.setText(message)
+        parent = self.parent()
+        max_w = max(280, (parent.width() if parent else 600) - 96)
+        self.setMaximumWidth(max_w)
+        self.setFixedWidth(min(self.sizeHint().width() + 32, max_w))
         self.adjustSize()
         self.show()
         self.raise_()
