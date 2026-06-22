@@ -1,3 +1,4 @@
+import contextlib
 from typing import Any
 
 from core.errors import RepositoryError
@@ -57,10 +58,8 @@ class SettingsService:
             self._settings = Settings.defaults()
 
         # Backward compatibility migration: keep both legacy and new keys in sync.
-        try:
+        with contextlib.suppress(RepositoryError):
             self._persist_legacy_compatibility_settings()
-        except RepositoryError:
-            pass
 
     def _persist_legacy_compatibility_settings(self) -> None:
         self.repository.save_setting("last_playlist", self._settings.last_playlist_path)
