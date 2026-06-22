@@ -79,7 +79,7 @@ class PlayerWidget(QFrame):
 
     playback_state_changed = pyqtSignal(str, str)
 
-    def __init__(self):
+    def __init__(self):  # noqa: PLR0915  (Qt widget setup; pre-existing size)
         super().__init__()
         self.setObjectName("player_canvas")
         self.setMinimumSize(480, 270)
