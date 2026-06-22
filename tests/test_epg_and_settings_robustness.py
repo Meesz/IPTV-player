@@ -8,22 +8,22 @@
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.models import EPGChannel, PlaylistReference, PlaylistSourceType, Program
 from infra.db.epg_repository import EPGRepository
 from infra.db.sqlite_connection import SQLiteConnection
 
-_NOW = datetime(2026, 4, 1, 10, 30, tzinfo=timezone.utc)
+_NOW = datetime(2026, 4, 1, 10, 30, tzinfo=UTC)
 _AIRING = Program(
     title="Now Airing",
-    start_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
-    end_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+    start_time=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+    end_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
 )
 _FUTURE = Program(
     title="Later",
-    start_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
-    end_time=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+    start_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
+    end_time=datetime(2026, 4, 1, 12, 0, tzinfo=UTC),
 )
 
 
@@ -34,7 +34,8 @@ def test_db_upcoming_excludes_currently_airing_and_matches_memory(tmp_path):
 
     db_upcoming = [p.title for p in repository.get_upcoming_programs("news.us", limit=5, current_time=_NOW)]
     memory_upcoming = [
-        p.title for p in EPGChannel(channel_id="news.us", programs=[_AIRING, _FUTURE]).get_upcoming_programs(
+        p.title
+        for p in EPGChannel(channel_id="news.us", programs=[_AIRING, _FUTURE]).get_upcoming_programs(
             current_time=_NOW, limit=5
         )
     ]
