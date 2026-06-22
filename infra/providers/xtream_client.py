@@ -303,7 +303,7 @@ class XtreamClient:
         username = quote(normalized.username, safe="")
         password = quote(normalized.password, safe="")
         encoded_stream_id = quote(str(stream_id).strip(), safe="")
-        return f"{normalized.server_url}/live/" f"{username}/{password}/{encoded_stream_id}.{normalized.output}"
+        return f"{normalized.server_url}/live/{username}/{password}/{encoded_stream_id}.{normalized.output}"
 
     @staticmethod
     def _to_int(value: Any) -> int:
