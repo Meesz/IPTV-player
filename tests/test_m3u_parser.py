@@ -23,7 +23,7 @@ def test_parses_non_negative_one_durations(tmp_path):
             "#EXTM3U",
             '#EXTINF:120 tvg-id="a" group-title="VOD",Movie A',
             "http://example.com/a",
-            '#EXTINF:0,Channel B',
+            "#EXTINF:0,Channel B",
             "http://example.com/b",
             '#EXTINF:-1 tvg-id="c" group-title="Live",Channel C',
             "http://example.com/c",
@@ -53,7 +53,7 @@ def test_tolerates_whitespace_after_colon(tmp_path):
         tmp_path,
         [
             "#EXTM3U",
-            "#EXTINF: -1 tvg-id=\"a\",Spaced Live",
+            '#EXTINF: -1 tvg-id="a",Spaced Live',
             "http://example.com/a",
         ],
     )
