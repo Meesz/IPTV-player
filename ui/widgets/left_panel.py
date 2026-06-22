@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PyQt6.QtWidgets import (
@@ -13,8 +13,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -22,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.models import Channel, Program
+from ui.styles.themes import Themes
 from ui.widgets.channel_list_view import ChannelListView
 from ui.widgets.epg_widget import EPGWidget
 from ui.widgets.search_bar import SearchBar
@@ -33,6 +32,13 @@ SORT_OPTIONS = [
     ("Favorites First", "favorites_first"),
 ]
 
+_EMPTY_CHANNELS_TITLE = "No channels match"
+_EMPTY_CHANNELS_DETAIL = "Adjust the category or search filters to broaden the results."
+_EMPTY_FAVORITES_TITLE = "No favorite channels"
+_EMPTY_FAVORITES_DETAIL = "Use the Favorite control while watching a channel to pin it here."
+_EMPTY_RECENT_TITLE = "Nothing played recently"
+_EMPTY_RECENT_DETAIL = "Recently watched channels will appear here after playback starts."
+
 
 class ChannelLogoProvider(QWidget):
     logo_loaded = pyqtSignal(str, object)
@@ -43,10 +49,15 @@ class ChannelLogoProvider(QWidget):
         self._manager.finished.connect(self._on_reply_finished)
         self._cache: dict[str, QPixmap] = {}
         self._inflight: dict[QNetworkReply, str] = {}
+        self._theme_mode = "dark"
+
+    def set_theme_mode(self, mode: str) -> None:
+        self._theme_mode = mode
+        self._cache.clear()
 
     def request_logo(self, source: str, fallback_text: str) -> QPixmap:
         if not source:
-            return self._fallback_logo(fallback_text)
+            return self._fallback_logo(fallback_text, self._theme_mode)
 
         cached = self._cache.get(source)
         if cached is not None:
@@ -56,7 +67,7 @@ class ChannelLogoProvider(QWidget):
             if source not in self._inflight.values():
                 reply = self._manager.get(QNetworkRequest(QUrl(source)))
                 self._inflight[reply] = source
-            fallback = self._fallback_logo(fallback_text)
+            fallback = self._fallback_logo(fallback_text, self._theme_mode)
             self._cache[source] = fallback
             return fallback
 
@@ -68,7 +79,7 @@ class ChannelLogoProvider(QWidget):
                 self._cache[source] = scaled
                 return scaled
 
-        fallback = self._fallback_logo(fallback_text)
+        fallback = self._fallback_logo(fallback_text, self._theme_mode)
         self._cache[source] = fallback
         return fallback
 
@@ -94,7 +105,8 @@ class ChannelLogoProvider(QWidget):
         )
 
     @staticmethod
-    def _fallback_logo(text: str) -> QPixmap:
+    def _fallback_logo(text: str, mode: str = "dark") -> QPixmap:
+        tokens = Themes.tokens(mode)
         size = 42
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -102,7 +114,7 @@ class ChannelLogoProvider(QWidget):
         seed = max(1, sum(ord(char) for char in text))
         hue = seed % 360
         background = QColor.fromHsl(hue, 130, 108)
-        foreground = QColor("#0a171d")
+        foreground = QColor(tokens["text"])
 
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -117,101 +129,6 @@ class ChannelLogoProvider(QWidget):
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, (text[:1] or "?").upper())
         painter.end()
         return pixmap
-
-
-class ChannelBadge(QLabel):
-    def __init__(self, text: str, tone: str):
-        super().__init__(text)
-        self.setObjectName("channel_badge")
-        self.setProperty("badgeTone", tone)
-
-
-class ChannelListItemWidget(QFrame):
-    def __init__(
-        self,
-        channel: Channel,
-        *,
-        logo_provider: ChannelLogoProvider,
-        title: str,
-        subtitle: str,
-        meta: str,
-        badges: list[tuple[str, str]],
-    ):
-        super().__init__()
-        self.setObjectName("channel_row")
-        self._channel = channel
-        self._logo_source = channel.logo
-        self._logo_provider = logo_provider
-        self._init_ui(title, subtitle, meta, badges)
-        self._apply_logo(self._logo_provider.request_logo(channel.logo, channel.name))
-        self._logo_provider.logo_loaded.connect(self._on_logo_loaded)
-
-    def _init_ui(
-        self,
-        title: str,
-        subtitle: str,
-        meta: str,
-        badges: list[tuple[str, str]],
-    ) -> None:
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(12)
-
-        self.logo_label = QLabel()
-        self.logo_label.setObjectName("channel_logo")
-        self.logo_label.setFixedSize(42, 42)
-        self.logo_label.setScaledContents(True)
-        layout.addWidget(self.logo_label, alignment=Qt.AlignmentFlag.AlignTop)
-
-        copy_layout = QVBoxLayout()
-        copy_layout.setContentsMargins(0, 0, 0, 0)
-        copy_layout.setSpacing(4)
-
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(6)
-
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("channel_row_title")
-        self.title_label.setWordWrap(True)
-        title_row.addWidget(self.title_label, stretch=1)
-
-        badge_container = QWidget()
-        badge_layout = QHBoxLayout(badge_container)
-        badge_layout.setContentsMargins(0, 0, 0, 0)
-        badge_layout.setSpacing(4)
-        for badge_text, tone in badges:
-            badge_layout.addWidget(ChannelBadge(badge_text, tone))
-        badge_layout.addStretch()
-        title_row.addWidget(badge_container, alignment=Qt.AlignmentFlag.AlignRight)
-
-        copy_layout.addLayout(title_row)
-
-        self.subtitle_label = QLabel(subtitle)
-        self.subtitle_label.setObjectName("channel_row_subtitle")
-        self.subtitle_label.setWordWrap(True)
-        copy_layout.addWidget(self.subtitle_label)
-
-        self.meta_label = QLabel(meta)
-        self.meta_label.setObjectName("channel_row_meta")
-        self.meta_label.setWordWrap(True)
-        self.meta_label.setVisible(bool(meta))
-        copy_layout.addWidget(self.meta_label)
-
-        layout.addLayout(copy_layout, stretch=1)
-
-    def set_selected(self, selected: bool) -> None:
-        self.setProperty("selected", selected)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def _apply_logo(self, pixmap: QPixmap) -> None:
-        self.logo_label.setPixmap(pixmap)
-
-    def _on_logo_loaded(self, source: str, pixmap: object) -> None:
-        if source != self._logo_source or not isinstance(pixmap, QPixmap):
-            return
-        self._apply_logo(pixmap)
 
 
 class CollectionStateWidget(QFrame):
@@ -297,19 +214,23 @@ class LeftPanel(QFrame):
         self.tabs = QTabWidget()
         self.channel_list = ChannelListView(self._logo_provider)
         self.channel_list.visible_channels_changed.connect(self._schedule_visible_program_refresh)
-        self.favorites_list = self._create_list_widget("favorites_list")
-        self.recent_list = self._create_list_widget("recent_list")
+        self.favorites_list = ChannelListView(self._logo_provider)
+        self.recent_list = ChannelListView(self._logo_provider)
 
         self.tabs.addTab(
             self._wrap_collection(self.channel_list, "No playlist loaded", "Load a playlist to browse channels."),
             "Channels",
         )
         self.tabs.addTab(
-            self._wrap_collection(self.favorites_list, "No favorites yet", "Saved channels will appear here."),
+            self._wrap_collection(
+                self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL
+            ),
             "Favorites",
         )
         self.tabs.addTab(
-            self._wrap_collection(self.recent_list, "No recent channels", "Your playback history will appear here."),
+            self._wrap_collection(
+                self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL
+            ),
             "Recent",
         )
         layout.addWidget(self.tabs, stretch=1)
@@ -320,13 +241,6 @@ class LeftPanel(QFrame):
 
         self.epg_widget = EPGWidget()
         layout.addWidget(self.epg_widget)
-
-    def _create_list_widget(self, object_name: str) -> QListWidget:
-        widget = QListWidget()
-        widget.setObjectName(object_name)
-        widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-        widget.itemSelectionChanged.connect(lambda w=widget: self._sync_list_selection_styles(w))
-        return widget
 
     def _wrap_collection(
         self,
@@ -362,8 +276,8 @@ class LeftPanel(QFrame):
             show_now_playing=show_now_playing,
             favorites=favorites,
             current_channel_key=current_channel_key,
-            empty_title="No channels match",
-            empty_detail="Adjust the category or search filters to broaden the results.",
+            empty_title=_EMPTY_CHANNELS_TITLE,
+            empty_detail=_EMPTY_CHANNELS_DETAIL,
         )
 
     def set_channel_results(
@@ -375,8 +289,8 @@ class LeftPanel(QFrame):
         show_now_playing: bool = True,
         favorites: set[tuple[str, str]] | None = None,
         current_channel_key: tuple[str, str] | None = None,
-        empty_title: str = "No channels match",
-        empty_detail: str = "Adjust the category or search filters to broaden the results.",
+        empty_title: str = _EMPTY_CHANNELS_TITLE,
+        empty_detail: str = _EMPTY_CHANNELS_DETAIL,
         batch_size: int = 250,
         progress_callback: Callable[[int, int], None] | None = None,
         completion_callback: Callable[[], None] | None = None,
@@ -412,35 +326,6 @@ class LeftPanel(QFrame):
         if completion_callback:
             QTimer.singleShot(0, completion_callback)
 
-    def populate_channels_incrementally(
-        self,
-        channels: list[Channel],
-        *,
-        current_programs: dict[str, Program] | None = None,
-        current_program_resolver: Callable[[list[Channel]], dict[str, Program]] | None = None,
-        show_now_playing: bool = True,
-        favorites: set[tuple[str, str]] | None = None,
-        current_channel_key: tuple[str, str] | None = None,
-        empty_title: str = "No channels match",
-        empty_detail: str = "Adjust the category or search filters to broaden the results.",
-        batch_size: int = 250,
-        progress_callback: Callable[[int, int], None] | None = None,
-        completion_callback: Callable[[], None] | None = None,
-    ) -> None:
-        self.set_channel_results(
-            channels,
-            current_programs=current_programs,
-            current_program_resolver=current_program_resolver,
-            show_now_playing=show_now_playing,
-            favorites=favorites,
-            current_channel_key=current_channel_key,
-            empty_title=empty_title,
-            empty_detail=empty_detail,
-            batch_size=batch_size,
-            progress_callback=progress_callback,
-            completion_callback=completion_callback,
-        )
-
     def cancel_channel_population(self) -> None:
         self._channel_program_resolver = None
         self._channel_program_timer.stop()
@@ -454,17 +339,30 @@ class LeftPanel(QFrame):
         show_now_playing: bool = True,
         current_channel_key: tuple[str, str] | None = None,
     ) -> None:
-        self._populate_list(
-            self.favorites_list,
+        current_programs = current_programs or {}
+        if not channels:
+            self.favorites_list.clear_channels()
+            self._set_collection_state(
+                self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL
+            )
+            return
+
+        self._show_collection(self.favorites_list)
+        favorites_set = {channel.identity_key() for channel in channels}
+        meta_suffixes = {
+            i: f"Source {Path(ch.playlist_path or 'active').name}"
+            for i, ch in enumerate(channels)
+        }
+        self.favorites_list.set_channels(
             channels,
-            current_programs=current_programs,
-            show_now_playing=show_now_playing,
-            favorites={channel.identity_key() for channel in channels},
+            favorite_keys=favorites_set,
             current_channel_key=current_channel_key,
-            empty_title="No favorite channels",
-            empty_detail="Use the Favorite control while watching a channel to pin it here.",
-            list_kind="favorites",
+            show_now_playing=show_now_playing,
+            meta_suffixes=meta_suffixes,
         )
+        self.favorites_list.update_current_programs(current_programs)
+        if current_channel_key:
+            self.favorites_list.select_channel_key(current_channel_key)
 
     def add_recent_channels(
         self,
@@ -475,17 +373,30 @@ class LeftPanel(QFrame):
         favorites: set[tuple[str, str]] | None = None,
         current_channel_key: tuple[str, str] | None = None,
     ) -> None:
-        self._populate_list(
-            self.recent_list,
+        current_programs = current_programs or {}
+        if not channels:
+            self.recent_list.clear_channels()
+            self._set_collection_state(
+                self.recent_list, _EMPTY_RECENT_TITLE, _EMPTY_RECENT_DETAIL
+            )
+            return
+
+        self._show_collection(self.recent_list)
+        meta_suffixes: dict[int, str] = {}
+        for i, ch in enumerate(channels):
+            if ch.last_played_at:
+                played_at = datetime.fromtimestamp(ch.last_played_at).strftime("%Y-%m-%d %H:%M")
+                meta_suffixes[i] = f"Last played {played_at}"
+        self.recent_list.set_channels(
             channels,
-            current_programs=current_programs,
-            show_now_playing=show_now_playing,
-            favorites=favorites,
+            favorite_keys=favorites or set(),
             current_channel_key=current_channel_key,
-            empty_title="Nothing played recently",
-            empty_detail="Recently watched channels will appear here after playback starts.",
-            list_kind="recent",
+            show_now_playing=show_now_playing,
+            meta_suffixes=meta_suffixes,
         )
+        self.recent_list.update_current_programs(current_programs)
+        if current_channel_key:
+            self.recent_list.select_channel_key(current_channel_key)
 
     def show_loading_state(self, target: str, title: str, detail: str) -> None:
         widget = self._widget_for_target(target)
@@ -500,119 +411,13 @@ class LeftPanel(QFrame):
             self.sort_combo.setCurrentIndex(index)
 
     def set_theme_mode(self, mode: str) -> None:
-        self.channel_list.set_theme_mode(mode)
+        self._logo_provider.set_theme_mode(mode)
+        for view in (self.channel_list, self.favorites_list, self.recent_list):
+            view.set_theme_mode(mode)
 
     def highlight_channel(self, channel: Channel) -> None:
-        self.channel_list.select_channel_key(channel.identity_key())
-        for widget in (self.favorites_list, self.recent_list):
-            self._select_channel(widget, channel.identity_key())
-
-    def _populate_list(
-        self,
-        widget: QListWidget,
-        channels: list[Channel],
-        *,
-        current_programs: dict[str, Program] | None,
-        show_now_playing: bool,
-        favorites: set[tuple[str, str]] | None,
-        current_channel_key: tuple[str, str] | None,
-        empty_title: str,
-        empty_detail: str,
-        list_kind: str,
-    ) -> None:
-        widget.clear()
-        favorites = favorites or set()
-        current_programs = current_programs or {}
-        if not channels:
-            self._set_collection_state(widget, empty_title, empty_detail)
-            return
-
-        self._show_collection(widget)
-        self._append_channels(
-            widget,
-            channels,
-            current_programs=current_programs,
-            show_now_playing=show_now_playing,
-            favorites=favorites,
-            current_channel_key=current_channel_key,
-            list_kind=list_kind,
-        )
-
-        if current_channel_key:
-            self._select_channel(widget, current_channel_key)
-        self._sync_list_selection_styles(widget)
-
-    def _append_channels(
-        self,
-        widget: QListWidget,
-        channels: list[Channel],
-        *,
-        current_programs: dict[str, Program] | None,
-        show_now_playing: bool,
-        favorites: set[tuple[str, str]],
-        current_channel_key: tuple[str, str] | None,
-        list_kind: str,
-    ) -> None:
-        current_programs = current_programs or {}
-        for channel in channels:
-            program = current_programs.get(channel.epg_id)
-            is_favorite = channel.identity_key() in favorites
-            is_current = channel.identity_key() == current_channel_key
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, channel)
-            item.setSizeHint(QSize(100, 88))
-            widget.addItem(item)
-            row = self._channel_item_widget(
-                channel,
-                program=program,
-                show_now_playing=show_now_playing,
-                is_favorite=is_favorite,
-                is_current=is_current,
-                list_kind=list_kind,
-            )
-            widget.setItemWidget(item, row)
-
-    def _channel_item_widget(
-        self,
-        channel: Channel,
-        *,
-        program: Program | None,
-        show_now_playing: bool,
-        is_favorite: bool,
-        is_current: bool,
-        list_kind: str,
-    ) -> ChannelListItemWidget:
-        badges: list[tuple[str, str]] = []
-        if is_current:
-            badges.append(("LIVE", "accent"))
-        if is_favorite:
-            badges.append(("FAV", "warning"))
-
-        group_name = channel.group or "Uncategorized"
-        subtitle = group_name
-        meta_parts: list[str] = []
-
-        if show_now_playing and program:
-            subtitle = program.title
-            meta_parts.append(
-                f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
-            )
-            meta_parts.append(group_name)
-
-        if list_kind == "recent" and channel.last_played_at:
-            played_at = datetime.fromtimestamp(channel.last_played_at).strftime("%Y-%m-%d %H:%M")
-            meta_parts.append(f"Last played {played_at}")
-        elif list_kind == "favorites":
-            meta_parts.append(f"Source {Path(channel.playlist_path or 'active').name}")
-
-        return ChannelListItemWidget(
-            channel,
-            logo_provider=self._logo_provider,
-            title=channel.name,
-            subtitle=subtitle,
-            meta="  |  ".join(part for part in meta_parts if part),
-            badges=badges,
-        )
+        for view in (self.channel_list, self.favorites_list, self.recent_list):
+            view.select_channel_key(channel.identity_key())
 
     def _widget_for_target(self, target: str) -> QWidget:
         mapping = {
@@ -630,33 +435,6 @@ class LeftPanel(QFrame):
     def _show_collection(self, widget: QWidget) -> None:
         stacked, _ = self._collection_views[widget]
         stacked.setCurrentWidget(widget)
-
-    @staticmethod
-    def _format_display_time(value: datetime) -> str:
-        if value.tzinfo is None:
-            return value.strftime("%H:%M")
-        return value.astimezone().strftime("%H:%M")
-
-    @staticmethod
-    def _select_channel(widget: QListWidget, channel_key: tuple[str, str] | None) -> None:
-        if not channel_key:
-            widget.clearSelection()
-            return
-        for index in range(widget.count()):
-            item = widget.item(index)
-            data = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(data, Channel) and data.identity_key() == channel_key:
-                widget.setCurrentRow(index)
-                return
-
-    @staticmethod
-    def _sync_list_selection_styles(widget: QListWidget) -> None:
-        current_item = widget.currentItem()
-        for index in range(widget.count()):
-            item = widget.item(index)
-            child = widget.itemWidget(item)
-            if isinstance(child, ChannelListItemWidget):
-                child.set_selected(item is current_item)
 
     def _schedule_visible_program_refresh(self) -> None:
         if self._channel_program_resolver is None:
