@@ -16,7 +16,7 @@ class RightPanel(QFrame):
         self._current_stream_url = ""
         self.setup_ui()
 
-    def setup_ui(self) -> None:
+    def setup_ui(self) -> None:  # noqa: PLR0915  (Qt UI builder; pre-existing size)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(14)
@@ -208,10 +208,7 @@ class RightPanel(QFrame):
         self.channel_meta_label.setText(" / ".join(meta_parts))
 
         if program:
-            schedule = (
-                f"{format_display_time(program.start_time)} - "
-                f"{format_display_time(program.end_time)}"
-            )
+            schedule = f"{format_display_time(program.start_time)} - {format_display_time(program.end_time)}"
             self.program_title_label.setText(f"{program.title} ({schedule})")
             self.program_description_label.setText(program.description or "No program description available.")
         else:
