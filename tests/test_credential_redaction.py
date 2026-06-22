@@ -44,9 +44,8 @@ def test_xtream_redacts_password_on_http_error(monkeypatch, caplog):
 
     monkeypatch.setattr(client.session, "get", _fake_get)
 
-    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
-        with pytest.raises(NetworkError):
-            client.validate_credentials(credentials)
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"), pytest.raises(NetworkError):
+        client.validate_credentials(credentials)
 
     assert _SECRET not in caplog.text
     assert "password=***" in caplog.text
@@ -65,9 +64,8 @@ def test_xtream_redacts_password_on_connection_error(monkeypatch, caplog):
 
     monkeypatch.setattr(client.session, "get", _fake_get)
 
-    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
-        with pytest.raises(NetworkError):
-            client.validate_credentials(credentials)
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"), pytest.raises(NetworkError):
+        client.validate_credentials(credentials)
 
     assert _SECRET not in caplog.text
 
@@ -106,9 +104,8 @@ def test_epg_url_failure_redacts_password_in_log(monkeypatch, caplog):
     monkeypatch.setattr("core.services.epg_service.requests.get", lambda url, timeout=20: _Resp())
     url = f"http://host/xmltv.php?username=alice&password={_SECRET}&type=m3u_plus"
 
-    with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"):
-        with pytest.raises(RepositoryError):
-            service.load_epg_from_url(url)
+    with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"), pytest.raises(RepositoryError):
+        service.load_epg_from_url(url)
 
     assert _SECRET not in caplog.text
 
@@ -162,9 +159,8 @@ def test_epg_url_failure_redacts_basic_auth_in_log(monkeypatch, caplog):
     monkeypatch.setattr("core.services.epg_service.requests.get", _conn_error)
     url = f"http://alice:{_SECRET}@host/epg.xml"
 
-    with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"):
-        with pytest.raises(NetworkError) as excinfo:
-            service.load_epg_from_url(url)
+    with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"), pytest.raises(NetworkError) as excinfo:
+        service.load_epg_from_url(url)
 
     assert _SECRET not in caplog.text
     assert _SECRET not in str(excinfo.value)
