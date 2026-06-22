@@ -1,9 +1,8 @@
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse, urlunparse
 
 
@@ -64,8 +63,8 @@ class Channel:
     channel_number: int = 0
     time_shift: int = 0
     playlist_path: str = ""
-    last_played_at: Optional[int] = None
-    id: Optional[int] = None
+    last_played_at: int | None = None
+    id: int | None = None
 
     def identity_key(self) -> tuple[str, str]:
         return (self.url, self.playlist_path or "")
@@ -212,7 +211,7 @@ class ChannelQuery:
     text: str = ""
     current_category_only: bool = True
     sort_mode: str = "name_asc"
-    favorite_keys: Set[tuple[str, str]] = field(default_factory=set)
+    favorite_keys: set[tuple[str, str]] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -279,22 +278,22 @@ class Playlist:
 
     name: str = "Unnamed Playlist"
     source_path: str = ""
-    source_reference: Optional[PlaylistReference] = None
+    source_reference: PlaylistReference | None = None
     source_hash: str = ""
-    channels: List[Channel] = field(default_factory=list)
-    parse_warnings: List[ParseWarning] = field(default_factory=list)
-    last_updated: Optional[int] = None
+    channels: list[Channel] = field(default_factory=list)
+    parse_warnings: list[ParseWarning] = field(default_factory=list)
+    last_updated: int | None = None
 
     # Internal indexes for faster lookups
-    _categories: Dict[str, List[Channel]] = field(default_factory=dict)
-    _categories_set: Set[str] = field(default_factory=set)
-    _url_index: Dict[str, Channel] = field(default_factory=dict)
-    _name_index: Dict[str, List[Channel]] = field(default_factory=dict)
+    _categories: dict[str, list[Channel]] = field(default_factory=dict)
+    _categories_set: set[str] = field(default_factory=set)
+    _url_index: dict[str, Channel] = field(default_factory=dict)
+    _name_index: dict[str, list[Channel]] = field(default_factory=dict)
 
     def __post_init__(self):
         self._rebuild_indexes()
 
-    def replace_channels(self, channels: List[Channel]) -> None:
+    def replace_channels(self, channels: list[Channel]) -> None:
         self.channels = channels
         self._rebuild_indexes()
 
@@ -324,13 +323,13 @@ class Playlist:
             self._update_indexes(channel)
 
     @property
-    def categories(self) -> List[str]:
+    def categories(self) -> list[str]:
         return sorted(self._categories_set)
 
-    def get_channels_by_category(self, category: str) -> List[Channel]:
+    def get_channels_by_category(self, category: str) -> list[Channel]:
         return self._categories.get(category, [])
 
-    def get_channel_by_url(self, url: str) -> Optional[Channel]:
+    def get_channel_by_url(self, url: str) -> Channel | None:
         return self._url_index.get(url)
 
 
@@ -354,23 +353,23 @@ class EPGChannel:
     """Holds EPG data for a specific channel."""
 
     channel_id: str
-    programs: List[Program] = field(default_factory=list)
+    programs: list[Program] = field(default_factory=list)
 
-    def get_current_program(self, current_time: Optional[datetime] = None) -> Optional[Program]:
+    def get_current_program(self, current_time: datetime | None = None) -> Program | None:
         if current_time is None:
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
         elif current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
         for program in self.programs:
             if program.start_time <= current_time < program.end_time:
                 return program
         return None
 
-    def get_upcoming_programs(self, current_time: Optional[datetime] = None, limit: int = 5) -> List[Program]:
+    def get_upcoming_programs(self, current_time: datetime | None = None, limit: int = 5) -> list[Program]:
         if current_time is None:
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
         elif current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
         upcoming = [p for p in self.programs if p.start_time > current_time]
         upcoming.sort(key=lambda p: p.start_time)
         return upcoming[:limit]
