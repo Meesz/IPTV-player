@@ -2,7 +2,6 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from core.errors import ParsingError
 from core.models import Channel, ParseWarning, Playlist
@@ -26,7 +25,7 @@ class M3UParser:
     """Parser for M3U/M3U8 playlists."""
 
     @staticmethod
-    def parse(file_path: str | Path) -> Playlist:
+    def parse(file_path: str | Path) -> Playlist:  # noqa: PLR0912, PLR0915  (parser dispatch; pre-existing size)
         file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"M3U file not found: {file_path}")
@@ -40,7 +39,7 @@ class M3UParser:
         except OSError as exc:
             raise ParsingError(f"Could not read playlist file: {file_path}") from exc
 
-        parse_warnings: List[ParseWarning] = []
+        parse_warnings: list[ParseWarning] = []
         playlist = Playlist(source_path=str(file_path), source_hash=file_path_hash)
 
         text = M3UParser._decode_playlist_content(payload, file_path)
@@ -49,7 +48,7 @@ class M3UParser:
         if not lines or not lines[0].lstrip().startswith("#EXTM3U"):
             raise ParsingError("Missing #EXTM3U header")
 
-        pending_channel: Optional[Dict[str, str]] = None
+        pending_channel: dict[str, str] | None = None
         for line in lines[1:]:
             value = line.strip()
             if not value:
@@ -57,9 +56,7 @@ class M3UParser:
 
             if value.startswith("#EXTINF"):
                 match = _EXTINF_RE.match(value)
-                attrs_blob, raw_name = (
-                    M3UParser._split_extinf_tail(match.group("rest")) if match else (None, None)
-                )
+                attrs_blob, raw_name = M3UParser._split_extinf_tail(match.group("rest")) if match else (None, None)
                 if not match or raw_name is None:
                     parse_warnings.append(
                         ParseWarning(
@@ -161,7 +158,7 @@ class M3UParser:
         raise ParsingError(f"Could not decode playlist with supported encodings: {source}")
 
     @staticmethod
-    def _split_extinf_tail(rest: str) -> tuple[Optional[str], Optional[str]]:
+    def _split_extinf_tail(rest: str) -> tuple[str | None, str | None]:
         """Split the EXTINF tail into ``(attributes, title)``.
 
         The title is separated from the attribute block by the first comma that
@@ -169,7 +166,7 @@ class M3UParser:
         ``group-title="News, World"`` do not corrupt the channel name. Returns
         ``(rest, None)`` when no title separator exists (a malformed entry).
         """
-        quote: Optional[str] = None
+        quote: str | None = None
         for index, char in enumerate(rest):
             if quote is not None:
                 if char == quote:
@@ -181,8 +178,8 @@ class M3UParser:
         return rest, None
 
     @staticmethod
-    def _parse_attributes(raw: str) -> Dict[str, str]:
-        attributes: Dict[str, str] = {}
+    def _parse_attributes(raw: str) -> dict[str, str]:
+        attributes: dict[str, str] = {}
         for match in _ATTRIBUTE_RE.finditer(raw):
             key = match.group(1).lower()
             value = match.group(2) if match.group(2) is not None else match.group(3) or ""
