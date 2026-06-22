@@ -3,8 +3,7 @@ import logging
 import os
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta, timezone
 
 from core.models import EPGChannel, ParseWarning, Program
 
@@ -27,27 +26,24 @@ class EPGParser:
 
         base = match.group(1)
         tz = match.group(2)
-        if len(base) == 12:
-            dt = datetime.strptime(base, "%Y%m%d%H%M")
-        else:
-            dt = datetime.strptime(base, "%Y%m%d%H%M%S")
+        dt = datetime.strptime(base, "%Y%m%d%H%M") if len(base) == 12 else datetime.strptime(base, "%Y%m%d%H%M%S")
 
         if not tz or tz == "Z":
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
 
         normalized_tz = tz.replace(":", "")
         sign = 1 if normalized_tz.startswith("+") else -1
         offset = sign * (int(normalized_tz[1:3]) * 60 + int(normalized_tz[3:5]))
         aware = dt.replace(tzinfo=timezone(timedelta(minutes=offset)))
-        return aware.astimezone(timezone.utc)
+        return aware.astimezone(UTC)
 
     @staticmethod
-    def parse(file_path: str) -> Dict[str, EPGChannel]:
+    def parse(file_path: str) -> dict[str, EPGChannel]:
         parsed, _warnings = EPGParser.parse_with_warnings(file_path)
         return parsed
 
     @staticmethod
-    def parse_with_warnings(file_path: str) -> tuple[Dict[str, EPGChannel], list[ParseWarning]]:
+    def parse_with_warnings(file_path: str) -> tuple[dict[str, EPGChannel], list[ParseWarning]]:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"EPG file not found: {file_path}")
 
@@ -68,7 +64,7 @@ class EPGParser:
         if root_tag != "tv":
             raise ValueError("Invalid XMLTV format: missing root 'tv'")
 
-        epg_data: Dict[str, EPGChannel] = {}
+        epg_data: dict[str, EPGChannel] = {}
         warnings: list[ParseWarning] = []
         for program in root.iter():
             if EPGParser._local_name(program.tag) != "programme":
@@ -115,7 +111,7 @@ class EPGParser:
 
     @staticmethod
     def _local_name(tag: str) -> str:
-        return tag.split("}")[-1]
+        return tag.rsplit("}", maxsplit=1)[-1]
 
     @staticmethod
     def _child_text(node: ET.Element, child_name: str) -> str:
