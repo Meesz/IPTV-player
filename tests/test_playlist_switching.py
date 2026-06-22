@@ -32,9 +32,7 @@ def _service(tmp_path) -> PlaylistService:
 
 
 def _file_identity(path) -> str:
-    return PlaylistReference(
-        name="x", path=str(path), source_type=PlaylistSourceType.FILE
-    ).source_identity
+    return PlaylistReference(name="x", path=str(path), source_type=PlaylistSourceType.FILE).source_identity
 
 
 def test_switching_file_playlists_updates_current_and_retags_channels(tmp_path):
