@@ -1,16 +1,16 @@
 import logging
 import os
 import tempfile
+from collections.abc import Callable, Iterable
 from concurrent.futures import CancelledError
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
 from urllib.parse import urlparse
 
 import requests
 from requests.exceptions import RequestException, Timeout
 
 from core.errors import NetworkError, ParsingError, ValidationError
-from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType, XtreamCredentials
+from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType
 from infra.db.playlist_repository import PlaylistRepository
 from infra.parsers.m3u_parser import M3UParser
 from infra.providers.xtream_client import XtreamClient
@@ -27,10 +27,10 @@ class PlaylistService:
     ):
         self.repository = repository
         self.xtream_client = xtream_client or XtreamClient()
-        self._current_playlist: Optional[Playlist] = None
+        self._current_playlist: Playlist | None = None
 
     @property
-    def current_playlist(self) -> Optional[Playlist]:
+    def current_playlist(self) -> Playlist | None:
         return self._current_playlist
 
     def load_playlist(
@@ -98,7 +98,7 @@ class PlaylistService:
         reference = self._resolve_reference(source, is_url=is_url)
         self.repository.delete_playlist(self._normalize_reference(reference).source_identity)
 
-    def get_saved_playlists(self) -> List[PlaylistReference]:
+    def get_saved_playlists(self) -> list[PlaylistReference]:
         return self.repository.get_playlists()
 
     def get_saved_playlist_by_identity(self, identity: str) -> PlaylistReference | None:
@@ -161,7 +161,7 @@ class PlaylistService:
 
     def import_playlists(
         self,
-        playlists: List[PlaylistReference],
+        playlists: list[PlaylistReference],
         *,
         active_playlist_path: str = "",
     ) -> None:
@@ -389,7 +389,7 @@ class PlaylistService:
         if not self._is_valid_url(url):
             raise ValidationError(f"Invalid playlist URL: {url}")
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
                 response = requests.get(url, timeout=20)
@@ -407,9 +407,9 @@ class PlaylistService:
             raise NetworkError(f"Timed out while downloading playlist: {url}") from last_error
         raise NetworkError(f"Failed to download playlist: {url}") from last_error
 
-    def _normalize_references(self, playlists: Iterable[PlaylistReference]) -> List[PlaylistReference]:
+    def _normalize_references(self, playlists: Iterable[PlaylistReference]) -> list[PlaylistReference]:
         seen_keys: set[tuple[str, ...]] = set()
-        normalized: List[PlaylistReference] = []
+        normalized: list[PlaylistReference] = []
         for playlist in playlists:
             normalized.append(self.validate_playlist_reference(playlist, existing_keys=seen_keys))
         return normalized
