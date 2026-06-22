@@ -167,7 +167,17 @@ class PlaylistReference:
             source_type = PlaylistSourceType.URL if raw.startswith(("http://", "https://")) else PlaylistSourceType.FILE
             return cls(name="Playlist", path=raw, source_type=source_type)
 
-        source_type = PlaylistSourceType(payload.get("source_type", PlaylistSourceType.FILE.value))
+        raw_source_type = str(payload.get("source_type", PlaylistSourceType.FILE.value))
+        try:
+            source_type = PlaylistSourceType(raw_source_type)
+        except ValueError:
+            # Degrade gracefully on an unknown/forward-incompatible source_type,
+            # mirroring the malformed-JSON branch above, so corrupted settings
+            # cannot crash the caller.
+            path_value = str(payload.get("path", ""))
+            source_type = (
+                PlaylistSourceType.URL if path_value.startswith(("http://", "https://")) else PlaylistSourceType.FILE
+            )
         xtream_payload = payload.get("xtream")
         xtream = None
         if isinstance(xtream_payload, dict):
