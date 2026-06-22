@@ -1,9 +1,10 @@
+import contextlib
 import logging
 import tempfile
+from collections.abc import Callable
 from concurrent.futures import CancelledError
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 class EPGService:
     def __init__(self, repository: EPGRepository):
         self.repository = repository
-        self._channels: Dict[str, EPGChannel] = {}
+        self._channels: dict[str, EPGChannel] = {}
         self._last_warnings: list[ParseWarning] = []
 
     def load_epg_from_path(
@@ -35,7 +36,7 @@ class EPGService:
             raise FileNotFoundError(f"EPG file not found: {path}")
         self._last_warnings = []
         self._ensure_not_cancelled(cancel_callback)
-        parsed_channels: Dict[str, EPGChannel]
+        parsed_channels: dict[str, EPGChannel]
         warnings: list[ParseWarning]
         try:
             self._emit_progress(progress_callback, "Parsing EPG data")
@@ -95,10 +96,8 @@ class EPGService:
             raise
         finally:
             if tmp_path is not None:
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             if response is not None:
                 response.close()
 
@@ -107,7 +106,7 @@ class EPGService:
         self._last_warnings = []
         self.repository.clear()
 
-    def get_program_for_channel(self, channel_id: str, current_time=None) -> Optional[Program]:
+    def get_program_for_channel(self, channel_id: str, current_time=None) -> Program | None:
         current_time = self._normalize_time(current_time)
         if channel_id in self._channels:
             return self._channels[channel_id].get_current_program(current_time)
@@ -118,7 +117,7 @@ class EPGService:
         channel_id: str,
         limit: int = 5,
         current_time=None,
-    ) -> List[Program]:
+    ) -> list[Program]:
         current_time = self._normalize_time(current_time)
         if channel_id in self._channels:
             return self._channels[channel_id].get_upcoming_programs(
@@ -132,7 +131,7 @@ class EPGService:
         )
 
     @property
-    def loaded_channels(self) -> List[str]:
+    def loaded_channels(self) -> list[str]:
         return sorted(self._channels.keys())
 
     @property
@@ -186,10 +185,10 @@ class EPGService:
     @staticmethod
     def _normalize_time(current_time: datetime | None) -> datetime:
         if current_time is None:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         if current_time.tzinfo is None:
-            return current_time.replace(tzinfo=timezone.utc)
-        return current_time.astimezone(timezone.utc)
+            return current_time.replace(tzinfo=UTC)
+        return current_time.astimezone(UTC)
 
     @staticmethod
     def _ensure_not_cancelled(callback: Callable[[], bool] | None) -> None:
