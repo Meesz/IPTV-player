@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
 
 from core.models import Channel, Program
+from ui.utils.time_format import format_display_time
 from ui.widgets.player_widget import PlayerWidget
 
 
@@ -61,14 +60,10 @@ class RightPanel(QFrame):
         self.program_description_label.setWordWrap(True)
         now_layout.addWidget(self.program_description_label)
 
-        self.stream_detail_label = QLabel("No source selected.")
-        self.stream_detail_label.setObjectName("player_meta")
-        self.stream_detail_label.setWordWrap(True)
-        now_layout.addWidget(self.stream_detail_label)
-
-        self.playback_detail_label = QLabel("Awaiting stream selection.")
+        self.playback_detail_label = QLabel("")
         self.playback_detail_label.setObjectName("player_meta")
         self.playback_detail_label.setWordWrap(True)
+        self.playback_detail_label.hide()
         now_layout.addWidget(self.playback_detail_label)
 
         layout.addWidget(self.now_playing_card)
@@ -76,8 +71,8 @@ class RightPanel(QFrame):
         self.player_surface = QFrame()
         self.player_surface.setObjectName("player_surface")
         player_layout = QVBoxLayout(self.player_surface)
-        player_layout.setContentsMargins(14, 14, 14, 14)
-        player_layout.setSpacing(12)
+        player_layout.setContentsMargins(0, 0, 0, 0)
+        player_layout.setSpacing(0)
 
         self.player_widget = PlayerWidget()
         player_layout.addWidget(self.player_widget)
@@ -102,8 +97,10 @@ class RightPanel(QFrame):
         self.retry_button.setProperty("ghost", True)
         self.mute_button = QPushButton("Mute")
         self.mute_button.setProperty("ghost", True)
+        self.mute_button.setCheckable(True)
         self.favorite_button = QPushButton("Favorite")
         self.favorite_button.setProperty("ghost", True)
+        self.favorite_button.setCheckable(True)
         self.favorite_button.setEnabled(False)
         self.fullscreen_button = QPushButton("Fullscreen")
         self.fullscreen_button.setProperty("ghost", True)
@@ -128,18 +125,33 @@ class RightPanel(QFrame):
         self.volume_label.setObjectName("player_meta")
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
+        self.volume_value_label = QLabel("100%")
+        self.volume_value_label.setObjectName("player_meta")
+        self.volume_slider.valueChanged.connect(self._on_volume_changed)
         self.copy_url_button = QPushButton("Copy URL")
         self.copy_url_button.setProperty("ghost", True)
+        self.copy_url_button.setEnabled(False)
         self.info_button = QPushButton("Channel Info")
         self.info_button.setProperty("ghost", True)
 
         utility_row.addWidget(self.volume_label)
         utility_row.addWidget(self.volume_slider, stretch=1)
+        utility_row.addWidget(self.volume_value_label)
         utility_row.addWidget(self.copy_url_button)
         utility_row.addWidget(self.info_button)
         controls_layout.addLayout(utility_row)
 
         layout.addWidget(self.control_bar)
+
+    def _on_volume_changed(self, value: int) -> None:
+        self.volume_value_label.setText(f"{value}%")
+
+    def set_muted(self, muted: bool) -> None:
+        self.mute_button.setChecked(muted)
+        self.volume_slider.setEnabled(not muted)
+
+    def set_favorite(self, is_favorite: bool) -> None:
+        self.favorite_button.setChecked(is_favorite)
 
     def set_playback_state(self, state: str, detail: str = "") -> None:
         titles = {
@@ -162,7 +174,13 @@ class RightPanel(QFrame):
         self.playback_state_chip.setProperty("stateTone", tones.get(state, "default"))
         self.playback_state_chip.style().unpolish(self.playback_state_chip)
         self.playback_state_chip.style().polish(self.playback_state_chip)
-        self.playback_detail_label.setText(detail)
+
+        show_detail = state in ("reconnecting", "error", "buffering")
+        self.playback_detail_label.setVisible(show_detail)
+        if detail and show_detail:
+            self.playback_detail_label.setText(detail)
+        elif not show_detail:
+            self.playback_detail_label.setText("")
 
     def set_now_playing(
         self,
@@ -175,9 +193,8 @@ class RightPanel(QFrame):
             self.channel_meta_label.setText("Load a playlist and pick a channel to begin.")
             self.program_title_label.setText("Program information appears here when EPG is available.")
             self.program_description_label.setText("")
-            self.stream_detail_label.setText("No source selected.")
-            self.playback_detail_label.setText("Awaiting stream selection.")
             self._current_stream_url = ""
+            self.copy_url_button.setEnabled(False)
             return
 
         self._current_stream_url = channel.url
@@ -192,7 +209,8 @@ class RightPanel(QFrame):
 
         if program:
             schedule = (
-                f"{self._format_display_time(program.start_time)} - " f"{self._format_display_time(program.end_time)}"
+                f"{format_display_time(program.start_time)} - "
+                f"{format_display_time(program.end_time)}"
             )
             self.program_title_label.setText(f"{program.title} ({schedule})")
             self.program_description_label.setText(program.description or "No program description available.")
@@ -200,7 +218,7 @@ class RightPanel(QFrame):
             self.program_title_label.setText("No live guide information for this channel.")
             self.program_description_label.setText("Load EPG data to enrich channel context.")
 
-        self.stream_detail_label.setText(f"Source playlist: {playlist_name}  |  Stream URL ready to copy")
+        self.copy_url_button.setEnabled(bool(channel.url))
 
     def set_source_context(self, playlist_label: str) -> None:
         self._current_stream_url = ""
@@ -211,23 +229,12 @@ class RightPanel(QFrame):
         self.program_description_label.setText(
             "Playback details, source context, and EPG description will appear here."
         )
-        self.stream_detail_label.setText(
-            "Use the player controls to mute, retry, copy the stream URL, or enter fullscreen."
-        )
+        self.copy_url_button.setEnabled(False)
 
     def set_stream_url(self, url: str) -> None:
         self._current_stream_url = url
-        if url:
-            self.stream_detail_label.setText("Stream URL available. Use Copy URL to share or inspect it.")
-        else:
-            self.stream_detail_label.setText("No source selected.")
+        self.copy_url_button.setEnabled(bool(url))
 
     @property
     def current_stream_url(self) -> str:
         return self._current_stream_url
-
-    @staticmethod
-    def _format_display_time(value: datetime) -> str:
-        if value.tzinfo is None:
-            return value.strftime("%H:%M")
-        return value.astimezone().strftime("%H:%M")
