@@ -82,7 +82,7 @@ class PlayerWidget(QFrame):
     def __init__(self):
         super().__init__()
         self.setObjectName("player_canvas")
-        self.setMinimumSize(540, 340)
+        self.setMinimumSize(480, 270)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
 
@@ -334,6 +334,9 @@ class PlayerWidget(QFrame):
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
             self._exit_fullscreen()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
