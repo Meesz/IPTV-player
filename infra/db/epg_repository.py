@@ -112,10 +112,14 @@ class EPGRepository:
             effective_time = int(self._normalize_time(current_time).timestamp())
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
+                    # start_time > now (not end_time > now) so the currently-airing
+                    # program is excluded, matching EPGChannel.get_upcoming_programs.
+                    # Otherwise the now-playing program would also appear as the first
+                    # "upcoming" entry when data is served from the DB cache.
                     """
                     SELECT * FROM epg_data
                     WHERE channel_id = ?
-                    AND end_time > ?
+                    AND start_time > ?
                     ORDER BY start_time
                     LIMIT ?
                     """,
