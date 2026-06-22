@@ -2,7 +2,7 @@ import gzip
 import logging
 import os
 import pathlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -263,7 +263,7 @@ def test_epg_parser_reads_programs(tmp_path):
     assert "news.us" in parsed
     assert len(parsed["news.us"].programs) == 1
     assert parsed["news.us"].programs[0].title == "Breaking News"
-    assert parsed["news.us"].programs[0].start_time.tzinfo == timezone.utc
+    assert parsed["news.us"].programs[0].start_time.tzinfo == UTC
 
 
 def test_epg_parser_supports_namespaces_and_gzip(tmp_path):
@@ -284,7 +284,7 @@ def test_epg_parser_supports_namespaces_and_gzip(tmp_path):
 
     assert warnings == []
     assert parsed["news.us"].programs[0].title == "Breaking News"
-    assert parsed["news.us"].programs[0].start_time == datetime(2026, 3, 31, 22, 0, tzinfo=timezone.utc)
+    assert parsed["news.us"].programs[0].start_time == datetime(2026, 3, 31, 22, 0, tzinfo=UTC)
 
 
 def test_epg_service_keeps_persistence_errors_distinct(tmp_path):
@@ -314,24 +314,24 @@ def test_epg_repository_uses_supplied_current_time(tmp_path):
         "news.us",
         Program(
             title="Breaking News",
-            start_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
-            end_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+            start_time=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+            end_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
         ),
     )
 
     current = repository.get_current_program(
         "news.us",
-        current_time=datetime(2026, 4, 1, 10, 30, tzinfo=timezone.utc),
+        current_time=datetime(2026, 4, 1, 10, 30, tzinfo=UTC),
     )
     missing = repository.get_current_program(
         "news.us",
-        current_time=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+        current_time=datetime(2026, 4, 1, 12, 0, tzinfo=UTC),
     )
 
     assert current is not None
     assert current.title == "Breaking News"
     assert missing is None
-    assert current.start_time.tzinfo == timezone.utc
+    assert current.start_time.tzinfo == UTC
 
 
 def test_settings_service_legacy_key_sync(tmp_path):
@@ -578,7 +578,10 @@ def test_right_panel_always_clears_playback_detail():
         setProperty=lambda key, value: setattr(chip, key, value),
         style=lambda: SimpleNamespace(unpolish=lambda _widget: None, polish=lambda _widget: None),
     )
-    detail = SimpleNamespace(setText=lambda value: setattr(detail, "text", value))
+    detail = SimpleNamespace(
+        setText=lambda value: setattr(detail, "text", value),
+        setVisible=lambda value: setattr(detail, "visible", value),
+    )
     fake_panel = SimpleNamespace(
         playback_state_chip=chip,
         playback_detail_label=detail,
@@ -587,7 +590,9 @@ def test_right_panel_always_clears_playback_detail():
     RightPanel.set_playback_state(fake_panel, "playing", "Stream is live")
     RightPanel.set_playback_state(fake_panel, "idle", "")
 
+    # On a non-detail state (idle) the detail label is cleared and hidden.
     assert detail.text == ""
+    assert detail.visible is False
 
 
 def test_left_panel_uses_virtualized_channel_model(qapp):
@@ -600,8 +605,8 @@ def test_left_panel_uses_virtualized_channel_model(qapp):
     )
     program = Program(
         title="Morning Briefing",
-        start_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+        start_time=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+        end_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
     )
 
     panel.set_channel_results(
@@ -715,7 +720,8 @@ def test_notification_widget_queues_messages_and_repositions(qapp):
 def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeypatch):
     dialog = PlaylistManagerDialog()
     assert dialog.objectName() == "playlist_dialog"
-    assert dialog.autoFillBackground() is True
+    # The dialog renders an opaque themed background via WA_StyledBackground plus a
+    # paintEvent that draws PE_Widget (not autoFillBackground, which ignores the QSS).
     assert dialog.testAttribute(Qt.WidgetAttribute.WA_StyledBackground) is True
     dialog.set_playlist_validator(lambda ref: (None, "Playlist file not found"))
     dialog._add_item("Broken", "/missing/file.m3u", False)
@@ -749,7 +755,8 @@ def test_xtream_source_dialog_has_opaque_root(qapp):
     dialog = XtreamSourceDialog()
 
     assert dialog.objectName() == "xtream_source_dialog"
-    assert dialog.autoFillBackground() is True
+    # The dialog renders an opaque themed background via WA_StyledBackground plus a
+    # paintEvent that draws PE_Widget (not autoFillBackground, which ignores the QSS).
     assert dialog.testAttribute(Qt.WidgetAttribute.WA_StyledBackground) is True
 
 
@@ -922,9 +929,8 @@ def test_xtream_client_logs_timeout(monkeypatch, caplog):
         lambda *args, **kwargs: (_ for _ in ()).throw(Timeout("slow")),
     )
 
-    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
-        with pytest.raises(NetworkError):
-            client.validate_credentials(credentials)
+    with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"), pytest.raises(NetworkError):
+        client.validate_credentials(credentials)
 
     assert "timed out" in caplog.text.lower()
     assert "secret" not in caplog.text
@@ -976,9 +982,8 @@ def test_playlist_service_logs_xtream_failure(caplog):
         ),
     )
 
-    with caplog.at_level(logging.DEBUG, logger="core.services.playlist_service"):
-        with pytest.raises(ValidationError):
-            service.load_playlist(reference)
+    with caplog.at_level(logging.DEBUG, logger="core.services.playlist_service"), pytest.raises(ValidationError):
+        service.load_playlist(reference)
 
     assert "Starting Xtream playlist load" in caplog.text
     assert "authentication phase failed" in caplog.text.lower()
