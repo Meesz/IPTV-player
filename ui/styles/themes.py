@@ -1,7 +1,10 @@
+from typing import ClassVar
+
+
 class Themes:
     """Utility class for managing themes."""
 
-    _DARK = {
+    _DARK: ClassVar[dict[str, str]] = {
         "window_start": "#081216",
         "window_end": "#132029",
         "text": "#edf5f7",
@@ -29,7 +32,7 @@ class Themes:
         "overlay": "rgba(5, 12, 16, 0.76)",
     }
 
-    _LIGHT = {
+    _LIGHT: ClassVar[dict[str, str]] = {
         "window_start": "#f6fbfc",
         "window_end": "#e8f1f4",
         "text": "#20313b",
@@ -530,6 +533,4 @@ class Themes:
                 border: none;
                 border-radius: 14px;
             }}
-        """.format(
-            **tokens
-        )
+        """.format(**tokens)
