@@ -1,5 +1,3 @@
-from typing import List
-
 from core.models import Channel
 from infra.db.favorites_repository import FavoritesRepository
 
@@ -16,7 +14,7 @@ class FavoritesService:
         self.repository.remove_favorite(channel)
         return True
 
-    def get_favorites(self) -> List[Channel]:
+    def get_favorites(self) -> list[Channel]:
         return self.repository.get_favorites()
 
     def is_favorite(self, channel: Channel) -> bool:
