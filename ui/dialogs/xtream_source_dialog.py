@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -9,6 +10,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QStyle,
+    QStyleOption,
     QVBoxLayout,
 )
 
@@ -22,10 +25,15 @@ class XtreamSourceDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("xtream_source_dialog")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(True)
         self._reference = reference
         self._init_ui()
         self._populate(reference)
+
+    def paintEvent(self, event) -> None:
+        opt = QStyleOption()
+        opt.initFrom(self)
+        painter = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
 
     def _init_ui(self) -> None:
         self.setWindowTitle("Xtream Codes Source")
@@ -63,8 +71,9 @@ class XtreamSourceDialog(QDialog):
         layout.addLayout(form)
 
         self.error_label = QLabel("")
+        self.error_label.setObjectName("playlist_feedback")
+        self.error_label.setProperty("stateTone", "error")
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet("color: #d24d57;")
         layout.addWidget(self.error_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
