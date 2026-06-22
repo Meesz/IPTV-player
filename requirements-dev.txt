@@ -1,28 +1,16 @@
 -r requirements.txt
 
+# Direct development dependencies only; pip resolves the transitive set.
+
 # Testing
-iniconfig==2.3.0
-pluggy==1.6.0
 pytest==9.0.3
 pytest-qt==4.5.0
-pygments==2.20.0
-typing_extensions==4.15.0
 
-# Formatting
-black==24.10.0
-click==8.1.8
-colorama==0.4.6
-mypy-extensions==1.0.0
-pathspec==0.12.1
-platformdirs==4.3.6
+# Lint + format (single tool: see [tool.ruff] in pyproject.toml)
+ruff==0.15.18
 
-# Linting
-astroid==3.3.8
-dill==0.3.9
-isort==5.13.2
-mccabe==0.7.0
-pylint==3.3.3
-tomlkit==0.13.2
+# Type checking (non-blocking; see [tool.mypy] in pyproject.toml)
+mypy==2.1.0
 
-# Shared
-packaging==24.2
+# Git hooks
+pre-commit==4.6.0
