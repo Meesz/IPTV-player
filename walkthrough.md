@@ -40,7 +40,8 @@ Useful checks for future refactors:
 
 ```bash
 python -m pytest -q
-pylint --fail-under=9.5 $(git ls-files '*.py')
+ruff check .
+ruff format --check .
 python -m compileall app core infra ui tests
 ```
 
