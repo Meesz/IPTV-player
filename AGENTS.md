@@ -27,10 +27,13 @@ Run from repo root.
 | Install pytest if missing | `pip install pytest` |
 | Run app | `python -m app.main` |
 | Run tests | `python -m pytest -q` |
-| Run CI lint locally | `pylint --fail-under=9.5 $(git ls-files '*.py')` |
+| Lint | `ruff check .` |
+| Check formatting | `ruff format --check .` |
+| Format | `ruff format .` |
+| Type check (non-blocking) | `mypy app core infra ui` |
 | Syntax check | `python -m compileall app core infra ui tests` |
 
-Two GitHub Actions workflows run on pull requests, both on Python 3.12: Pylint (`.github/workflows/pylint.yml`) and pytest (`.github/workflows/tests.yml`).
+Two GitHub Actions workflows run on pull requests, both on Python 3.12: Lint (`.github/workflows/lint.yml`, running `ruff check`, `ruff format --check`, and a non-blocking `mypy` step) and pytest (`.github/workflows/tests.yml`).
 `pytest` and the other test/lint/format tools are pinned in `requirements-dev.txt`, not in the runtime `requirements.txt`.
 
 ## Architecture Boundaries
@@ -45,6 +48,7 @@ Do not make widgets talk directly to SQLite repositories, M3U/XMLTV parsers, Xtr
 
 ## Code Style Expectations
 
+- Lint and format with Ruff (`ruff check` / `ruff format`); all tool config lives in `pyproject.toml`. Run `pre-commit install` once to apply both on commit. Ruff is the single linter/formatter — black, isort, and pylint were retired.
 - Follow the existing straightforward Python style.
 - Use typed dataclasses and service methods where the repo already uses them.
 - Keep comments short and useful.
@@ -57,7 +61,7 @@ Do not make widgets talk directly to SQLite repositories, M3U/XMLTV parsers, Xtr
 
 - Run `python -m pytest -q` after behavior changes when dependencies are available.
 - Run focused pytest files for narrow changes before the full suite when useful.
-- Run `pylint --fail-under=9.5 $(git ls-files '*.py')` before PR-like work.
+- Run `ruff check .` and `ruff format --check .` before PR-like work.
 - If PyQt6 or VLC dependencies are unavailable, say exactly what prevented verification.
 - Prefer service/repository/controller tests for behavior that does not need a real media runtime.
 
