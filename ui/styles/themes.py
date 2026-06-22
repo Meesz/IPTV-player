@@ -39,20 +39,20 @@ class Themes:
         "card": "#eef5f8",
         "border": "#cddbe2",
         "border_soft": "#dbe7ec",
-        "accent": "#129d8d",
+        "accent": "#0c7a6d",
         "accent_strong": "#0f8477",
         "accent_text": "#ffffff",
         "accent_soft": "#d8f3ef",
-        "warning": "#b57f29",
-        "error": "#c45160",
-        "success": "#2f9d67",
+        "warning": "#8a5f17",
+        "error": "#b23a4a",
+        "success": "#1f7a4d",
         "surface": "rgba(18, 48, 64, 0.04)",
         "surface_hover": "rgba(18, 48, 64, 0.08)",
         "selection": "#d7efea",
         "input": "#ffffff",
         "tab": "#edf4f7",
         "tab_active": "#ffffff",
-        "tab_text_muted": "#738a97",
+        "tab_text_muted": "#5a6f7c",
         "toolbar": "rgba(255, 255, 255, 0.88)",
         "overlay": "rgba(238, 245, 248, 0.86)",
     }
@@ -64,6 +64,10 @@ class Themes:
     @classmethod
     def get_light_theme(cls) -> str:
         return cls._build_theme(cls._LIGHT)
+
+    @classmethod
+    def tokens(cls, mode: str) -> dict:
+        return cls._LIGHT if mode == "light" else cls._DARK
 
     @staticmethod
     def _build_theme(tokens: dict[str, str]) -> str:
@@ -414,7 +418,31 @@ class Themes:
             QLabel#notification_toast {{
                 border-radius: 14px;
                 padding: 12px 16px;
-                border: 1px solid {border};
+                font-weight: 700;
+            }}
+
+            QLabel#notification_toast[stateTone="info"] {{
+                background-color: #183742;
+                border: 1px solid #2e6e80;
+                color: #edf5f7;
+            }}
+
+            QLabel#notification_toast[stateTone="success"] {{
+                background-color: #17392d;
+                border: 1px solid #2b8b68;
+                color: #effaf5;
+            }}
+
+            QLabel#notification_toast[stateTone="warning"] {{
+                background-color: #43331a;
+                border: 1px solid #b07f32;
+                color: #fff3de;
+            }}
+
+            QLabel#notification_toast[stateTone="error"] {{
+                background-color: #482028;
+                border: 1px solid #b14858;
+                color: #fff1f3;
             }}
 
             QMenu {{
@@ -430,6 +458,77 @@ class Themes:
 
             QMenu::item:selected {{
                 background-color: {surface_hover};
+            }}
+
+            QPushButton:focus {{
+                border: 2px solid {accent};
+                padding: 9px 15px;
+            }}
+
+            QPushButton:checked {{
+                background-color: {accent_soft};
+                color: {accent};
+                border: 1px solid {accent};
+            }}
+
+            QPushButton:checked:hover {{
+                background-color: {selection};
+            }}
+
+            QListView:focus, QListWidget:focus {{
+                border: 1px solid {accent};
+            }}
+
+            QTabBar::tab:focus {{
+                border: 1px solid {accent};
+            }}
+
+            QCheckBox:focus {{
+                outline: 1px solid {accent};
+            }}
+
+            QSlider::handle:horizontal:focus {{
+                background-color: {accent_strong};
+            }}
+
+            QSplitter::handle:horizontal {{
+                width: 10px;
+                background: transparent;
+            }}
+
+            QSplitter::handle:horizontal:hover {{
+                background: {surface_hover};
+                border-radius: 4px;
+            }}
+
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 10px;
+                margin: 4px;
+            }}
+
+            QScrollBar::handle:vertical {{
+                background: {border};
+                border-radius: 5px;
+                min-height: 32px;
+            }}
+
+            QScrollBar::handle:vertical:hover {{
+                background: {accent};
+            }}
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
+
+            QFrame#player_video_surface {{
+                background-color: #000000;
+                border: none;
+                border-radius: 14px;
             }}
         """.format(
             **tokens
