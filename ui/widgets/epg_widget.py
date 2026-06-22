@@ -98,9 +98,7 @@ class EPGWidget(QFrame):
             self.clear()
             return
 
-        time_str = (
-            f"{format_display_time(program.start_time)} - " f"{format_display_time(program.end_time)}"
-        )
+        time_str = f"{format_display_time(program.start_time)} - {format_display_time(program.end_time)}"
         self.current_title.setText(program.title)
         self.current_time.setText(time_str)
         self.state_hint.setText("")
