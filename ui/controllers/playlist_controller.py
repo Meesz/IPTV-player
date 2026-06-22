@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
-from core.errors import NetworkError, ParsingError, RepositoryError, ValidationError
+from core.errors import RepositoryError, ValidationError
 from core.models import Playlist, PlaylistReference, PlaylistSourceType
 from core.services.playlist_service import PlaylistService
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
