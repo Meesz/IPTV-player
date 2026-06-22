@@ -10,13 +10,3 @@ class SearchBarStyle:
             font-weight: 500;
         }
     """
-
-
-class ToolbarStyle:
-    """Styles for the toolbar."""
-
-    TOOLBAR = """
-        QToolBar#main_toolbar {
-            spacing: 12px;
-        }
-    """
