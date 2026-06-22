@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 from core.models import Channel
 from infra.db.history_repository import HistoryRepository
@@ -13,7 +12,7 @@ class HistoryService:
         played_at = int(datetime.now().timestamp())
         self.repository.record_channel(channel, playlist_path, played_at)
 
-    def get_recent_channels(self, limit: int = 12) -> List[Channel]:
+    def get_recent_channels(self, limit: int = 12) -> list[Channel]:
         return self.repository.get_recent_channels(limit=limit)
 
     def get_last_played_at(self) -> datetime | None:
