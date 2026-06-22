@@ -34,19 +34,19 @@ class ChannelListModel(QAbstractListModel):
         self._rows_by_epg_id: dict[str, list[int]] = {}
         self._meta_suffixes: dict[int, str] = {}
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008  (QModelIndex() is the standard Qt override default)
         if parent.isValid():
             return 0
         return len(self._channels)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):  # noqa: PLR0911  (role dispatch)
         if not index.isValid() or not 0 <= index.row() < len(self._channels):
             return None
 
         channel = self._channels[index.row()]
         program = self._programs_by_epg_id.get(channel.epg_id)
 
-        if role == Qt.ItemDataRole.DisplayRole or role == self.TitleRole:
+        if role in (Qt.ItemDataRole.DisplayRole, self.TitleRole):
             return channel.name
         if role == self.ChannelRole:
             return channel
@@ -149,7 +149,7 @@ class ChannelRowDelegate(QStyledItemDelegate):
     def set_theme_mode(self, mode: str) -> None:
         self._tokens = Themes.tokens(mode)
 
-    def paint(
+    def paint(  # noqa: PLR0915  (custom delegate painting; pre-existing size)
         self,
         painter: QPainter,
         option: QStyleOptionViewItem,
