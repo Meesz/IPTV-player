@@ -36,7 +36,7 @@ class BackgroundTask(QRunnable):
                 **self.kwargs,
             )
             self.signals.succeeded.emit(self.task_id, result)
-        except Exception as exc:  # pragma: no cover - exercised via controller tests
+        except Exception as exc:
             self.signals.failed.emit(self.task_id, str(exc))
         finally:
             self.signals.finished.emit(self.task_id)
