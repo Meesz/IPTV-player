@@ -102,6 +102,7 @@ The app is local-first and has no server-side auth boundary. The main sensitive 
 - Passwords are stored in the local SQLite database for source reloads.
 - `PlaylistReference.to_settings_value()` omits the password.
 - Xtream logging is designed to redact passwords and avoid logging raw credential URLs.
+- Playlist and EPG URLs are passed through `core/redaction.py` (`redact_url`, `redact_text`, `redact_identity`) before they reach logs or error messages. This masks `password`/`passwd`/`pass`/`pwd` query values and basic-auth userinfo passwords. Xtream stream URLs carry credentials in the path (`/live/<user>/<password>/<id>`), so do not log channel URLs.
 
 Do not add logging that prints raw Xtream passwords, full authenticated URLs, or local database contents.
 
