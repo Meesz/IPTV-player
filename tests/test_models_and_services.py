@@ -1,6 +1,5 @@
 import gzip
 import logging
-import os
 import pathlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -9,7 +8,7 @@ import pytest
 import requests
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
+from PyQt6.QtWidgets import QStyleOptionViewItem, QWidget
 from requests.exceptions import Timeout
 
 import app.main as app_main
@@ -38,15 +37,6 @@ from ui.widgets.left_panel import LeftPanel
 from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.player_widget import PlayerWidget
 from ui.widgets.right_panel import RightPanel
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 class _DummyPlaylistRepository:
@@ -347,6 +337,18 @@ def test_settings_service_legacy_key_sync(tmp_path):
     assert service.get_setting("last_playlist_path") == "https://example.com/list.m3u"
     assert service.get_setting("play_on_single_click") is True
 
+    # A fresh service on the same repository sees the persisted values ...
+    reloaded = SettingsService(settings_repo)
+    assert reloaded.get_setting("last_epg_url") == "https://example.com/epg.xml"
+    assert reloaded.get_setting("last_playlist_path") == "https://example.com/list.m3u"
+    assert reloaded.get_setting("play_on_single_click") is True
+    # ... and the legacy mirror keys are written to the repository.
+    assert settings_repo.get_setting("epg_url") == "https://example.com/epg.xml"
+    assert settings_repo.get_setting("last_epg_url") == "https://example.com/epg.xml"
+    assert settings_repo.get_setting("last_playlist") == "https://example.com/list.m3u"
+    assert settings_repo.get_setting("last_playlist_is_url") == "true"
+    assert settings_repo.get_setting("last_playlist_identity") == "url::https://example.com/list.m3u"
+
 
 def test_settings_service_persists_extended_ui_state(tmp_path):
     db_path = tmp_path / "settings-extended.sqlite"
@@ -572,7 +574,8 @@ def test_player_retry_flow_stops_at_cap_and_resets_on_success():
     assert fake_widget.play_calls == [("https://example.com/stream", True)]
 
 
-def test_right_panel_always_clears_playback_detail():
+def _fake_right_panel():
+    """Stand-in for RightPanel: a real one would also build a PlayerWidget (VLC)."""
     chip = SimpleNamespace(
         setText=lambda value: setattr(chip, "text", value),
         setProperty=lambda key, value: setattr(chip, key, value),
@@ -582,17 +585,43 @@ def test_right_panel_always_clears_playback_detail():
         setText=lambda value: setattr(detail, "text", value),
         setVisible=lambda value: setattr(detail, "visible", value),
     )
-    fake_panel = SimpleNamespace(
+    return SimpleNamespace(
         playback_state_chip=chip,
         playback_detail_label=detail,
     )
 
-    RightPanel.set_playback_state(fake_panel, "playing", "Stream is live")
-    RightPanel.set_playback_state(fake_panel, "idle", "")
+
+def test_right_panel_clears_playback_detail_when_idle():
+    panel = _fake_right_panel()
+
+    RightPanel.set_playback_state(panel, "error", "Stream failed")
+    RightPanel.set_playback_state(panel, "idle", "")
 
     # On a non-detail state (idle) the detail label is cleared and hidden.
-    assert detail.text == ""
-    assert detail.visible is False
+    assert panel.playback_detail_label.text == ""
+    assert panel.playback_detail_label.visible is False
+    assert panel.playback_state_chip.text == "Idle"
+
+
+@pytest.mark.parametrize("state", ["reconnecting", "error", "buffering"])
+def test_right_panel_shows_playback_detail_for_detail_states(state):
+    panel = _fake_right_panel()
+
+    RightPanel.set_playback_state(panel, state, "Attempt 2 of 5")
+
+    assert panel.playback_detail_label.text == "Attempt 2 of 5"
+    assert panel.playback_detail_label.visible is True
+
+
+def test_right_panel_hides_detail_text_for_live_state():
+    panel = _fake_right_panel()
+
+    RightPanel.set_playback_state(panel, "error", "Stream failed")
+    RightPanel.set_playback_state(panel, "playing", "Stream is live")
+
+    assert panel.playback_detail_label.text == ""
+    assert panel.playback_detail_label.visible is False
+    assert panel.playback_state_chip.text == "Live"
 
 
 def test_left_panel_uses_virtualized_channel_model(qapp):
@@ -626,7 +655,7 @@ def test_left_panel_uses_virtualized_channel_model(qapp):
     assert "News" in index.data(ChannelListModel.MetaRole)
 
 
-def test_channel_row_delegate_paints_offscreen_without_errors(qapp):
+def test_channel_row_delegate_paint_smoke(qapp):
     panel = LeftPanel()
     channel = Channel(
         name="News Live",
@@ -649,7 +678,11 @@ def test_channel_row_delegate_paints_offscreen_without_errors(qapp):
     finally:
         painter.end()
 
-    assert not pixmap.isNull()
+    # The delegate must have drawn something over the transparent fill.
+    image = pixmap.toImage()
+    assert any(
+        image.pixelColor(x, y).alpha() > 0 for y in range(0, image.height(), 4) for x in range(0, image.width(), 4)
+    )
 
 
 def test_left_panel_loading_state(qapp):
@@ -1246,7 +1279,8 @@ def test_playlist_repository_loads_legacy_xtream_password_without_whitespace(tmp
     assert saved.xtream.password == "secret"
 
 
-def test_main_controller_restores_xtream_source():
+def test_main_controller_prefers_saved_identity_over_legacy_path():
+    """Fake-collaborator unit test; the real restart round trip is in test_restart_restore.py."""
     saved = PlaylistReference(
         name="Provider",
         source_type=PlaylistSourceType.XTREAM,
