@@ -11,6 +11,7 @@ from requests.exceptions import RequestException, Timeout
 
 from core.errors import NetworkError, ParsingError, ValidationError
 from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType
+from core.redaction import redact_identity, redact_text, redact_url
 from infra.db.playlist_repository import PlaylistRepository
 from infra.parsers.m3u_parser import M3UParser
 from infra.providers.xtream_client import XtreamClient
@@ -47,7 +48,7 @@ class PlaylistService:
         logger.info(
             "Loading playlist source type=%s identity=%s",
             normalized.source_type.value,
-            normalized.source_identity,
+            redact_identity(normalized.source_identity),
         )
 
         if normalized.source_type == PlaylistSourceType.FILE:
@@ -82,7 +83,7 @@ class PlaylistService:
         logger.info(
             "Playlist load completed type=%s identity=%s channels=%s",
             final_reference.source_type.value,
-            final_reference.source_identity,
+            redact_identity(final_reference.source_identity),
             len(playlist.channels),
         )
         return playlist
@@ -204,7 +205,10 @@ class PlaylistService:
             key = normalized.identity_key()
             if key in existing_keys:
                 source = normalized.source_type.value.upper()
-                raise ValidationError(f"Duplicate playlist {source}: {normalized.source_summary()}")
+                summary = normalized.source_summary()
+                if normalized.source_type == PlaylistSourceType.URL:
+                    summary = redact_url(summary)
+                raise ValidationError(f"Duplicate playlist {source}: {summary}")
             existing_keys.add(key)
         return normalized
 
@@ -304,14 +308,14 @@ class PlaylistService:
         except NetworkError:
             raise
         except Timeout as exc:
-            raise NetworkError(f"Timed out while downloading playlist: {url}") from exc
+            raise NetworkError(f"Timed out while downloading playlist: {redact_url(url)}") from exc
         except RequestException as exc:
-            raise NetworkError(f"Failed to download playlist: {url}") from exc
+            raise NetworkError(f"Failed to download playlist: {redact_url(url)}") from exc
         except ParsingError:
             raise
         except Exception as exc:  # pragma: no cover - fallback
-            logger.error("Unexpected playlist URL load failure (%s): %s", url, exc)
-            raise ParsingError(f"Failed to load playlist from URL: {url}") from exc
+            logger.error("Unexpected playlist URL load failure (%s): %s", redact_url(url), redact_text(str(exc)))
+            raise ParsingError(f"Failed to load playlist from URL: {redact_url(url)}") from exc
         finally:
             if tmp_path is not None:
                 try:
@@ -387,7 +391,7 @@ class PlaylistService:
 
     def _download_with_retries(self, url: str, max_retries: int = 3) -> bytes:
         if not self._is_valid_url(url):
-            raise ValidationError(f"Invalid playlist URL: {url}")
+            raise ValidationError(f"Invalid playlist URL: {redact_url(url)}")
 
         last_error: Exception | None = None
         for attempt in range(1, max_retries + 1):
@@ -396,16 +400,16 @@ class PlaylistService:
                 response.raise_for_status()
                 return response.content
             except Timeout as exc:
-                logger.warning("Playlist download timeout (%s/%s): %s", attempt, max_retries, url)
+                logger.warning("Playlist download timeout (%s/%s): %s", attempt, max_retries, redact_url(url))
                 last_error = exc
             except RequestException as exc:
-                logger.warning("Playlist download error (%s/%s): %s", attempt, max_retries, exc)
+                logger.warning("Playlist download error (%s/%s): %s", attempt, max_retries, redact_text(str(exc)))
                 last_error = exc
             if attempt < max_retries:
                 continue
         if isinstance(last_error, Timeout):
-            raise NetworkError(f"Timed out while downloading playlist: {url}") from last_error
-        raise NetworkError(f"Failed to download playlist: {url}") from last_error
+            raise NetworkError(f"Timed out while downloading playlist: {redact_url(url)}") from last_error
+        raise NetworkError(f"Failed to download playlist: {redact_url(url)}") from last_error
 
     def _normalize_references(self, playlists: Iterable[PlaylistReference]) -> list[PlaylistReference]:
         seen_keys: set[tuple[str, ...]] = set()
@@ -445,7 +449,7 @@ class PlaylistService:
         path = self._normalize_source(reference.path, reference.source_type == PlaylistSourceType.URL)
         if reference.source_type == PlaylistSourceType.URL:
             if not self._is_valid_url(path):
-                raise ValidationError(f"Invalid playlist URL: {path}")
+                raise ValidationError(f"Invalid playlist URL: {redact_url(path)}")
         else:
             path_obj = Path(path)
             if not path_obj.exists():
