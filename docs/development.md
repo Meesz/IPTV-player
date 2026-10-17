@@ -63,21 +63,26 @@ No packaging build command is configured. Do not document or automate release pa
 Use focused pytest runs during development:
 
 ```bash
-python -m pytest -q tests/test_imports.py
+python -m pytest -q tests/test_credential_redaction.py
 python -m pytest -q tests/test_models_and_services.py
 python -m pytest -q
 ```
 
+Qt tests share the session `qapp` fixture in `tests/conftest.py` and need `QT_QPA_PLATFORM=offscreen` on headless machines.
+
 Current tests cover:
 
-- import smoke checks
 - model behavior
-- settings persistence and legacy key sync
-- playlist parsing/loading/validation
-- EPG parsing/loading and timezone handling
-- SQLite repositories
+- settings persistence and legacy key sync, verified by reloading from SQLite
+- restart restore of the active playlist (file, URL, Xtream) across fresh service instances (`tests/test_restart_restore.py`)
+- playlist parsing/loading/validation, URL download retries, and channel sort order
+- Xtream input validation and authentication decisions (`tests/test_xtream_validation.py`)
+- credential redaction in logs and error messages for Xtream, EPG URL, and M3U URL sources
+- EPG parsing/loading, timezone handling, and now/next boundaries (`tests/test_epg_now_next.py`)
+- SQLite repositories and schema migrations (playlists and legacy favorites)
 - Xtream client URL/auth/error behavior
-- background controller stale-result handling
+- background controller stale, failure, and cancellation handling (`tests/test_async_controllers.py`)
+- headless `MainWindow` wiring with VLC disabled: load, play, favorites, history, save on close, restart (`tests/test_main_window_wiring.py`)
 - selected PyQt widget and delegate behavior
 - startup and VLC-unavailable dialog behavior
 
