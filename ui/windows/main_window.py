@@ -364,19 +364,7 @@ class MainWindow(QMainWindow):
         reference = playlist.source_reference
         if reference is None:
             return
-        settings_payload = {
-            "last_playlist_source_type": reference.source_type.value,
-            "last_playlist_identity": reference.source_identity,
-        }
-        if reference.source_type != PlaylistSourceType.XTREAM:
-            settings_payload.update(
-                {
-                    "last_playlist_path": reference.path,
-                    "last_playlist": reference.path,
-                    "last_playlist_is_url": "true" if reference.source_type == PlaylistSourceType.URL else "false",
-                }
-            )
-        self.settings_controller.save_settings(settings_payload)
+        self.settings_controller.save_active_playlist(reference)
 
         existing_reference = self.playlist_controller.get_saved_playlist_by_identity(reference.source_identity)
         if existing_reference:
