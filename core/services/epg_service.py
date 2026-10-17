@@ -5,13 +5,14 @@ from collections.abc import Callable
 from concurrent.futures import CancelledError
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse
 
 import requests
 from requests.exceptions import RequestException, Timeout
 
 from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import EPGChannel, ParseWarning, Program
+from core.redaction import redact_text, redact_url
 from infra.db.epg_repository import EPGRepository
 from infra.parsers.epg_parser import EPGParser
 
@@ -92,7 +93,7 @@ class EPGService:
         except ParsingError:
             raise
         except Exception as exc:
-            logger.error("Unexpected EPG URL load failure (%s): %s", self._redact_url(url), exc)
+            logger.error("Unexpected EPG URL load failure (%s): %s", self._redact_url(url), redact_text(str(exc)))
             raise
         finally:
             if tmp_path is not None:
@@ -148,31 +149,7 @@ class EPGService:
         but redact the password in both forms so it cannot reach the log file or an
         error notification.
         """
-        try:
-            parsed = urlparse(url)
-        except ValueError:
-            return url
-
-        netloc = parsed.netloc
-        if parsed.password is not None:
-            host = parsed.hostname or ""
-            if parsed.port is not None:
-                host = f"{host}:{parsed.port}"
-            userinfo = parsed.username or ""
-            netloc = f"{userinfo}:***@{host}" if userinfo else f":***@{host}"
-
-        query = parsed.query
-        if query:
-            query = urlencode(
-                [
-                    (key, "***" if key.lower() in {"password", "pass", "pwd"} else value)
-                    for key, value in parse_qsl(query, keep_blank_values=True)
-                ]
-            )
-
-        if netloc == parsed.netloc and query == parsed.query:
-            return url
-        return urlunparse(parsed._replace(netloc=netloc, query=query))
+        return redact_url(url)
 
     @staticmethod
     def _emit_progress(
