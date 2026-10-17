@@ -3,6 +3,7 @@ from collections.abc import Iterable, Sequence
 
 from core.errors import RepositoryError
 from core.models import PlaylistReference, PlaylistSourceType, XtreamCredentials
+from core.redaction import redact_identity
 from infra.db.sqlite_connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ class PlaylistRepository:
                     self._playlist_values(playlist),
                 )
         except Exception as exc:
-            logger.error("Failed to upsert playlist %s: %s", playlist.source_identity, exc)
+            logger.error("Failed to upsert playlist %s: %s", redact_identity(playlist.source_identity), exc)
             raise RepositoryError("Failed to upsert playlist") from exc
 
     def delete_playlist(self, identity: str) -> None:
@@ -101,7 +102,7 @@ class PlaylistRepository:
                     (identity,),
                 )
         except Exception as exc:
-            logger.error("Failed to delete playlist %s: %s", identity, exc)
+            logger.error("Failed to delete playlist %s: %s", redact_identity(identity), exc)
             raise RepositoryError("Failed to delete playlist") from exc
 
     def get_playlist_by_identity(self, identity: str) -> PlaylistReference | None:
@@ -133,7 +134,7 @@ class PlaylistRepository:
                     return None
                 return self._row_to_reference(row)
         except Exception as exc:
-            logger.error("Failed to load playlist %s: %s", identity, exc)
+            logger.error("Failed to load playlist %s: %s", redact_identity(identity), exc)
             raise RepositoryError("Failed to load playlist") from exc
 
     def import_playlists(self, playlists: Iterable[PlaylistReference]) -> None:
@@ -162,7 +163,7 @@ class PlaylistRepository:
                     (channel_count, last_loaded_at, last_status, last_error, identity),
                 )
         except Exception as exc:
-            logger.error("Failed to update playlist metadata for %s: %s", identity, exc)
+            logger.error("Failed to update playlist metadata for %s: %s", redact_identity(identity), exc)
             raise RepositoryError("Failed to update playlist metadata") from exc
 
     def _insert_playlist(self, conn, playlist: PlaylistReference) -> None:
