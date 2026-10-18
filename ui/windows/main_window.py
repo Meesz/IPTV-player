@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         self.playlist_controller.playlist_loaded.connect(self._on_playlist_loaded)
-        self.playlist_controller.error_occurred.connect(self._on_error)
+        self.playlist_controller.error_occurred.connect(self._on_playlist_error)
         self.playlist_controller.loading_started.connect(self._on_playlist_loading_started)
         self.playlist_controller.loading_progress.connect(self._on_playlist_loading_progress)
         self.playlist_controller.loading_cancelled.connect(self._on_playlist_loading_cancelled)
@@ -348,7 +348,12 @@ class MainWindow(QMainWindow):
         self.left_panel.show_loading_state("channels", "Loading playlist", message)
         self._set_status_chip(self.playlist_status_label, message, "warning")
 
+    def _clear_pending_channel(self) -> None:
+        self._pending_channel_url = ""
+        self._pending_channel_group = ""
+
     def _on_playlist_loading_cancelled(self) -> None:
+        self._clear_pending_channel()
         self.left_panel.cancel_channel_population()
         self._playlist_loading_active = False
         self._playlist_render_active = False
@@ -439,13 +444,9 @@ class MainWindow(QMainWindow):
         if not self._pending_channel_url:
             return
         channel = playlist.get_channel_by_url(self._pending_channel_url)
-        if not channel:
-            self._pending_channel_url = ""
-            self._pending_channel_group = ""
-            return
-        self._pending_channel_url = ""
-        self._pending_channel_group = ""
-        self._play_channel(channel)
+        self._clear_pending_channel()
+        if channel:
+            self._play_channel(channel)
 
     def _on_epg_loading_started(self) -> None:
         self._set_status_chip(self.epg_status_label, "EPG: loading...", "warning")
@@ -516,14 +517,17 @@ class MainWindow(QMainWindow):
             return
 
         if channel.playlist_path and channel.playlist_path != self._active_playlist_path:
-            self._pending_channel_url = channel.url
-            self._pending_channel_group = channel.group
             reference = self.playlist_controller.get_saved_playlist_by_identity(channel.playlist_path)
             logger.info("Channel %r belongs to another source; switching playlists first", channel.name)
+            self._clear_pending_channel()
             if reference is None:
                 self.show_notification("The source for this channel is no longer available.", NotificationType.WARNING)
                 return
+            # Starting the load may cancel (and clear the pending channel of) a previous load,
+            # so the pending channel is set only once this load is the active one.
             self.playlist_controller.load_playlist(reference)
+            self._pending_channel_url = channel.url
+            self._pending_channel_group = channel.group
             return
 
         self._play_channel(channel)
@@ -724,6 +728,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_playlist_selected_from_manager(self, reference: PlaylistReference) -> None:
+        self._clear_pending_channel()
         self.playlist_controller.load_playlist(reference)
 
     def _load_epg_file(self) -> None:
@@ -778,6 +783,13 @@ class MainWindow(QMainWindow):
         text_width = max(0, label.maximumWidth() - chrome)
         label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, text_width))
         label.setToolTip(text)
+
+    def _on_playlist_error(self, message: str) -> None:
+        # Only a failure in the load phase abandons the load the pending channel waits for;
+        # errors during render (e.g. persisting state) must not drop it.
+        if self._playlist_loading_active:
+            self._clear_pending_channel()
+        self._on_error(message)
 
     def _on_error(self, message: str) -> None:
         was_loading_playlist = self._playlist_loading_active or self._playlist_render_active

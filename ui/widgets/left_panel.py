@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,10 @@ _EMPTY_RECENT_TITLE = "Nothing played recently"
 _EMPTY_RECENT_DETAIL = "Recently watched channels will appear here after playback starts."
 
 
+_LOGO_CACHE_MAX_ENTRIES = 500
+_LOGO_TRANSFER_TIMEOUT_MS = 10_000
+
+
 class ChannelLogoProvider(QWidget):
     logo_loaded = pyqtSignal(str, object)
 
@@ -48,7 +53,7 @@ class ChannelLogoProvider(QWidget):
         super().__init__(parent)
         self._manager = QNetworkAccessManager(self)
         self._manager.finished.connect(self._on_reply_finished)
-        self._cache: dict[str, QPixmap] = {}
+        self._cache: OrderedDict[str, QPixmap] = OrderedDict()
         self._inflight: dict[QNetworkReply, str] = {}
         self._theme_mode = "dark"
 
@@ -62,14 +67,17 @@ class ChannelLogoProvider(QWidget):
 
         cached = self._cache.get(source)
         if cached is not None:
+            self._cache.move_to_end(source)
             return cached
 
         if source.startswith(("http://", "https://")):
             if source not in self._inflight.values():
-                reply = self._manager.get(QNetworkRequest(QUrl(source)))
+                request = QNetworkRequest(QUrl(source))
+                request.setTransferTimeout(_LOGO_TRANSFER_TIMEOUT_MS)
+                reply = self._manager.get(request)
                 self._inflight[reply] = source
             fallback = self._fallback_logo(fallback_text, self._theme_mode)
-            self._cache[source] = fallback
+            self._cache_put(source, fallback)
             return fallback
 
         path = Path(source).expanduser()
@@ -77,23 +85,31 @@ class ChannelLogoProvider(QWidget):
             pixmap = QPixmap(str(path))
             if not pixmap.isNull():
                 scaled = self._scale_logo(pixmap)
-                self._cache[source] = scaled
+                self._cache_put(source, scaled)
                 return scaled
 
         fallback = self._fallback_logo(fallback_text, self._theme_mode)
-        self._cache[source] = fallback
+        self._cache_put(source, fallback)
         return fallback
 
+    def _cache_put(self, source: str, pixmap: QPixmap) -> None:
+        self._cache[source] = pixmap
+        self._cache.move_to_end(source)
+        while len(self._cache) > _LOGO_CACHE_MAX_ENTRIES:
+            self._cache.popitem(last=False)
+
     def _on_reply_finished(self, reply: QNetworkReply) -> None:
-        source = reply.url().toString()
-        if reply.error() == QNetworkReply.NetworkError.NoError:
+        # Key by the string that was requested (not reply.url(), which redirects or
+        # normalisation can change) so the cached fallback is replaced and the list view,
+        # which tracks rows by channel.logo, is notified.
+        source = self._inflight.pop(reply, None)
+        if source is not None and reply.error() == QNetworkReply.NetworkError.NoError:
             payload = reply.readAll().data()
             pixmap = QPixmap()
             if pixmap.loadFromData(payload):
                 scaled = self._scale_logo(pixmap)
-                self._cache[source] = scaled
+                self._cache_put(source, scaled)
                 self.logo_loaded.emit(source, scaled)
-        self._inflight.pop(reply, None)
         reply.deleteLater()
 
     @staticmethod
@@ -302,7 +318,7 @@ class LeftPanel(QFrame):
             empty_detail=_EMPTY_CHANNELS_DETAIL,
         )
 
-    def set_channel_results(  # noqa: PLR0913  (cohesive view-update options)
+    def set_channel_results(
         self,
         channels: list[Channel],
         *,
@@ -313,7 +329,6 @@ class LeftPanel(QFrame):
         current_channel_key: tuple[str, str] | None = None,
         empty_title: str = _EMPTY_CHANNELS_TITLE,
         empty_detail: str = _EMPTY_CHANNELS_DETAIL,
-        batch_size: int = 250,
         progress_callback: Callable[[int, int], None] | None = None,
         completion_callback: Callable[[], None] | None = None,
     ) -> None:

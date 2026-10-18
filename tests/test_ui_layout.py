@@ -465,6 +465,128 @@ def test_playback_chip_returns_to_idle_after_render_without_pending_channel(main
     assert main_window.right_panel.playback_state_chip.text() == "Idle"
 
 
+@pytest.fixture
+def cross_source_window(main_window, monkeypatch):
+    """Window on source A with load_playlist stubbed, so loads are driven by hand."""
+    reference_b = PlaylistReference(name="B", path="http://b.example/list.m3u", source_type=PlaylistSourceType.URL)
+    reference_c = PlaylistReference(name="C", path="http://c.example/list.m3u", source_type=PlaylistSourceType.URL)
+    main_window._active_playlist_path = "http://a.example/list.m3u"
+    monkeypatch.setattr(
+        main_window.playlist_controller, "get_saved_playlist_by_identity", lambda _identity: reference_b
+    )
+    monkeypatch.setattr(main_window.playlist_controller, "load_playlist", lambda _reference: True)
+    played: list[Channel] = []
+    monkeypatch.setattr(main_window, "_play_channel", played.append)
+    channel_x = Channel(name="X", url="http://streams.example/x", group="News", playlist_path=reference_b.path)
+    main_window.reference_c = reference_c
+    main_window.played = played
+    main_window.channel_x = channel_x
+    return main_window
+
+
+def _finish_render_of(window, monkeypatch, channel: Channel) -> None:
+    playlist = Playlist(name="Loaded", channels=[channel])
+    monkeypatch.setattr(window, "_current_playlist", lambda: playlist)
+    window._on_playlist_loading_started()
+    # As _on_playlist_loaded does: the load phase is over once rendering begins.
+    window._playlist_loading_active = False
+    window._playlist_render_active = True
+    window._on_playlist_render_complete()
+
+
+@pytest.mark.parametrize("end_load", ["failed", "cancelled"])
+def test_abandoned_cross_source_load_does_not_autoplay_on_a_later_unrelated_load(
+    cross_source_window, monkeypatch, end_load
+):
+    window = cross_source_window
+    window._on_channel_selected(window.channel_x)
+    assert window._pending_channel_url == window.channel_x.url
+    window._on_playlist_loading_started()
+    if end_load == "failed":
+        window.playlist_controller.error_occurred.emit("Source B is unreachable")
+    else:
+        window._on_playlist_loading_cancelled()
+
+    window._on_playlist_selected_from_manager(window.reference_c)
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == []
+
+
+def test_new_user_load_replaces_pending_cross_source_channel(cross_source_window, monkeypatch):
+    window = cross_source_window
+    window._on_channel_selected(window.channel_x)
+    window._on_playlist_loading_started()
+
+    # The user picks source C while B is still loading, without a failure/cancel signal in between.
+    window._on_playlist_selected_from_manager(window.reference_c)
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == []
+
+
+def test_epg_error_during_cross_source_load_keeps_the_pending_channel(cross_source_window, monkeypatch):
+    window = cross_source_window
+    window._on_channel_selected(window.channel_x)
+    window._on_playlist_loading_started()
+
+    window.epg_controller.error_occurred.emit("EPG download failed")
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == [window.channel_x]
+
+
+def test_persistence_error_during_render_keeps_the_pending_channel(cross_source_window, monkeypatch):
+    window = cross_source_window
+    window._on_channel_selected(window.channel_x)
+    monkeypatch.setattr(
+        window,
+        "_persist_playlist_state",
+        lambda _playlist: window.playlist_controller.error_occurred.emit("Could not save playlist"),
+    )
+
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == [window.channel_x]
+
+
+def test_cross_source_load_success_plays_the_clicked_channel(cross_source_window, monkeypatch):
+    window = cross_source_window
+    window._on_channel_selected(window.channel_x)
+    window._on_playlist_loading_started()
+
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == [window.channel_x]
+    assert window._pending_channel_url == ""
+
+
+def test_cross_source_click_supersedes_a_running_load_and_still_plays(cross_source_window, monkeypatch):
+    window = cross_source_window
+    # Starting the new load cancels the running one, which emits loading_cancelled.
+    monkeypatch.setattr(
+        window.playlist_controller,
+        "load_playlist",
+        lambda _reference: window._on_playlist_loading_cancelled() or True,
+    )
+    window._on_channel_selected(window.channel_x)
+
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == [window.channel_x]
+
+
+def test_startup_pending_channel_survives_until_first_load_renders(cross_source_window, monkeypatch):
+    window = cross_source_window
+    window._pending_channel_url = window.channel_x.url
+    window._pending_channel_group = window.channel_x.group
+    window._on_playlist_loading_started()
+
+    _finish_render_of(window, monkeypatch, window.channel_x)
+
+    assert window.played == [window.channel_x]
+
+
 def test_startup_without_playlist_shows_neutral_now_playing_copy(main_window):
     panel = main_window.right_panel
     assert panel.channel_title_label.full_text() == "No playlist loaded"
