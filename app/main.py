@@ -1,10 +1,12 @@
 import logging
 import os
 import sys
+from collections.abc import MutableMapping
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from core.redaction import RedactingFormatter
@@ -83,6 +85,21 @@ def configure_logging(log_path: Path | None = None) -> list[logging.Handler]:
     return handlers
 
 
+def prefer_xcb_on_wayland(env: MutableMapping[str, str], platform: str = sys.platform) -> bool:
+    """Request the xcb (XWayland) Qt platform on Linux Wayland sessions so VLC can embed video.
+
+    VLC can only draw into an X11 window id. Does nothing unless `QT_QPA_PLATFORM` is unset or
+    empty, a Wayland session is detected and `DISPLAY` is set. Returns True if `env` was changed.
+    """
+    if not platform.startswith("linux") or env.get("QT_QPA_PLATFORM", "").strip():
+        return False
+    is_wayland = bool(env.get("WAYLAND_DISPLAY")) or env.get("XDG_SESSION_TYPE", "").strip().lower() == "wayland"
+    if not is_wayland or not env.get("DISPLAY", "").strip():
+        return False
+    env["QT_QPA_PLATFORM"] = "xcb;wayland"
+    return True
+
+
 def _forward_qt_message(msg_type, _context, message: str) -> None:
     qt_logger.log(_QT_LOG_LEVELS.get(msg_type, logging.WARNING), message)
 
@@ -142,7 +159,10 @@ def create_window() -> MainWindow:
 def main() -> int:
     configure_logging()
     qInstallMessageHandler(_forward_qt_message)
+    if prefer_xcb_on_wayland(os.environ):
+        logger.info("Wayland session detected; requesting Qt platform 'xcb;wayland' for embedded video")
     app = QApplication(sys.argv)
+    logger.info("Qt platform: %s", QGuiApplication.platformName())
     app.setApplicationName("Simple IPTV Player")
     _install_exception_hook()
 

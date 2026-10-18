@@ -67,35 +67,44 @@ class VLCBackend:
         return cls._instance.media_player_new()
 
     @classmethod
-    def bind_video_output(cls, player: Any, window_id: int) -> str | None:  # noqa: PLR0911  (per-platform branches)
-        """Bind VLC video output to a widget and report platform caveats."""
+    def bind_video_output(  # noqa: PLR0911  (per-platform branches)
+        cls, player: Any, window_id: int, qt_platform: str = ""
+    ) -> tuple[bool, str | None]:
+        """Bind VLC video output to a widget.
+
+        `qt_platform` is the effective Qt platform plugin name (`QGuiApplication.platformName()`).
+        Returns `(embedded, message)`. `embedded` is False when VLC must not be started because it
+        would open its own detached window; `message` then explains why. When `embedded` is True,
+        `message` is an optional advisory note (or None).
+        """
         if not player:
-            return "VLC media player is unavailable"
+            return False, "VLC media player is unavailable"
 
         if sys.platform == "win32":
             player.set_hwnd(window_id)
-            return None
+            return True, None
 
         if sys.platform.startswith("linux"):
             session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
             has_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or session_type == "wayland"
             display = os.environ.get("DISPLAY", "").strip()
-            if has_wayland and not display:
-                warning = "Wayland session detected without XWayland; embedded video may be unavailable."
-                logger.warning(warning)
-                return warning
+            # winId() is only an X11 window id under the xcb Qt platform plugin.
+            if qt_platform != "xcb":
+                found = f"Qt platform is '{qt_platform or 'unknown'}'"
+                if display:
+                    return False, (
+                        f"Embedded video needs X11 ({found}); restart with QT_QPA_PLATFORM=xcb "
+                        "(requires the Qt xcb platform plugin, e.g. libxcb-cursor)."
+                    )
+                return False, f"Embedded video needs X11 or XWayland, but no DISPLAY is available ({found})."
 
             player.set_xwindow(int(window_id))
             if has_wayland:
-                warning = "Wayland session detected; using XWayland video embedding."
-                logger.warning(warning)
-                return warning
-            return None
+                return True, "Wayland session detected; using XWayland video embedding."
+            return True, None
 
         if sys.platform == "darwin":
             player.set_nsobject(int(window_id))
-            return None
+            return True, None
 
-        warning = f"Unsupported video embedding platform: {sys.platform}"
-        logger.warning(warning)
-        return warning
+        return False, f"Unsupported video embedding platform: {sys.platform}"

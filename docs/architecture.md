@@ -97,7 +97,7 @@ Platform embedding behavior:
 - Linux: `set_xwindow`
 - macOS: `set_nsobject`
 
-Linux Wayland sessions may need XWayland for embedded video. The backend reports a warning when it detects a risky Wayland setup.
+`set_xwindow` only works with an X11 window id, so on Linux it is called only when the Qt platform is `xcb`. On Wayland sessions with XWayland (`DISPLAY` set), `app/main.py` requests `QT_QPA_PLATFORM=xcb;wayland` before creating `QApplication` unless the variable is already set. VLC renders into a dedicated, childless native `VideoSurface` that Qt never paints; status text lives on a separate message page, and `PlayerWidget` switches to the video page only once VLC reports a video output (`MediaPlayerVout`). `bind_video_output` takes the Qt platform name and returns `(embedded, message)`; when embedding is impossible, `PlayerWidget.play()` refuses with an error state instead of letting VLC open a detached window.
 
 Shutdown: `MainWindow.closeEvent` saves settings, then calls `PlayerWidget.shutdown`, cancels playlist and EPG loading, and waits up to 2 seconds (`QThreadPool.waitForDone`) for background tasks. `PlayerWidget.shutdown` is idempotent: it stops the reconnect timer, stops the VLC player, leaves fullscreen and hides/schedules deletion of the fullscreen window, then releases the VLC player. VLC errors during shutdown are logged by exception type only. Close can therefore wait briefly if a background task on the shared global pool is still inside a blocking download or backoff wait; an in-flight HTTP request is not aborted.
 
@@ -138,5 +138,5 @@ Do not add logging that prints raw Xtream passwords, full authenticated URLs, or
 - HTTP requests still rely on blocking `requests` calls. They run in background tasks, but cancellation cannot forcibly stop an in-flight request.
 - SQLite schema migrations are embedded in startup code rather than external migration files.
 - Xtream-compatible providers vary in response shape and transport behavior.
-- VLC embedding is platform-sensitive and may behave differently under Linux Wayland, macOS, and Windows setups.
+- VLC embedding is platform-sensitive and may behave differently under Linux Wayland, macOS, and Windows setups. On Linux, playback needs the `xcb` Qt platform (XWayland on Wayland) and is refused otherwise.
 - Tests cover important seams, but there is no full app-level integration suite. CI runs pytest (Python 3.12 and 3.14, offscreen Qt), ruff, and a blocking mypy error-count ratchet on pull requests and pushes to `main`; mypy errors are not yet zero.

@@ -549,6 +549,7 @@ def test_player_retry_flow_stops_at_cap_and_resets_on_success():
         current_url="https://example.com/stream",
         player=object(),
         play_calls=[],
+        _show_message_page=lambda: None,
         _show_status=lambda message, duration=2000: state.__setitem__(
             "status",
             (message, duration),

@@ -38,7 +38,7 @@ shown to the user, handled controller failures with tracebacks, and Qt runtime w
 | Variable | Purpose |
 |----------|---------|
 | `IPTV_LOG_LEVEL` | Optional Python logging level. Defaults to `INFO`; invalid values fall back to `INFO`. |
-| `QT_QPA_PLATFORM=offscreen` | Useful for headless Qt test runs. The pytest fixture sets it if missing. |
+| `QT_QPA_PLATFORM=offscreen` | Useful for headless Qt test runs. The pytest fixture sets it if missing. On Linux Wayland the app sets `xcb;wayland` itself when this is unset; an existing value is never overridden. |
 | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | Read by VLC embedding code on Linux to detect Wayland/XWayland caveats. |
 
 See `.env.example` for available variables. The app does not require a `.env` file — these variables are optional overrides.
@@ -112,7 +112,7 @@ Install the native VLC app/runtime and restart the app. On Windows, confirm VLC 
 
 ### Linux Wayland playback embedding fails
 
-The VLC backend uses `set_xwindow` on Linux. Under Wayland, embedded playback may require XWayland. Check `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, and `DISPLAY`, then try an X11/XWayland session if video does not appear.
+The VLC backend uses `set_xwindow` on Linux, which needs the `xcb` Qt platform. On Wayland the app requests `xcb;wayland` automatically when `DISPLAY` (XWayland) is set and `QT_QPA_PLATFORM` is unset. If playback is refused with "Embedded video needs X11", check the `Qt platform:` line in the log, `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY`, and any `QT_QPA_PLATFORM` override (use `xcb`).
 
 ### Playlist or EPG source fails
 

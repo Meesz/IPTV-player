@@ -37,7 +37,7 @@ def player(qapp, monkeypatch):
     monkeypatch.setattr(VLCBackend, "get_vlc", classmethod(lambda cls: MagicMock()))
     monkeypatch.setattr(VLCBackend, "get_instance", classmethod(lambda cls: MagicMock()))
     monkeypatch.setattr(VLCBackend, "create_player", classmethod(lambda cls: MagicMock()))
-    monkeypatch.setattr(VLCBackend, "bind_video_output", classmethod(lambda cls, *_args: ""))
+    monkeypatch.setattr(VLCBackend, "bind_video_output", classmethod(lambda cls, *_args: (True, None)))
     widget = PlayerWidget()
     yield widget
     widget.reconnect_timer.stop()

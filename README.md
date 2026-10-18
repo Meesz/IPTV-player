@@ -95,7 +95,7 @@ The database is recreated on the next launch.
 | Name | Used by | Default | Purpose |
 |------|---------|---------|---------|
 | `IPTV_LOG_LEVEL` | `app/main.py` | `INFO` | Sets Python logging level. Invalid values fall back to `INFO`. |
-| `QT_QPA_PLATFORM` | Qt/tests | unset | Set to `offscreen` for headless test runs when needed. The pytest fixture sets this if it is missing. |
+| `QT_QPA_PLATFORM` | Qt/tests | unset | Set to `offscreen` for headless test runs when needed. The pytest fixture sets this if it is missing. On Linux Wayland with XWayland the app sets `xcb;wayland` itself when this is unset; an existing value is never overridden. |
 | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | VLC embedding on Linux | system-provided | Used to detect Wayland/XWayland embedding caveats. |
 
 See `.env.example` for a template. None of these variables are required for normal use.
@@ -137,7 +137,7 @@ No packaged build command is configured. Packaging/release distribution is not d
 
 ## Current Limitations
 
-- Playback depends on native VLC and platform-specific embedding. Linux Wayland sessions may require XWayland for embedded video.
+- Playback depends on native VLC and platform-specific embedding. On Linux Wayland sessions the app requests the `xcb` (XWayland) Qt platform automatically unless `QT_QPA_PLATFORM` is set; playback is refused with an error when embedded video is impossible (for example no XWayland).
 - Xtream passwords are stored in the local SQLite database so sources can be reloaded. The database itself is not encrypted. On POSIX systems the default data directory `~/.simple_iptv` is restricted to mode 0700 and `database.db` to 0600 (Windows permissions are not changed). Log handlers mask `password`-style query values and URL userinfo passwords, but Xtream stream URLs carry the password in the path, so channel URLs must not be logged.
 - Remote downloads are bounded: very large playlists, Xtream responses, or EPG files (including oversized decompressed gzip EPGs) are rejected with an error, and downloads that exceed a time budget are aborted on a best-effort basis.
 - There is no account system, remote sync, or multi-device state.

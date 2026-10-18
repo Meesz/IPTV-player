@@ -765,6 +765,12 @@ class Themes:
                 background: transparent;
             }}
 
+            QFrame#player_message_surface {{
+                background-color: #000000;
+                border: none;
+                border-radius: 10px;
+            }}
+
             QFrame#player_video_surface {{
                 background-color: #000000;
                 border: none;
