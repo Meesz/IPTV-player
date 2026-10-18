@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 import requests
 from requests.exceptions import RequestException, Timeout
 
+from core import limits
+from core.bounded_download import read_bounded
 from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import EPGChannel, ParseWarning, Program
 from core.redaction import redact_text, redact_url
@@ -74,18 +76,26 @@ class EPGService:
         try:
             self._ensure_not_cancelled(cancel_callback)
             self._emit_progress(progress_callback, "Downloading EPG")
-            response = requests.get(url, timeout=20)
+            response = requests.get(url, timeout=20, stream=True)
             response.raise_for_status()
             parsed_url = urlparse(url)
             suffix = ".xml.gz" if parsed_url.path.endswith(".gz") else ".xml"
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                tmp_file.write(response.content)
                 tmp_path = Path(tmp_file.name)
+                read_bounded(
+                    response,
+                    max_bytes=limits.MAX_EPG_DOWNLOAD_BYTES,
+                    deadline_seconds=limits.EPG_DOWNLOAD_DEADLINE_SECONDS,
+                    description="EPG download",
+                    sink=tmp_file,
+                )
             self.load_epg_from_path(
                 str(tmp_path),
                 progress_callback=progress_callback,
                 cancel_callback=cancel_callback,
             )
+        except NetworkError:
+            raise
         except Timeout as exc:
             raise NetworkError(f"Timed out loading EPG URL: {self._redact_url(url)}") from exc
         except RequestException as exc:

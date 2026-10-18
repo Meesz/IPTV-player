@@ -12,13 +12,39 @@ class SQLiteConnection:
     """Manages SQLite database connection and initialization."""
 
     def __init__(self, db_path: Path | None = None):
+        is_default_location = db_path is None
         if db_path is None:
             self.db_path = Path.home() / ".simple_iptv" / "database.db"
         else:
             self.db_path = db_path
 
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        posix = os.name == "posix"
+        if posix:
+            self.db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if is_default_location:
+                self._chmod_private(self.db_path.parent, 0o700)
+            if self.db_path.exists():
+                self._chmod_private(self.db_path, 0o600)
+            else:
+                try:
+                    os.close(os.open(self.db_path, os.O_CREAT | os.O_WRONLY, 0o600))
+                except OSError:
+                    logger.warning("Could not pre-create database file %s", self.db_path)
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
+        if posix:
+            for suffix in ("", "-wal", "-shm"):
+                path = self.db_path.with_name(self.db_path.name + suffix)
+                if path.exists():
+                    self._chmod_private(path, 0o600)
+
+    @staticmethod
+    def _chmod_private(path: Path, mode: int) -> None:
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            logger.warning("Could not set permissions on %s", path)
 
     @contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:

@@ -3,6 +3,8 @@
 Kills M3 (empty Xtream password accepted) and M4 (banned/disabled account accepted).
 """
 
+import json
+
 import pytest
 
 from core.errors import ParsingError, ValidationError
@@ -68,8 +70,11 @@ def _validate_with_payload(monkeypatch, payload):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return payload
+        def iter_content(self, chunk_size=1):
+            yield json.dumps(payload).encode()
+
+        def close(self):
+            return None
 
     monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
     credentials = XtreamCredentials(server_url="https://provider.example", username="alice", password="secret")

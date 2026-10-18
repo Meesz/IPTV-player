@@ -1,6 +1,8 @@
 import gzip
+import json
 import logging
 import pathlib
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -784,6 +786,138 @@ def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeyp
     assert "Verified successfully" in dialog.detail_validation.text()
 
 
+def _two_row_dialog_with_deferred_worker(monkeypatch, tester):
+    dialog = PlaylistManagerDialog()
+    dialog.set_playlist_validator(lambda ref: (ref, ""))
+    dialog.set_playlist_tester(tester)
+    started = []
+    monkeypatch.setattr(dialog._thread_pool, "start", started.append)
+    dialog._add_item("First", "https://example.com/first.m3u", False)
+    dialog._add_item("Second", "https://example.com/second.m3u", False)
+    dialog.playlist_list.setCurrentRow(0)
+    dialog._test_selected_playlist()
+    assert len(started) == 1
+    first_before = dialog.playlist_list.item(0).data(Qt.ItemDataRole.UserRole)
+    second_before = dialog.playlist_list.item(1).data(Qt.ItemDataRole.UserRole)
+    # Selection moves to the other row while the test is still running.
+    dialog.playlist_list.setCurrentRow(1)
+    return dialog, started[0], first_before, second_before
+
+
+def test_playlist_test_success_applies_to_tested_row_after_selection_change(qapp, monkeypatch):
+    dialog, worker, first_before, second_before = _two_row_dialog_with_deferred_worker(
+        monkeypatch,
+        lambda ref, **_kwargs: PlaylistReference(
+            name=ref.name,
+            path=ref.path,
+            source_type=ref.source_type,
+            xtream=ref.xtream,
+            channel_count=42,
+            last_status="ready",
+            last_error="",
+        ),
+    )
+    assert first_before.channel_count != 42
+
+    worker.run()
+
+    assert dialog.playlist_list.item(0).data(Qt.ItemDataRole.UserRole).channel_count == 42
+    assert dialog.playlist_list.item(1).data(Qt.ItemDataRole.UserRole) == second_before
+    assert dialog.playlist_list.item(1).data(Qt.ItemDataRole.UserRole).channel_count != 42
+    assert dialog.playlist_list.item(0).text().startswith("First")
+    assert dialog.playlist_list.item(1).text().startswith("Second")
+    assert "42 channels" in dialog.feedback_label.text()
+    # The details pane still shows the current (second) row.
+    assert dialog.detail_name.text() == "Second"
+
+
+def test_playlist_test_failure_applies_to_tested_row_after_selection_change(qapp, monkeypatch):
+    def failing_tester(ref, **_kwargs):
+        raise ValueError("Connection refused")
+
+    dialog, worker, first_before, _second_before = _two_row_dialog_with_deferred_worker(monkeypatch, failing_tester)
+
+    worker.run()
+
+    assert "Connection refused" in dialog.feedback_label.text()
+    assert dialog._validation_messages[first_before.source_identity][0] == "error"
+    second = dialog.playlist_list.item(1).data(Qt.ItemDataRole.UserRole)
+    assert second.source_identity not in dialog._validation_messages
+    assert dialog.detail_name.text() == "Second"
+
+
+def test_playlist_test_result_dropped_when_tested_row_removed(qapp, monkeypatch):
+    dialog, worker, _first_before, second_before = _two_row_dialog_with_deferred_worker(
+        monkeypatch,
+        lambda ref, **_kwargs: PlaylistReference(
+            name=ref.name,
+            path=ref.path,
+            source_type=ref.source_type,
+            xtream=ref.xtream,
+            channel_count=42,
+            last_status="ready",
+        ),
+    )
+    dialog.playlist_list.takeItem(0)
+
+    worker.run()
+
+    assert dialog.playlist_list.count() == 1
+    assert dialog.playlist_list.item(0).data(Qt.ItemDataRole.UserRole) == second_before
+    assert "42 channels" in dialog.feedback_label.text()
+
+
+def _ok_probe(ref, **_kwargs):
+    return PlaylistReference(
+        name=ref.name,
+        path=ref.path,
+        source_type=ref.source_type,
+        xtream=ref.xtream,
+        channel_count=42,
+        last_status="ready",
+    )
+
+
+def test_playlist_test_success_keeps_concurrent_edit_with_same_identity(qapp, monkeypatch):
+    dialog, worker, first_before, _second_before = _two_row_dialog_with_deferred_worker(monkeypatch, _ok_probe)
+    item = dialog.playlist_list.item(0)
+    item.setData(Qt.ItemDataRole.UserRole, replace(first_before, name="Renamed"))
+
+    worker.run()
+
+    data = item.data(Qt.ItemDataRole.UserRole)
+    assert data.name == "Renamed"
+    assert data.channel_count == 42
+
+
+def test_playlist_test_result_ignored_when_row_identity_changed(qapp, monkeypatch):
+    dialog, worker, first_before, second_before = _two_row_dialog_with_deferred_worker(monkeypatch, _ok_probe)
+    other = replace(first_before, path="https://example.com/other.m3u")
+    dialog.playlist_list.item(0).setData(Qt.ItemDataRole.UserRole, other)
+
+    worker.run()
+
+    assert dialog.playlist_list.item(0).data(Qt.ItemDataRole.UserRole) == other
+    assert dialog.playlist_list.item(1).data(Qt.ItemDataRole.UserRole) == second_before
+    assert other.source_identity not in dialog._validation_messages
+    assert second_before.source_identity not in dialog._validation_messages
+    assert "42 channels" in dialog.feedback_label.text()
+
+
+def test_superseded_playlist_test_result_is_ignored(qapp, monkeypatch):
+    dialog, first_worker, first_before, _second_before = _two_row_dialog_with_deferred_worker(monkeypatch, _ok_probe)
+    started = []
+    monkeypatch.setattr(dialog._thread_pool, "start", started.append)
+    dialog.playlist_list.setCurrentRow(1)
+    dialog._test_selected_playlist()
+    assert len(started) == 1
+
+    first_worker.run()
+
+    assert dialog.playlist_list.item(0).data(Qt.ItemDataRole.UserRole) == first_before
+    assert "42 channels" not in dialog.feedback_label.text()
+
+
 def test_xtream_source_dialog_has_opaque_root(qapp):
     dialog = XtreamSourceDialog()
 
@@ -846,10 +980,13 @@ def test_xtream_client_success_path(monkeypatch):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return self._payload
+        def iter_content(self, chunk_size=1):
+            yield json.dumps(self._payload).encode()
 
-    def _fake_get(url, timeout):
+        def close(self):
+            return None
+
+    def _fake_get(url, timeout, stream=False):
         calls.append(url)
         if "action=get_live_categories" in url:
             return _Response([{"category_id": "7", "category_name": "News"}])
@@ -910,8 +1047,11 @@ def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return {"user_info": {"auth": 1, "status": "Active"}}
+        def iter_content(self, chunk_size=1):
+            yield json.dumps({"user_info": {"auth": 1, "status": "Active"}}).encode()
+
+        def close(self):
+            return None
 
     monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
 
@@ -939,8 +1079,11 @@ def test_xtream_client_auth_failure(monkeypatch):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return {"user_info": {"auth": 0, "status": "Disabled"}}
+        def iter_content(self, chunk_size=1):
+            yield json.dumps({"user_info": {"auth": 0, "status": "Disabled"}}).encode()
+
+        def close(self):
+            return None
 
     monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
 
@@ -984,8 +1127,11 @@ def test_xtream_client_invalid_payload(monkeypatch):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return "not a list"
+        def iter_content(self, chunk_size=1):
+            yield json.dumps("not a list").encode()
+
+        def close(self):
+            return None
 
     monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
 
@@ -1040,10 +1186,13 @@ def test_xtream_client_retries_http_over_https(monkeypatch, caplog):
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return {"user_info": {"auth": 1, "status": "Active"}}
+        def iter_content(self, chunk_size=1):
+            yield json.dumps({"user_info": {"auth": 1, "status": "Active"}}).encode()
 
-    def _fake_get(url, timeout):
+        def close(self):
+            return None
+
+    def _fake_get(url, timeout, stream=False):
         calls.append(url)
         if url.startswith("http://"):
             raise requests.exceptions.ConnectionError("reset")

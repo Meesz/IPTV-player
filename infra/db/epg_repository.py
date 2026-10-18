@@ -37,22 +37,25 @@ class EPGRepository:
         try:
             with self.db.get_connection() as conn:
                 conn.execute("DELETE FROM epg_data")
-                for channel_id, programs in programs_by_channel.items():
-                    for program in programs:
-                        conn.execute(
-                            """
-                            INSERT INTO epg_data
-                            (channel_id, start_time, end_time, title, description)
-                            VALUES (?, ?, ?, ?, ?)
-                            """,
-                            (
-                                channel_id,
-                                int(self._normalize_time(program.start_time).timestamp()),
-                                int(self._normalize_time(program.end_time).timestamp()),
-                                program.title,
-                                program.description,
-                            ),
+                # OR REPLACE: a repeated (channel_id, start_time) keeps the later row.
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO epg_data
+                    (channel_id, start_time, end_time, title, description)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            channel_id,
+                            int(self._normalize_time(program.start_time).timestamp()),
+                            int(self._normalize_time(program.end_time).timestamp()),
+                            program.title,
+                            program.description,
                         )
+                        for channel_id, programs in programs_by_channel.items()
+                        for program in programs
+                    ],
+                )
         except Exception as exc:
             logger.error("Failed to save EPG cache: %s", exc)
             raise RepositoryError("Failed to persist EPG cache") from exc

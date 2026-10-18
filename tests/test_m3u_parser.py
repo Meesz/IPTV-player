@@ -121,3 +121,48 @@ def test_title_may_contain_commas(tmp_path):
     assert len(parsed.channels) == 1
     assert parsed.channels[0].name == "ESPN, HD"
     assert parsed.channels[0].group == "Sports"
+
+
+def _write_bytes(tmp_path, payload: bytes):
+    playlist_path = tmp_path / "sample.m3u"
+    playlist_path.write_bytes(payload)
+    return playlist_path
+
+
+def test_cp1252_playlist_parses_regardless_of_byte_length_parity(tmp_path):
+    """BOM-less single-byte text must not be mis-decoded as UTF-16 when even length."""
+    # The euro sign (0x80) only decodes correctly as cp1252 (latin-1 gives a control char).
+    base = "#EXTM3U\n#EXTINF:-1,Café € TV\nhttp://example.com/a"
+    payloads = [text.encode("cp1252") for text in (base, base + "\n")]
+    assert {len(payload) % 2 for payload in payloads} == {0, 1}
+    for payload in payloads:
+        parsed = M3UParser.parse(str(_write_bytes(tmp_path, payload)))
+        assert [channel.name for channel in parsed.channels] == ["Café € TV"]
+
+
+def test_utf16_playlist_with_bom_parses(tmp_path):
+    text = "#EXTM3U\n#EXTINF:-1,Café TV\nhttp://example.com/a\n"
+    for encoding in ("utf-16", "utf-16-be"):
+        payload = text.encode(encoding)
+        if encoding == "utf-16-be":
+            payload = b"\xfe\xff" + payload
+        parsed = M3UParser.parse(str(_write_bytes(tmp_path, payload)))
+        assert [channel.name for channel in parsed.channels] == ["Café TV"]
+
+
+def test_unquoted_attribute_value_ends_at_title_comma(tmp_path):
+    playlist_path = _write_playlist(
+        tmp_path,
+        [
+            "#EXTM3U",
+            '#EXTINF:-1 group-title="News, World" tvg-id=foo,Name',
+            "http://example.com/a",
+        ],
+    )
+
+    parsed = M3UParser.parse(str(playlist_path))
+
+    assert len(parsed.channels) == 1
+    assert parsed.channels[0].epg_id == "foo"
+    assert parsed.channels[0].name == "Name"
+    assert parsed.channels[0].group == "News, World"

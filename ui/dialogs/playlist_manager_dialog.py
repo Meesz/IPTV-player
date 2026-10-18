@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 
 from PyQt6.QtCore import QSize, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QPainter
@@ -80,6 +81,7 @@ class PlaylistManagerDialog(QDialog):
         self._thread_pool = QThreadPool.globalInstance() or QThreadPool()
         self._tester_task_id = 0
         self._tester_worker: BackgroundTask | None = None
+        self._tester_identity: str | None = None
         self._validation_messages: dict[str, tuple[str, str]] = {}
         self._init_ui()
 
@@ -515,6 +517,7 @@ class PlaylistManagerDialog(QDialog):
 
         self._tester_task_id += 1
         task_id = self._tester_task_id
+        self._tester_identity = playlist.source_identity
         self._tester_worker = create_background_task(task_id, self._playlist_tester, playlist)
         self._tester_worker.signals.progress.connect(self._on_test_progress)
         self._tester_worker.signals.succeeded.connect(self._on_test_succeeded)
@@ -535,15 +538,24 @@ class PlaylistManagerDialog(QDialog):
         if not isinstance(result, PlaylistReference):
             return
 
-        current_item = self.playlist_list.currentItem()
-        if not current_item:
-            return
-        current_item.setData(Qt.ItemDataRole.UserRole, result)
-        current_item.setText(self._item_title(result))
-        self._validation_messages[result.source_identity] = (
-            result.last_status or "ready",
-            result.last_error or f"Verified successfully ({result.channel_count} channels detected).",
-        )
+        identity = self._tester_identity
+        # Look the row up by identity: the selection may have moved or the row been removed.
+        tested_item = self._find_item_by_identity(identity)
+        if tested_item is not None and identity is not None:
+            # Merge only probe-owned fields so a concurrent edit that kept the identity survives.
+            current = tested_item.data(Qt.ItemDataRole.UserRole)
+            merged = replace(
+                current,
+                channel_count=result.channel_count,
+                last_status=result.last_status,
+                last_error=result.last_error,
+            )
+            tested_item.setData(Qt.ItemDataRole.UserRole, merged)
+            tested_item.setText(self._item_title(merged))
+            self._validation_messages[identity] = (
+                result.last_status or "ready",
+                result.last_error or f"Verified successfully ({result.channel_count} channels detected).",
+            )
         if result.last_status == "warning" and result.last_error:
             self._set_feedback(
                 "warning",
@@ -554,17 +566,31 @@ class PlaylistManagerDialog(QDialog):
                 "ready",
                 f"Playlist verified successfully. {result.channel_count} channels detected.",
             )
-        self._set_details(result)
+        if tested_item is not None and tested_item is self.playlist_list.currentItem():
+            self._set_details(tested_item.data(Qt.ItemDataRole.UserRole))
 
     def _on_test_failed(self, task_id: int, message: str) -> None:
         if self._tester_worker is None or task_id != self._tester_task_id:
             return
-        current_item = self.playlist_list.currentItem()
-        playlist = current_item.data(Qt.ItemDataRole.UserRole) if current_item is not None else None
-        if isinstance(playlist, PlaylistReference):
-            self._validation_messages[playlist.source_identity] = ("error", message)
-            self._set_details(playlist)
+        tested_item = self._find_item_by_identity(self._tester_identity)
+        if tested_item is not None and self._tester_identity is not None:
+            self._validation_messages[self._tester_identity] = ("error", message)
+            playlist = tested_item.data(Qt.ItemDataRole.UserRole)
+            if tested_item is self.playlist_list.currentItem() and isinstance(playlist, PlaylistReference):
+                self._set_details(playlist)
         self._set_feedback("error", message)
+
+    def _find_item_by_identity(self, identity: str | None) -> QListWidgetItem | None:
+        if identity is None:
+            return None
+        for index in range(self.playlist_list.count()):
+            item = self.playlist_list.item(index)
+            if item is None:
+                continue
+            data = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(data, PlaylistReference) and data.source_identity == identity:
+                return item
+        return None
 
     def _on_test_finished(self, task_id: int) -> None:
         if task_id != self._tester_task_id:

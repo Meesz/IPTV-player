@@ -38,7 +38,7 @@ class HistoryRepository:
                     ),
                 )
         except Exception as exc:
-            logger.error("Failed to record channel history %s: %s", channel.url, exc)
+            logger.error("Failed to record channel history %s: %s", channel.name, exc)
             raise RepositoryError("Failed to record recent channel") from exc
 
     def get_recent_channels(self, limit: int = 12) -> list[Channel]:

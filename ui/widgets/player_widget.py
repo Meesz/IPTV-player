@@ -122,6 +122,21 @@ class PlayerWidget(QFrame):
         self.instance = None
         self.player = None
         self.current_state = "idle"
+        self.is_fullscreen = False
+        self.current_url = None
+        self.fullscreen_window: FullscreenPlayerWindow | None = None
+        self.normal_parent = None
+        self.normal_layout = None
+        self.normal_index = None
+        self.normal_stretch = None
+        self._embedding_warning = ""
+
+        self.reconnect_timer = QTimer(self)
+        self.reconnect_timer.setSingleShot(True)
+        self.reconnect_timer.timeout.connect(self._reconnect)
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5
+
         if not success:
             self.placeholder.setText(error or "VLC backend unavailable")
             self._set_state("error", error or "VLC backend unavailable")
@@ -140,20 +155,6 @@ class PlayerWidget(QFrame):
         self._setup_player()
 
         self.setMouseTracking(True)
-        self.is_fullscreen = False
-        self.current_url = None
-        self.fullscreen_window: FullscreenPlayerWindow | None = None
-        self.normal_parent = None
-        self.normal_layout = None
-        self.normal_index = None
-        self.normal_stretch = None
-        self._embedding_warning = ""
-
-        self.reconnect_timer = QTimer(self)
-        self.reconnect_timer.setSingleShot(True)
-        self.reconnect_timer.timeout.connect(self._reconnect)
-        self.reconnect_attempts = 0
-        self.max_reconnect_attempts = 5
 
         self._set_state("idle", "Awaiting stream selection")
 
@@ -216,6 +217,32 @@ class PlayerWidget(QFrame):
             self.reconnect_timer.stop()
             self.reconnect_attempts = 0
         self._set_state("idle", "Awaiting stream selection")
+
+    def shutdown(self) -> None:
+        """Release playback resources for application exit. Idempotent."""
+        self.reconnect_timer.stop()
+        self.current_url = None
+        # Stop playback before touching the video surface; _setup_player is a no-op once player is None.
+        player, self.player = self.player, None
+        if player is not None:
+            self._call_vlc_for_shutdown(player, "stop")
+        if self.is_fullscreen:
+            self._exit_fullscreen()
+        if self.fullscreen_window is not None:
+            # closeEvent ignores close requests, so hide and schedule deletion instead.
+            self.fullscreen_window.hide()
+            self.fullscreen_window.deleteLater()
+            self.fullscreen_window = None
+        if player is not None:
+            self._call_vlc_for_shutdown(player, "release")
+
+    @staticmethod
+    def _call_vlc_for_shutdown(player, name: str) -> None:
+        try:
+            getattr(player, name)()
+        except Exception as exc:
+            # str(exc) may echo the stream URL, so only the type is logged.
+            logger.warning("VLC %s failed during shutdown: %s", name, type(exc).__name__)
 
     def pause(self) -> None:
         if self.vlc_available and self.player:

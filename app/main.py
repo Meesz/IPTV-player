@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
+from core.redaction import RedactingFormatter
 from core.services.epg_service import EPGService
 from core.services.favorites_service import FavoritesService
 from core.services.history_service import HistoryService
@@ -48,14 +49,15 @@ _QT_LOG_LEVELS = {
 
 
 def configure_logging() -> None:
-    logging.basicConfig(
-        level=_resolve_log_level(),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"),
-        ],
-    )
+    handlers: list[logging.Handler] = [
+        logging.StreamHandler(),
+        RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"),
+    ]
+    # Tracebacks of chained requests errors can echo Xtream query passwords.
+    formatter = RedactingFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    for handler in handlers:
+        handler.setFormatter(formatter)
+    logging.basicConfig(level=_resolve_log_level(), handlers=handlers)
     logger.info("=== Session start (pid %s, Python %s) ===", os.getpid(), sys.version.split()[0])
 
 

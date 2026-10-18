@@ -10,6 +10,10 @@ class NetworkError(IPTVError):
     """Raised when remote resources fail to load."""
 
 
+class DownloadLimitError(NetworkError):
+    """Raised when a download exceeds its byte budget or wall-clock deadline."""
+
+
 class ParsingError(IPTVError):
     """Raised when parsing a playlist or EPG payload fails."""
 

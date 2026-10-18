@@ -1,13 +1,19 @@
 """Diagnostic logging: handled failures and playback events reach the log without stream URLs."""
 
 import logging
+import sqlite3
+import sys
 from unittest.mock import MagicMock
 
 import pytest
 from PyQt6.QtCore import QtMsgType
 
 from app import main as app_main
+from core.errors import NetworkError, RepositoryError
 from core.models import Channel
+from core.redaction import RedactingFormatter
+from infra.db.favorites_repository import FavoritesRepository
+from infra.db.history_repository import HistoryRepository
 from infra.playback.vlc_backend import VLCBackend
 from ui.controllers.background_tasks import BackgroundTask
 from ui.controllers.favorites_controller import FavoritesController
@@ -94,6 +100,82 @@ def test_player_logs_reconnects_and_final_error_without_stream_url(player, caplo
     assert "SECRETTOKEN" not in caplog.text
 
 
+class _BrokenDb:
+    def get_connection(self):
+        raise sqlite3.OperationalError("database is locked")
+
+
+def test_repository_write_failures_do_not_log_channel_urls(caplog):
+    channel = Channel(name="News One", url=SECRET_STREAM_URL, playlist_path="list.m3u")
+    favorites = FavoritesRepository(_BrokenDb())
+    history = HistoryRepository(_BrokenDb())
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(RepositoryError):
+            favorites.add_favorite(channel)
+        with pytest.raises(RepositoryError):
+            favorites.remove_favorite(channel)
+        with pytest.raises(RepositoryError):
+            favorites.is_favorite(channel)
+        with pytest.raises(RepositoryError):
+            history.record_channel(channel, "list.m3u", 1)
+
+    assert "News One" in caplog.text
+    assert "SECRETTOKEN" not in caplog.text
+
+
+def _chained_network_error_exc_info():
+    try:
+        try:
+            raise ConnectionError("HTTPConnectionPool: /player_api.php?username=u&password=s3cret&action=x refused")
+        except ConnectionError as cause:
+            raise NetworkError("Could not reach provider") from cause
+    except NetworkError:
+        return sys.exc_info()
+
+
+def test_redacting_formatter_masks_secrets_in_chained_tracebacks():
+    record = logging.LogRecord(
+        "test", logging.ERROR, __file__, 1, "Load failed", None, _chained_network_error_exc_info()
+    )
+
+    output = RedactingFormatter("%(levelname)s - %(message)s").format(record)
+
+    assert "s3cret" not in output
+    assert "password=***" in output
+    assert "Could not reach provider" in output
+    assert "ConnectionError" in output
+
+
+def test_configure_logging_installs_redacting_formatter_on_all_handlers(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(logging, "basicConfig", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(app_main, "RotatingFileHandler", lambda *_a, **_k: logging.NullHandler())
+
+    app_main.configure_logging()
+
+    assert len(captured["handlers"]) == 2
+    assert all(isinstance(h.formatter, RedactingFormatter) for h in captured["handlers"])
+
+
+def test_player_without_vlc_initialises_and_ignores_controls(qapp, monkeypatch):
+    monkeypatch.setattr(VLCBackend, "initialize", classmethod(lambda cls: (False, "VLC disabled in tests")))
+    widget = PlayerWidget()
+    try:
+        assert widget.current_url is None
+        widget.play(SECRET_STREAM_URL)
+        widget.pause()
+        widget.set_volume(50)
+        assert widget.toggle_mute() is True
+        assert widget.toggle_fullscreen() is False
+        widget.stop()
+        assert widget.retry_now() is False
+        assert widget.current_state == "idle"
+    finally:
+        widget.reconnect_timer.stop()
+        widget.deleteLater()
+
+
 def test_qt_messages_are_forwarded_at_matching_level(caplog):
     with caplog.at_level(logging.DEBUG, logger="qt"):
         app_main._forward_qt_message(QtMsgType.QtWarningMsg, None, "Could not parse stylesheet")
@@ -112,3 +194,58 @@ def test_player_masks_stream_url_echoed_in_error_message(player, caplog):
 
     assert "Playback error (cannot open <url>)" in caplog.text
     assert "SECRETTOKEN" not in caplog.text
+
+
+def test_player_shutdown_releases_vlc_and_is_idempotent(player):
+    mock_player = player.player
+    player.play(SECRET_STREAM_URL)
+    player.reconnect_timer.start(60_000)
+
+    player.shutdown()
+
+    mock_player.stop.assert_called_once()
+    mock_player.release.assert_called_once()
+    assert player.player is None
+    assert player.current_url is None
+    assert not player.reconnect_timer.isActive()
+
+    player.shutdown()
+
+    mock_player.release.assert_called_once()
+
+
+def test_player_shutdown_exits_and_disposes_fullscreen_window(player):
+    player.play(SECRET_STREAM_URL)
+    player._enter_fullscreen()
+    fullscreen_window = player.fullscreen_window
+    assert fullscreen_window is not None and fullscreen_window.isVisible()
+
+    player.shutdown()
+
+    assert player.is_fullscreen is False
+    assert player.fullscreen_window is None
+    assert not fullscreen_window.isVisible()
+
+
+def test_player_shutdown_survives_libvlc_errors_without_logging_urls(player, caplog):
+    mock_player = player.player
+    mock_player.stop.side_effect = RuntimeError(f"cannot stop {SECRET_STREAM_URL}")
+
+    with caplog.at_level(logging.WARNING, logger="ui.widgets.player_widget"):
+        player.shutdown()
+
+    mock_player.release.assert_called_once()
+    assert player.player is None
+    assert "VLC stop failed during shutdown: RuntimeError" in caplog.text
+    assert "SECRETTOKEN" not in caplog.text
+
+
+def test_player_shutdown_without_vlc_does_not_raise(qapp, monkeypatch):
+    monkeypatch.setattr(VLCBackend, "initialize", classmethod(lambda cls: (False, "VLC disabled in tests")))
+    widget = PlayerWidget()
+
+    widget.shutdown()
+    widget.shutdown()
+
+    assert widget.player is None
+    widget.deleteLater()

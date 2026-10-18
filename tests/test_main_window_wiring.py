@@ -217,6 +217,32 @@ def test_closing_window_persists_ui_state(qapp, loaded_window, db_path):
     assert settings.splitter_sizes == tuple(window.splitter.sizes())
 
 
+def test_closing_window_saves_settings_before_player_shutdown(loaded_window, monkeypatch):
+    calls: list[str] = []
+    real_save = loaded_window.settings_controller.save_settings
+
+    def spy_save(*args, **kwargs):
+        calls.append("save")
+        return real_save(*args, **kwargs)
+
+    monkeypatch.setattr(loaded_window.settings_controller, "save_settings", spy_save)
+    monkeypatch.setattr(loaded_window.right_panel.player_widget, "shutdown", lambda: calls.append("shutdown"))
+
+    loaded_window.close()
+
+    assert calls == ["save", "shutdown"]
+
+
+def test_closing_window_cancels_background_loads(loaded_window, monkeypatch):
+    cancelled: list[str] = []
+    monkeypatch.setattr(loaded_window.playlist_controller, "cancel_loading", lambda: cancelled.append("playlist"))
+    monkeypatch.setattr(loaded_window.epg_controller, "cancel_loading", lambda: cancelled.append("epg"))
+
+    loaded_window.close()
+
+    assert sorted(cancelled) == ["epg", "playlist"]
+
+
 def test_restart_restores_last_playlist_and_channel(
     qapp, make_window, loaded_window, db_path, played_urls, file_identity
 ):

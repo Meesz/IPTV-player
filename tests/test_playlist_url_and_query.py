@@ -28,13 +28,29 @@ class _NoRepository:
 
 
 class _Response:
-    def __init__(self, content: bytes = b"", error: Exception | None = None):
+    def __init__(
+        self,
+        content: bytes = b"",
+        error: Exception | None = None,
+        headers: dict[str, str] | None = None,
+        chunk_size: int | None = None,
+    ):
         self.content = content
         self._error = error
+        self.headers = headers or {}
+        self._chunk_size = chunk_size or max(len(content), 1)
+        self.closed = False
 
     def raise_for_status(self) -> None:
         if self._error is not None:
             raise self._error
+
+    def iter_content(self, chunk_size: int = 1):
+        for start in range(0, len(self.content), self._chunk_size):
+            yield self.content[start : start + self._chunk_size]
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture
@@ -109,6 +125,7 @@ def test_download_http_error_attempts_three_times(service, temp_dir, monkeypatch
         service.load_playlist(PLAYLIST_URL, is_url=True)
 
     assert len(calls) == 3
+    assert failing.closed
 
 
 def test_transient_failure_then_success_returns_content(service, temp_dir, monkeypatch):

@@ -1,5 +1,6 @@
 """Credential redaction helpers shared by services that log or raise source URLs."""
 
+import logging
 import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -53,3 +54,10 @@ def redact_text(text: str) -> str:
     """Mask secrets embedded in free text such as ``requests`` exception strings."""
     masked = _QUERY_SECRET_RE.sub(r"\1=***", str(text))
     return _USERINFO_SECRET_RE.sub(r"\1***\2", masked)
+
+
+class RedactingFormatter(logging.Formatter):
+    """Formatter that masks secrets in the whole record, including chained tracebacks."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_text(super().format(record))

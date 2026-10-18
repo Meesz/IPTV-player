@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import requests
 from requests.exceptions import RequestException, Timeout
 
+from core import limits
+from core.bounded_download import read_bounded
 from core.errors import NetworkError, ParsingError, ValidationError
 from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType
 from core.redaction import redact_identity, redact_text, redact_url
@@ -396,9 +398,21 @@ class PlaylistService:
         last_error: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
-                response = requests.get(url, timeout=20)
-                response.raise_for_status()
-                return response.content
+                response = requests.get(url, timeout=20, stream=True)
+                try:
+                    response.raise_for_status()
+                except BaseException:
+                    response.close()
+                    raise
+                return read_bounded(
+                    response,
+                    max_bytes=limits.MAX_PLAYLIST_DOWNLOAD_BYTES,
+                    deadline_seconds=limits.PLAYLIST_DOWNLOAD_DEADLINE_SECONDS,
+                    description="Playlist download",
+                )
+            except NetworkError:
+                # Over-budget or too slow: retrying cannot help.
+                raise
             except Timeout as exc:
                 logger.warning("Playlist download timeout (%s/%s): %s", attempt, max_retries, redact_url(url))
                 last_error = exc

@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, Qt, QThreadPool
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -35,6 +35,8 @@ from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.right_panel import RightPanel
 
 logger = logging.getLogger(__name__)
+
+_SHUTDOWN_WAIT_MS = 2000
 
 _NOTIFICATION_LOG_LEVELS = {
     NotificationType.WARNING: logging.WARNING,
@@ -838,6 +840,13 @@ class MainWindow(QMainWindow):
                 "left_panel_visible": self.left_panel.isVisible(),
             }
         )
+        self.right_panel.player_widget.shutdown()
+        self.playlist_controller.cancel_loading()
+        self.epg_controller.cancel_loading()
+        # BackgroundTask.run only emits signals, so waiting here cannot deadlock on the GUI thread.
+        pool = QThreadPool.globalInstance()
+        if pool is not None:
+            pool.waitForDone(_SHUTDOWN_WAIT_MS)
         super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:

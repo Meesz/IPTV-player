@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
@@ -9,7 +10,9 @@ import requests
 from requests import Response
 from requests.exceptions import ConnectionError, HTTPError, RequestException, SSLError, Timeout
 
-from core.errors import NetworkError, ParsingError, ValidationError
+from core import limits
+from core.bounded_download import read_bounded
+from core.errors import DownloadLimitError, NetworkError, ParsingError, ValidationError
 from core.models import Channel, XtreamCredentials
 
 logger = logging.getLogger(__name__)
@@ -170,8 +173,12 @@ class XtreamClient:
             self._sanitize_request_url(url),
         )
         try:
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
+            response = self.session.get(url, timeout=self.timeout, stream=True)
+            try:
+                response.raise_for_status()
+            except BaseException:
+                response.close()
+                raise
             logger.debug(
                 "Xtream %s response received from %s with status=%s content_type=%s",
                 action,
@@ -183,6 +190,14 @@ class XtreamClient:
                 self._parse_json(response, source=credentials.redacted_summary(), action=action),
                 credentials,
             )
+        except DownloadLimitError as exc:
+            logger.warning(
+                "Xtream %s response exceeded download limits for %s: %s",
+                action,
+                credentials.redacted_summary(),
+                exc,
+            )
+            raise
         except Timeout as exc:
             logger.warning(
                 "Xtream %s request timed out for %s",
@@ -222,6 +237,8 @@ class XtreamClient:
                         effective.redacted_summary(),
                     )
                     return payload, effective
+                except DownloadLimitError:
+                    raise
                 except NetworkError:
                     logger.warning(
                         "Xtream HTTPS retry also failed for %s",
@@ -255,8 +272,14 @@ class XtreamClient:
 
     @staticmethod
     def _parse_json(response: Response, *, source: str, action: str) -> Any:
+        body = read_bounded(
+            response,
+            max_bytes=limits.MAX_XTREAM_RESPONSE_BYTES,
+            deadline_seconds=limits.XTREAM_DOWNLOAD_DEADLINE_SECONDS,
+            description="Xtream response",
+        )
         try:
-            payload = response.json()
+            payload = XtreamClient._decode_json(body, response)
             if isinstance(payload, list):
                 size_hint = len(payload)
             elif isinstance(payload, dict):
@@ -278,6 +301,21 @@ class XtreamClient:
                 source,
             )
             raise ParsingError("Xtream source returned invalid JSON") from exc
+
+    @staticmethod
+    def _decode_json(body: bytes, response: Response) -> Any:
+        """Parse JSON honouring an explicit Content-Type charset, else UTF-8 with a latin-1 fallback."""
+        headers = getattr(response, "headers", None) or {}
+        match = re.search(r"charset=\s*[\"']?([^\s;\"']+)", str(headers.get("Content-Type", "")), re.IGNORECASE)
+        if match:
+            try:
+                return json.loads(body.decode(match.group(1)).removeprefix("﻿"))
+            except (LookupError, UnicodeDecodeError):
+                pass  # unknown/wrong charset: fall through to auto-detection
+        try:
+            return json.loads(body)
+        except UnicodeDecodeError:
+            return json.loads(body.decode("latin-1"))
 
     @staticmethod
     def _ensure_authenticated(payload: Any) -> None:

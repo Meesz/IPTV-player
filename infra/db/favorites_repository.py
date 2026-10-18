@@ -29,7 +29,7 @@ class FavoritesRepository:
                 )
             return True
         except Exception as exc:
-            logger.error("Failed to add favorite %s: %s", channel.url, exc)
+            logger.error("Failed to add favorite %s: %s", channel.name, exc)
             raise RepositoryError("Failed to add favorite") from exc
 
     def remove_favorite(self, channel: Channel) -> bool:
@@ -41,7 +41,7 @@ class FavoritesRepository:
                 )
             return True
         except Exception as exc:
-            logger.error("Failed to remove favorite %s: %s", channel.url, exc)
+            logger.error("Failed to remove favorite %s: %s", channel.name, exc)
             raise RepositoryError("Failed to remove favorite") from exc
 
     def get_favorites(self) -> list[Channel]:
@@ -72,5 +72,5 @@ class FavoritesRepository:
                 )
                 return cursor.fetchone() is not None
         except Exception as exc:
-            logger.error("Failed to check favorite %s: %s", channel.url, exc)
+            logger.error("Failed to check favorite %s: %s", channel.name, exc)
             raise RepositoryError("Failed to check favorite") from exc

@@ -18,7 +18,8 @@ _EXTINF_RE = re.compile(
     r"#EXTINF:\s*(?P<duration>-?\d+(?:\.\d+)?)(?P<rest>.*)$",
     re.IGNORECASE,
 )
-_ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)=(?:"([^"]*)"|\'([^\']*)\')')
+# Values may be double-quoted, single-quoted, or bare (e.g. ``tvg-id=foo``).
+_ATTRIBUTE_RE = re.compile(r'(\w[\w-]*)=(?:"([^"]*)"|\'([^\']*)\'|([^\s,"\']+))')
 
 
 class M3UParser:
@@ -142,15 +143,14 @@ class M3UParser:
 
     @staticmethod
     def _decode_playlist_content(content: bytes, source: Path) -> str:
-        for encoding in (
-            "utf-8-sig",
-            "utf-8",
-            "utf-16",
-            "utf-16-le",
-            "utf-16-be",
-            "iso-8859-1",
-            "cp1252",
-        ):
+        # UTF-16 is only trusted with a BOM: BOM-less single-byte text of even
+        # length would otherwise decode as garbage CJK instead of falling back.
+        if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+            try:
+                return content.decode("utf-16")
+            except UnicodeDecodeError as exc:
+                raise ParsingError(f"Could not decode UTF-16 playlist: {source}") from exc
+        for encoding in ("utf-8-sig", "utf-8", "cp1252", "iso-8859-1"):
             try:
                 return content.decode(encoding)
             except UnicodeDecodeError:
@@ -182,7 +182,7 @@ class M3UParser:
         attributes: dict[str, str] = {}
         for match in _ATTRIBUTE_RE.finditer(raw):
             key = match.group(1).lower()
-            value = match.group(2) if match.group(2) is not None else match.group(3) or ""
+            value = next((group for group in match.groups()[1:] if group is not None), "")
             attributes[key] = value
         return attributes
 
