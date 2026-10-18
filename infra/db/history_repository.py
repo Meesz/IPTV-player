@@ -7,6 +7,8 @@ from infra.db.sqlite_connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
 
+MAX_HISTORY_ENTRIES = 200
+
 
 class HistoryRepository:
     def __init__(self, db: SQLiteConnection):
@@ -36,6 +38,18 @@ class HistoryRepository:
                         channel.epg_id,
                         played_at,
                     ),
+                )
+                # Same transaction as the upsert: keep only the newest entries.
+                conn.execute(
+                    """
+                    DELETE FROM recent_channels
+                    WHERE rowid NOT IN (
+                        SELECT rowid FROM recent_channels
+                        ORDER BY played_at DESC, rowid DESC
+                        LIMIT ?
+                    )
+                    """,
+                    (MAX_HISTORY_ENTRIES,),
                 )
         except Exception as exc:
             logger.error("Failed to record channel history %s: %s", channel.name, exc)

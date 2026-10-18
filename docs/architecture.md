@@ -61,14 +61,14 @@ The default database path is:
 ~/.simple_iptv/database.db
 ```
 
-`SQLiteConnection` initializes and migrates tables at startup. Startup fails fast if database initialization fails.
+`SQLiteConnection` initializes and migrates tables at startup. Startup fails fast if database initialization fails. Each legacy-table migration (playlists, favorites) runs in one explicit transaction, so a failure rolls back to the legacy shape and the migration is retried on the next start. Every connection applies the same per-connection PRAGMAs (`synchronous`, `cache_size`, `temp_store`) and an explicit busy timeout; `journal_mode=WAL` is set once at initialization.
 
 Main tables:
 
 - `settings` - string key/value settings, including legacy compatibility keys.
 - `playlists` - saved playlist references, source identity, Xtream credentials, channel count, last status, and last error.
 - `favorites` - source-aware favorites keyed by URL and playlist path.
-- `recent_channels` - recent playback history keyed by URL and playlist path.
+- `recent_channels` - recent playback history keyed by URL and playlist path, pruned to the newest 200 entries on each write.
 - `epg_data` - cached EPG programs by channel ID and start time.
 
 SQLite uses WAL mode, `synchronous=NORMAL`, a small cache, and memory temp store.

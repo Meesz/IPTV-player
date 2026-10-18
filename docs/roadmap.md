@@ -8,7 +8,7 @@ This roadmap separates confirmed maintenance direction from speculative product 
 - **CI coverage**: CI runs pytest (Python 3.12 and 3.14), ruff, and mypy on pull requests and pushes to `main`; mypy is a blocking error-count ratchet (maximum recorded in `.github/workflows/lint.yml`). Remaining gaps: mypy errors are not yet zero, pushes to other branches do not trigger CI, and there is no app-level integration suite.
 - **Packaging decision**: decide whether the app will ship as source-only, py2app, PyInstaller, platform packages, or another installer format.
 - **Document packaging only after it exists**: avoid adding release commands until the checked-in configuration supports them.
-- **Broaden regression coverage**: add tests for playlist switching, fullscreen transitions, favorites/history interactions, migration failures, and player state changes.
+- **Broaden regression coverage**: add tests for playlist switching, fullscreen transitions, favorites/history interactions, and player state changes.
 
 ## Short-Term Improvements
 

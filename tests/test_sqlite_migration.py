@@ -15,7 +15,7 @@ import pytest
 
 from core.models import PlaylistReference, PlaylistSourceType
 from infra.db.playlist_repository import PlaylistRepository
-from infra.db.sqlite_connection import SQLiteConnection
+from infra.db.sqlite_connection import BUSY_TIMEOUT_SECONDS, SQLiteConnection
 
 
 def _make_legacy_db(path) -> None:
@@ -93,6 +93,104 @@ def test_migration_preserves_legacy_url_rows(tmp_path):
     assert len(playlists) == 1
     assert playlists[0].source_type == PlaylistSourceType.URL
     assert playlists[0].path == "https://example.com/list.m3u"
+
+
+def _tables(db_path) -> set[str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+
+
+def test_playlist_migration_failure_rolls_back_and_next_start_retries(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy-fail.sqlite"
+    conn = _make_legacy_db(db_path)
+    conn.execute("INSERT INTO playlists (name, path, is_url) VALUES ('Good', ?, 0)", (str(tmp_path / "good.m3u"),))
+    conn.execute("INSERT INTO playlists (name, path, is_url) VALUES ('Bad', ?, 0)", (str(tmp_path / "bad.m3u"),))
+    conn.commit()
+    conn.close()
+
+    real_abspath = os.path.abspath
+
+    def failing_abspath(path):
+        if str(path).endswith("bad.m3u"):
+            raise RuntimeError("injected copy failure")
+        return real_abspath(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os.path, "abspath", failing_abspath)
+        with pytest.raises(RuntimeError, match="injected"):
+            SQLiteConnection(db_path=db_path)
+
+    # Legacy shape and data intact: no playlists_legacy leftover, old columns, both rows.
+    assert "playlists_legacy" not in _tables(db_path)
+    check = sqlite3.connect(str(db_path))
+    try:
+        columns = {row[1] for row in check.execute("PRAGMA table_info(playlists)")}
+        names = sorted(row[0] for row in check.execute("SELECT name FROM playlists"))
+    finally:
+        check.close()
+    assert "source_identity" not in columns
+    assert names == ["Bad", "Good"]
+
+    # Next start retries and completes.
+    playlists = PlaylistRepository(SQLiteConnection(db_path=db_path)).get_playlists()
+    assert sorted(p.name for p in playlists) == ["Bad", "Good"]
+    assert "playlists_legacy" not in _tables(db_path)
+
+
+def test_favorites_migration_failure_rolls_back_and_next_start_retries(tmp_path):
+    db_path = tmp_path / "legacy-fav-fail.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(
+        """
+        CREATE TABLE favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            url TEXT NOT NULL UNIQUE,
+            group_name TEXT,
+            logo TEXT,
+            epg_id TEXT
+        );
+        INSERT INTO favorites (name, url) VALUES ('Ok', 'http://example.com/ok');
+        INSERT INTO favorites (name, url) VALUES (NULL, 'http://example.com/nameless');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    # The new table has name NOT NULL, so the row copy fails mid-migration.
+    with pytest.raises(sqlite3.IntegrityError):
+        SQLiteConnection(db_path=db_path)
+
+    assert "favorites_legacy" not in _tables(db_path)
+    check = sqlite3.connect(str(db_path))
+    try:
+        columns = {row[1] for row in check.execute("PRAGMA table_info(favorites)")}
+        assert "playlist_path" not in columns
+        assert check.execute("SELECT COUNT(*) FROM favorites").fetchone()[0] == 2
+        check.execute("UPDATE favorites SET name = 'Fixed' WHERE name IS NULL")
+        check.commit()
+    finally:
+        check.close()
+
+    migrated = SQLiteConnection(db_path=db_path)
+    with migrated.get_connection() as conn2:
+        rows = sorted(row["name"] for row in conn2.execute("SELECT name FROM favorites"))
+    assert rows == ["Fixed", "Ok"]
+    assert "favorites_legacy" not in _tables(db_path)
+
+
+def test_runtime_connections_apply_pragmas_and_busy_timeout(tmp_path):
+    connection = SQLiteConnection(db_path=tmp_path / "pragmas.sqlite")
+
+    with connection.get_connection() as conn:
+        assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
+        assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2  # MEMORY
+        assert conn.execute("PRAGMA cache_size").fetchone()[0] == -2000
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == int(BUSY_TIMEOUT_SECONDS * 1000)
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
 posix_only = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
