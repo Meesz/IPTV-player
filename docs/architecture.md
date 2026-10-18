@@ -38,6 +38,8 @@ The current source types are:
 
 URL playlist downloads (`PlaylistService._download_with_retries`) make up to three attempts with a short exponential backoff (0.5 s, then 1 s). Timeouts, connection errors, 5xx responses, and 408/429 are retried; other 4xx responses fail immediately. Cancellation is checked before and after each backoff wait.
 
+The playlist manager's **Test Source** probe runs as a cooperatively cancellable background task: closing the dialog or starting another probe cancels it, and late results are dropped instead of being applied to a row.
+
 ## EPG Flow
 
 EPG sources are XMLTV files or URLs. URL loads download to a temporary XML/XML.GZ file, then reuse the file parser. Parsed programs are stored in SQLite and kept in memory for the active session.
@@ -97,7 +99,7 @@ Platform embedding behavior:
 
 Linux Wayland sessions may need XWayland for embedded video. The backend reports a warning when it detects a risky Wayland setup.
 
-Shutdown: `MainWindow.closeEvent` saves settings, then calls `PlayerWidget.shutdown`, cancels playlist and EPG loading, and waits up to 2 seconds (`QThreadPool.waitForDone`) for background tasks. `PlayerWidget.shutdown` is idempotent: it stops the reconnect timer, stops the VLC player, leaves fullscreen and hides/schedules deletion of the fullscreen window, then releases the VLC player. VLC errors during shutdown are logged by exception type only. Close can therefore wait briefly if a task (such as a playlist-manager probe on the shared global pool) is still running; an in-flight HTTP request is not aborted.
+Shutdown: `MainWindow.closeEvent` saves settings, then calls `PlayerWidget.shutdown`, cancels playlist and EPG loading, and waits up to 2 seconds (`QThreadPool.waitForDone`) for background tasks. `PlayerWidget.shutdown` is idempotent: it stops the reconnect timer, stops the VLC player, leaves fullscreen and hides/schedules deletion of the fullscreen window, then releases the VLC player. VLC errors during shutdown are logged by exception type only. Close can therefore wait briefly if a background task on the shared global pool is still inside a blocking download or backoff wait; an in-flight HTTP request is not aborted.
 
 ## Error Handling
 

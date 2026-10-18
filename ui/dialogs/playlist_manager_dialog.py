@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
@@ -82,6 +84,7 @@ class PlaylistManagerDialog(QDialog):
         self._tester_task_id = 0
         self._tester_worker: BackgroundTask | None = None
         self._tester_identity: str | None = None
+        self._tester_cancel: threading.Event | None = None
         self._validation_messages: dict[str, tuple[str, str]] = {}
         self._init_ui()
 
@@ -515,10 +518,19 @@ class PlaylistManagerDialog(QDialog):
         if not isinstance(playlist, PlaylistReference):
             return
 
+        self._cancel_playlist_test()
         self._tester_task_id += 1
         task_id = self._tester_task_id
         self._tester_identity = playlist.source_identity
-        self._tester_worker = create_background_task(task_id, self._playlist_tester, playlist)
+        # The worker only sees the event, never the dialog, so it is safe after the dialog dies.
+        cancel_event = threading.Event()
+        self._tester_cancel = cancel_event
+        self._tester_worker = create_background_task(
+            task_id,
+            self._playlist_tester,
+            playlist,
+            cancel_callback=cancel_event.is_set,
+        )
         self._tester_worker.signals.progress.connect(self._on_test_progress)
         self._tester_worker.signals.succeeded.connect(self._on_test_succeeded)
         self._tester_worker.signals.failed.connect(self._on_test_failed)
@@ -526,6 +538,31 @@ class PlaylistManagerDialog(QDialog):
         self.test_button.setEnabled(False)
         self._set_feedback("warning", "Testing playlist source...")
         self._thread_pool.start(self._tester_worker)
+
+    def _cancel_playlist_test(self) -> None:
+        """Cancel the running probe; its late signals are dropped and never reach this dialog."""
+        worker = self._tester_worker
+        if self._tester_cancel is not None:
+            self._tester_cancel.set()
+            self._tester_cancel = None
+        if worker is None:
+            return
+        self._tester_task_id += 1
+        self._tester_worker = None
+        signals = worker.signals
+        for signal, slot in (
+            (signals.progress, self._on_test_progress),
+            (signals.succeeded, self._on_test_succeeded),
+            (signals.failed, self._on_test_failed),
+            (signals.finished, self._on_test_finished),
+        ):
+            with contextlib.suppress(TypeError):
+                signal.disconnect(slot)
+        self.test_button.setEnabled(bool(self.playlist_list.selectedItems()))
+
+    def done(self, result: int) -> None:
+        self._cancel_playlist_test()
+        super().done(result)
 
     def _on_test_progress(self, task_id: int, message: str) -> None:
         if self._tester_worker is None or task_id != self._tester_task_id:
