@@ -1,7 +1,11 @@
+import logging
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.models import Channel
 from core.services.history_service import HistoryService
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryController(QObject):
@@ -17,6 +21,7 @@ class HistoryController(QObject):
             self.service.record_channel(channel, playlist_path)
             self.changed.emit()
         except Exception as exc:
+            logger.exception("Failed to record %r in watch history", channel.name)
             self.error_occurred.emit(str(exc))
 
     def get_recent_channels(self, limit: int = 12) -> list[Channel]:

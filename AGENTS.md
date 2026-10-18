@@ -1,91 +1,85 @@
 # AGENTS.md
 
-Guidance for Codex and other coding agents working in this repository.
+Simple IPTV Player: PyQt6 desktop app that loads M3U/Xtream live TV sources and XMLTV EPG,
+plays through native VLC, and stores local state in SQLite. No backend, accounts, sync, or
+packaging/release workflow. Entry point: `app/main.py` (`python -m app.main`).
 
-## Project Overview
+## Map
 
-Simple IPTV Player is a PyQt6 desktop IPTV player. It loads local/remote M3U playlists and Xtream-compatible live TV sources, imports XMLTV EPG data, plays streams through native VLC, and persists local state in SQLite.
-
-There is no web backend, account system, cloud sync, or configured packaging release workflow.
-
-## Read First
-
-- `README.md` - user-facing setup, commands, current features, and limitations.
-- `docs/architecture.md` - layer boundaries, data flow, persistence, playback, and error handling.
-- `docs/development.md` - local setup, commands, test expectations, and debugging notes.
-- `docs/product.md` - implemented product scope versus non-goals.
-- `docs/roadmap.md` - current future-work tracking.
-- `docs/phase3.md` - status of the old Phase 3 backlog.
+| Path | Owns |
+|------|------|
+| `app/` | Process startup and dependency wiring |
+| `core/` | Models (`models.py`), domain errors, services, `redaction.py` |
+| `infra/` | SQLite repositories + embedded migrations (`db/sqlite_connection.py`), M3U/XMLTV parsers, Xtream client, VLC setup (`playback/vlc_backend.py`) |
+| `ui/controllers/` | Qt signal orchestration and background tasks |
+| `ui/widgets/`, `ui/windows/`, `ui/dialogs/`, `ui/styles/`, `ui/utils/` | Presentation |
+| `tests/` | Flat pytest suite; `conftest.py` provides the `qapp` fixture and sets offscreen Qt |
 
 ## Commands
 
-Run from repo root.
+Run from the repo root inside the project virtualenv (setup in `README.md`).
+Test/lint tools come from `requirements-dev.txt`; `requirements.txt` is runtime-only.
 
 | Task | Command |
 |------|---------|
-| Install dependencies | `pip install -r requirements.txt` |
-| Install pytest if missing | `pip install pytest` |
-| Run app | `python -m app.main` |
-| Run tests | `python -m pytest -q` |
-| Lint | `ruff check .` |
-| Check formatting | `ruff format --check .` |
-| Format | `ruff format .` |
+| Focused tests | `python -m pytest -q tests/test_<area>.py` |
+| Full tests | `python -m pytest -q` |
+| Lint / format check | `ruff check .` / `ruff format --check .` |
 | Type check (non-blocking) | `mypy app core infra ui` |
-| Syntax check | `python -m compileall app core infra ui tests` |
+| Run app (GUI; writes `~/.simple_iptv/` and `./iptv_player.log`; may use network) | `python -m app.main` |
 
-Two GitHub Actions workflows run on pull requests, both on Python 3.12: Lint (`.github/workflows/lint.yml`, running `ruff check`, `ruff format --check`, and a non-blocking `mypy` step) and pytest (`.github/workflows/tests.yml`).
-`pytest` and the other test/lint/format tools are pinned in `requirements-dev.txt`, not in the runtime `requirements.txt`.
+CI (Python 3.12, PRs) runs ruff check, ruff format --check, pytest, and informational mypy.
+Ruff config and rule rationale live in `pyproject.toml`; pre-commit runs ruff on commit.
 
-## Architecture Boundaries
+## Rules
 
-- `app/` wires the process and top-level dependencies.
-- `core/` should stay focused on models, service logic, and domain errors.
-- `infra/` owns SQLite, parsers, HTTP provider clients, and VLC setup.
-- `ui/controllers/` owns Qt signal orchestration and background task handling.
-- `ui/widgets/`, `ui/windows/`, and `ui/dialogs/` own UI presentation and interactions.
-
-Do not make widgets talk directly to SQLite repositories, M3U/XMLTV parsers, Xtream HTTP calls, or VLC initialization when an existing controller/service/infrastructure boundary already exists.
-
-## Code Style Expectations
-
-- Lint and format with Ruff (`ruff check` / `ruff format`); all tool config lives in `pyproject.toml`. Run `pre-commit install` once to apply both on commit. Ruff is the single linter/formatter — black, isort, and pylint were retired.
-- Follow the existing straightforward Python style.
-- Use typed dataclasses and service methods where the repo already uses them.
-- Keep comments short and useful.
+- Widgets/windows/dialogs go through controllers/services; they must not call SQLite
+  repositories, parsers, or Xtream HTTP directly. `tests/test_layer_boundaries.py` enforces
+  this at the import level.
+- Native VLC stays behind `infra/playback/vlc_backend.py` and `ui/widgets/player_widget.py`.
+  `python-vlc` is not VLC; tests must not need libvlc (CI has none).
+- Channel identity is `(url, playlist_path)`; keep it source-aware.
+- Keep the channel list virtualized (`QListView` + `QAbstractListModel` +
+  `QStyledItemDelegate`); never per-row widgets.
+- Never log Xtream passwords or channel URLs. `core/redaction.py` masks only userinfo and
+  query secrets; Xtream stream URLs carry the password in the path.
+  `PlaylistReference.to_settings_value()` intentionally omits the password.
+- SQLite migrations are embedded in `SQLiteConnection`; there are no migration files.
+- Tests use `tmp_path` databases and mocked `requests`; never touch `~/.simple_iptv/`.
+  Prefer service/repository/controller tests over anything needing a media runtime.
 - Prefer explicit validation errors over silent fallbacks.
-- Preserve source-aware channel identity through `(url, playlist_path)`.
-- Preserve channel list virtualization through `QListView`, `QAbstractListModel`, and `QStyledItemDelegate`.
-- Keep native VLC handling behind `infra/playback/vlc_backend.py` and `ui/widgets/player_widget.py`.
+- Background cancellation drops stale results but cannot abort an in-flight `requests` call.
+- Do not change `requirements*.txt`, `pyproject.toml`, `.github/`, or
+  `.pre-commit-config.yaml` unless asked.
+- Docs-only tasks do not touch application code. Update docs when commands, setup,
+  architecture, runtime behaviour, or roadmap status change. Never document cloud sync,
+  recording, installers, or backend APIs as implemented.
+- If PyQt6/VLC is unavailable, report exactly which check could not run.
 
-## Testing Expectations
+## Read on demand
 
-- Run `python -m pytest -q` after behavior changes when dependencies are available.
-- Run focused pytest files for narrow changes before the full suite when useful.
-- Run `ruff check .` and `ruff format --check .` before PR-like work.
-- If PyQt6 or VLC dependencies are unavailable, say exactly what prevented verification.
-- Prefer service/repository/controller tests for behavior that does not need a real media runtime.
+| Need | Read |
+|------|------|
+| Layers, data flow, persistence, playback, error handling | `docs/architecture.md` |
+| Setup, env vars, test workflow, debugging | `docs/development.md` |
+| Implemented scope vs non-goals | `docs/product.md` |
+| Planned work | `docs/roadmap.md` (`docs/phase3.md` is historical; do not revive it) |
+| User-facing setup and limitations | `README.md` |
 
-## Documentation Expectations
+## Avoid unless the task is about them
 
-- Update docs when commands, architecture, setup, runtime behavior, or roadmap status changes.
-- Keep implemented features separate from planned features.
-- Do not revive stale Phase 3 backlog claims as current future work.
-- Do not invent packaging, deployment, API, or provider capabilities.
+- `repomix-output.xml` (~360 KB generated dump), `*.log`, `.venv/`, `*_cache/`, `__pycache__/`.
+- `TEST_AUDIT.md`, `UI_AUDIT.md`, `walkthrough.md`: point-in-time reports, not current guidance.
+- Large files: read targeted ranges of `tests/test_models_and_services.py`,
+  `ui/windows/main_window.py`, and `ui/styles/themes.py` (mostly stylesheet data).
 
-## Known Traps
+## Context efficiency
 
-- `python-vlc` is not VLC. Native VLC must be installed separately.
-- Xtream passwords are stored locally in SQLite and must not be logged.
-- `PlaylistReference.to_settings_value()` intentionally omits Xtream passwords.
-- Linux Wayland playback embedding may require XWayland.
-- Background playlist/EPG cancellation ignores stale results but cannot always stop an in-flight `requests` call immediately.
-- SQLite migrations are embedded in `SQLiteConnection`, not external migration files.
-- `requirements.txt` is runtime-only; test/lint/format tools live in `requirements-dev.txt`, which pulls in `requirements.txt` via `-r`.
-
-## Do Not
-
-- Do not modify application code for documentation-only tasks.
-- Do not change package files, CI, or dependency pins unless explicitly asked.
-- Do not log raw Xtream credentials or authenticated stream URLs.
-- Do not replace the virtualized channel list with per-row widgets for large playlists.
-- Do not document cloud sync, recording, packaged installers, or backend APIs as implemented.
+- Search with `rg` and open the narrowest relevant files first; do not read the whole repo.
+- Do not print whole large files, logs, or generated artifacts; redirect verbose output to a
+  temp file and inspect the relevant part.
+- Run the focused test file first, then the full suite and ruff before finishing.
+- Do not reread unchanged files you already understand.
+- Use subagents only for substantial isolated exploration or independent verification.
+- Use `ruff format` / `ruff check --fix` for mechanical fixes instead of hand-editing.
+- Keep task-specific findings out of this file; add only durable repository facts.

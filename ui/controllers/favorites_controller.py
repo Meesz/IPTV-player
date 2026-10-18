@@ -1,7 +1,11 @@
+import logging
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.models import Channel
 from core.services.favorites_service import FavoritesService
+
+logger = logging.getLogger(__name__)
 
 
 class FavoritesController(QObject):
@@ -18,6 +22,7 @@ class FavoritesController(QObject):
             self.changed.emit()
             return result
         except Exception as exc:
+            logger.exception("Failed to add favorite %r", channel.name)
             self.error_occurred.emit(str(exc))
             return False
 
@@ -27,6 +32,7 @@ class FavoritesController(QObject):
             self.changed.emit()
             return result
         except Exception as exc:
+            logger.exception("Failed to remove favorite %r", channel.name)
             self.error_occurred.emit(str(exc))
             return False
 

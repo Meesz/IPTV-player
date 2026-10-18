@@ -80,7 +80,7 @@ python -m app.main
 On first launch the app creates:
 
 - SQLite database: `~/.simple_iptv/database.db`
-- Log file in the current working directory: `iptv_player.log`
+- Log file in the current working directory: `iptv_player.log` (rotates at 5 MB, keeping `.1` and `.2` backups)
 
 To reset local app state, stop the app and remove the database:
 

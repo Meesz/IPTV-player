@@ -4,6 +4,7 @@ Covers load -> settings/library, channel activation -> play/last channel/history
 favourite toggle, close -> UI state persisted and restart restore (TEST_AUDIT.md F6).
 """
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -161,6 +162,18 @@ def test_loading_playlist_populates_list_settings_and_library(loaded_window, db_
     saved = PlaylistRepository(SQLiteConnection(db_path=db_path)).get_playlist_by_identity(file_identity)
     assert saved is not None
     assert saved.path == str(playlist_file)
+
+
+def test_activating_channel_logs_name_but_never_stream_url(qapp, make_window, db_path, playlist_file, caplog):
+    with caplog.at_level(logging.DEBUG):
+        window = make_window(db_path)
+        window.playlist_controller.load_playlist(str(playlist_file))
+        _wait_for_render(qapp, window)
+        channel = _activate_first_channel(qapp, window)
+
+    assert f"Playing channel {channel.name!r}" in caplog.text
+    assert "Playlist 'wiring.m3u' loaded: 2 channels" in caplog.text
+    assert channel.url not in caplog.text
 
 
 def test_activating_channel_plays_and_records_last_channel_and_history(

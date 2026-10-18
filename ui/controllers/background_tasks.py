@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+
+logger = logging.getLogger(__name__)
 
 
 class BackgroundTaskSignals(QObject):
@@ -37,6 +40,7 @@ class BackgroundTask(QRunnable):
             )
             self.signals.succeeded.emit(self.task_id, result)
         except Exception as exc:
+            logger.exception("Background task %s (%s) failed", self.task_id, getattr(self.fn, "__name__", self.fn))
             self.signals.failed.emit(self.task_id, str(exc))
         finally:
             self.signals.finished.emit(self.task_id)

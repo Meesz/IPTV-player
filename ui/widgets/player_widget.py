@@ -39,6 +39,7 @@ class MediaEventHandler(QObject):
         self.media_stopped.emit()
 
     def _on_error(self, event) -> None:
+        logger.error("VLC reported MediaPlayerEncounteredError")
         self.error_occurred.emit("Media playback failed")
 
     def _on_buffering(self, event) -> None:
@@ -194,6 +195,8 @@ class PlayerWidget(QFrame):
             self.player.set_media(media)
             self.player.play()
         except Exception as exc:
+            # str(exc) may echo the stream URL, so only the type is logged.
+            logger.error("VLC failed to start stream: %s", type(exc).__name__)
             self._handle_playback_error(str(exc))
 
     def stop(self) -> None:
@@ -245,6 +248,9 @@ class PlayerWidget(QFrame):
         return True
 
     def _set_state(self, state: str, detail: str = "") -> None:
+        # Buffering re-enters this on every cache tick, so only transitions are logged.
+        if state != self.current_state:
+            logger.info("Playback state %s -> %s (%s)", self.current_state, state, detail)
         self.current_state = state
         self.playback_state_changed.emit(state, detail)
 
@@ -280,12 +286,20 @@ class PlayerWidget(QFrame):
         if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
             self.reconnect_attempts += 1
             delay = min(2**self.reconnect_attempts, 30)
+            logger.warning(
+                "Playback error (%s); reconnect attempt %s/%s in %ss",
+                error_msg,
+                self.reconnect_attempts,
+                self.max_reconnect_attempts,
+                delay,
+            )
             detail = f"Retrying in {delay}s"
             self._show_status(detail, duration=delay * 1000)
             self._set_state("reconnecting", detail)
             self.reconnect_timer.start(int(delay * 1000))
             return
 
+        logger.error("Playback error (%s); giving up after %s reconnect attempts", error_msg, self.reconnect_attempts)
         self._set_state("error", error_msg)
 
     def _reconnect(self) -> None:

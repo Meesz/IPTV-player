@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,13 @@ from ui.widgets.loading_overlay import LoadingOverlay
 from ui.widgets.menu_bar import MenuBar
 from ui.widgets.notification import NotificationType, NotificationWidget
 from ui.widgets.right_panel import RightPanel
+
+logger = logging.getLogger(__name__)
+
+_NOTIFICATION_LOG_LEVELS = {
+    NotificationType.WARNING: logging.WARNING,
+    NotificationType.ERROR: logging.ERROR,
+}
 
 
 class MainWindow(QMainWindow):
@@ -359,6 +367,12 @@ class MainWindow(QMainWindow):
     def _on_playlist_loaded(self, playlist: Playlist) -> None:
         self._active_playlist_path = playlist.source_path
         playlist_name = playlist.source_reference.display_label() if playlist.source_reference else playlist.name
+        logger.info(
+            "Playlist %r loaded: %s channels in %s categories",
+            playlist_name,
+            len(playlist.channels),
+            len(playlist.categories),
+        )
         self._set_status_chip(self.playlist_status_label, "Rendering channels...", "warning")
 
         self.left_panel.category_combo.blockSignals(True)
@@ -503,6 +517,7 @@ class MainWindow(QMainWindow):
             self._pending_channel_url = channel.url
             self._pending_channel_group = channel.group
             reference = self.playlist_controller.get_saved_playlist_by_identity(channel.playlist_path)
+            logger.info("Channel %r belongs to another source; switching playlists first", channel.name)
             if reference is None:
                 self.show_notification("The source for this channel is no longer available.", NotificationType.WARNING)
                 return
@@ -512,6 +527,8 @@ class MainWindow(QMainWindow):
         self._play_channel(channel)
 
     def _play_channel(self, channel: Channel) -> None:
+        # Never log channel.url: Xtream stream URLs carry the password in the path.
+        logger.info("Playing channel %r (group %r, epg id %r)", channel.name, channel.group, channel.epg_id)
         self._current_channel = channel
         self.left_panel.highlight_channel(channel)
         self.right_panel.player_widget.play(channel.url)
@@ -777,6 +794,7 @@ class MainWindow(QMainWindow):
         type: NotificationType = NotificationType.INFO,
         duration: int = 3000,
     ) -> None:
+        logger.log(_NOTIFICATION_LOG_LEVELS.get(type, logging.INFO), "Notification shown (%s): %s", type.name, message)
         self.notification.show_message(message, type, duration=duration)
 
     def keyPressEvent(self, event) -> None:

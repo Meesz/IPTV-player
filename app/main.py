@@ -1,7 +1,9 @@
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 
+from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from core.services.epg_service import EPGService
@@ -29,14 +31,36 @@ def _resolve_log_level() -> int:
     return getattr(logging, raw_level, logging.INFO)
 
 
-# Configure logging
-logging.basicConfig(
-    level=_resolve_log_level(),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("iptv_player.log")],
-)
+LOG_FILE = "iptv_player.log"
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 2
 
 logger = logging.getLogger(__name__)
+qt_logger = logging.getLogger("qt")
+
+_QT_LOG_LEVELS = {
+    QtMsgType.QtDebugMsg: logging.DEBUG,
+    QtMsgType.QtInfoMsg: logging.INFO,
+    QtMsgType.QtWarningMsg: logging.WARNING,
+    QtMsgType.QtCriticalMsg: logging.ERROR,
+    QtMsgType.QtFatalMsg: logging.CRITICAL,
+}
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=_resolve_log_level(),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"),
+        ],
+    )
+    logger.info("=== Session start (pid %s, Python %s) ===", os.getpid(), sys.version.split()[0])
+
+
+def _forward_qt_message(msg_type, _context, message: str) -> None:
+    qt_logger.log(_QT_LOG_LEVELS.get(msg_type, logging.WARNING), message)
 
 
 def _show_critical_dialog(title: str, message: str) -> None:
@@ -92,6 +116,8 @@ def create_window() -> MainWindow:
 
 
 def main() -> int:
+    configure_logging()
+    qInstallMessageHandler(_forward_qt_message)
     app = QApplication(sys.argv)
     app.setApplicationName("Simple IPTV Player")
     _install_exception_hook()
@@ -111,7 +137,9 @@ def main() -> int:
         )
 
     window.show()
-    return app.exec()
+    exit_code = app.exec()
+    logger.info("=== Session end (exit code %s) ===", exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":

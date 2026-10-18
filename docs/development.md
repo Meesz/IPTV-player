@@ -29,6 +29,9 @@ python -m app.main
 ```
 
 The app writes logs to `iptv_player.log` in the current working directory and stores local state in `~/.simple_iptv/database.db`.
+The log rotates at 5 MB (two backups) and each run is bracketed by `=== Session start/end ===` lines. Besides service
+activity it records channels played (by name, never URL), playback state transitions, reconnects, every notification
+shown to the user, handled controller failures with tracebacks, and Qt runtime warnings (logger `qt`).
 
 ## Environment
 

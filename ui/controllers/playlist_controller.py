@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
@@ -6,6 +7,8 @@ from core.errors import RepositoryError, ValidationError
 from core.models import Playlist, PlaylistReference, PlaylistSourceType
 from core.services.playlist_service import PlaylistService
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
+
+logger = logging.getLogger(__name__)
 
 
 class PlaylistController(QObject):
@@ -96,6 +99,7 @@ class PlaylistController(QObject):
                 )
             self.service.save_playlist_reference(reference)
         except Exception as exc:
+            logger.exception("Failed to save playlist reference")
             self.error_occurred.emit(str(exc))
 
     def get_saved_playlists(self):
@@ -115,6 +119,7 @@ class PlaylistController(QObject):
         try:
             self.service.remove_playlist_reference(source, is_url=is_url)
         except Exception as exc:
+            logger.exception("Failed to remove saved playlist")
             self.error_occurred.emit(str(exc))
 
     def import_playlists(
@@ -130,6 +135,7 @@ class PlaylistController(QObject):
             )
             return True
         except Exception as exc:
+            logger.exception("Failed to import %s playlists", len(playlists))
             self.error_occurred.emit(str(exc))
             return False
 
@@ -146,6 +152,7 @@ class PlaylistController(QObject):
         try:
             return self.service.validate_playlist_reference(reference), ""
         except (ValidationError, RepositoryError, OSError, ValueError) as exc:
+            logger.warning("Playlist reference %r failed validation: %s", reference.name, exc)
             return None, str(exc)
 
     def test_playlist_reference(
@@ -181,6 +188,7 @@ class PlaylistController(QObject):
                 is_url=is_url,
             )
         except Exception as exc:
+            logger.exception("Failed to update playlist metadata")
             self.error_occurred.emit(str(exc))
 
     def _on_task_progress(self, task_id: int, message: str) -> None:
