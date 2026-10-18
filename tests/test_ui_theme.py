@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter
-from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QInputDialog,
+    QMessageBox,
+    QStyle,
+    QStyleOptionViewItem,
+    QTreeView,
+    QWidget,
+)
 
 from core.models import Channel
 from ui.styles.themes import Themes
@@ -186,3 +194,52 @@ def test_badge_roles_mark_playing_and_favorite(qapp):
     badges = view.model().index(0, 0).data(ChannelListModel.BadgesRole)
     assert [text for text, _tone in badges] == ["PLAYING", "FAV"]
     assert ChannelRowDelegate.ROW_HEIGHT <= 70
+
+
+def _standard_dialogs(host: QWidget) -> dict[str, QWidget]:
+    file_dialog = QFileDialog(host, "Open M3U Playlist", "", "M3U Files (*.m3u *.m3u8)")
+    file_dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+    return {
+        "file": file_dialog,
+        "input": QInputDialog(host),
+        "message": QMessageBox(QMessageBox.Icon.Question, "Remove Playlist", "Remove it?", parent=host),
+    }
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_standard_dialogs_paint_an_opaque_themed_background(qapp, mode):
+    # The global `QWidget { background: transparent }` rule left Qt's own dialogs unpainted,
+    # so the window manager showed stale pixels (a smear) while they were dragged.
+    host = QWidget()
+    host.setStyleSheet(Themes.get_dark_theme() if mode == "dark" else Themes.get_light_theme())
+    panel = Themes.color(mode, "panel")
+    try:
+        for name, dialog in _standard_dialogs(host).items():
+            dialog.show()
+            qapp.processEvents()
+            image = dialog.grab().toImage()
+            pixel = image.pixelColor(image.width() - 4, image.height() // 2)
+            dialog.close()
+            assert pixel.alpha() == 255, f"{name} dialog background is not opaque"
+            assert pixel.rgb() == panel.rgb(), f"{name} dialog background is not the panel color"
+    finally:
+        host.deleteLater()
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_file_dialog_list_uses_theme_colors(qapp, mode):
+    host = QWidget()
+    host.setStyleSheet(Themes.get_dark_theme() if mode == "dark" else Themes.get_light_theme())
+    try:
+        dialog = _standard_dialogs(host)["file"]
+        dialog.show()
+        qapp.processEvents()
+        view = dialog.findChild(QTreeView)
+        assert view is not None
+        image = view.viewport().grab().toImage()
+        pixel = image.pixelColor(image.width() - 4, image.height() - 4)
+        dialog.close()
+        assert pixel.alpha() == 255
+        assert pixel.rgb() == Themes.color(mode, "raised").rgb()
+    finally:
+        host.deleteLater()

@@ -111,6 +111,32 @@ class Themes:
                 background: transparent;
             }}
 
+            /* Top-level dialogs (incl. Qt's QFileDialog/QInputDialog/QMessageBox) must paint an
+               opaque surface; the transparent QWidget rule above otherwise leaves them unpainted
+               and the window manager smears stale pixels while they are dragged. Same
+               specificity as the QWidget rule, so it must stay after it. */
+            QDialog {{
+                background-color: {panel};
+            }}
+
+            QFileDialog QAbstractItemView {{
+                background-color: {raised};
+                alternate-background-color: {raised};
+                color: {text};
+                border: 1px solid {hairline};
+                border-radius: 8px;
+                selection-background-color: {accent_soft};
+                selection-color: {text};
+            }}
+
+            QFileDialog QHeaderView::section {{
+                background-color: {panel};
+                color: {muted};
+                border: none;
+                border-bottom: 1px solid {hairline};
+                padding: 4px 8px;
+            }}
+
             QWidget#content_shell {{
                 background: transparent;
             }}
