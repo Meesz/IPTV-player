@@ -25,12 +25,12 @@ This repo is a desktop application, not a web service. There is no backend serve
 - VLC playback through `python-vlc` plus the native VLC runtime
 - `requests` for playlist, EPG, and Xtream HTTP calls
 - pytest for tests, pinned in `requirements-dev.txt`
-- Ruff (lint + format) and pytest in GitHub Actions CI; mypy runs informationally
+- Ruff (lint + format) and pytest in GitHub Actions CI (pull requests and pushes to `main`); mypy runs as a blocking error-count ratchet
 - Ruff for linting and formatting, configured in `pyproject.toml`
 
 ## Requirements
 
-- Python 3.11 or newer (the GitHub Actions workflows and Ruff's target version use Python 3.12).
+- Python 3.11 or newer (the lint workflow and Ruff's target version use Python 3.12; CI tests run on Python 3.12 and 3.14).
 - `pip`
 - Native VLC media player installed on the machine
 
@@ -113,7 +113,7 @@ Run commands from the repository root unless noted.
 | Lint | `ruff check .` |
 | Check formatting | `ruff format --check .` |
 | Format Python files | `ruff format .` |
-| Type check (non-blocking) | `mypy app core infra ui` |
+| Type check (CI blocks if the error count rises) | `mypy app core infra ui` |
 | Install git hooks | `pre-commit install` |
 | Syntax/import sanity check | `python -m compileall app core infra ui tests` |
 
@@ -138,7 +138,8 @@ No packaged build command is configured. Packaging/release distribution is not d
 ## Current Limitations
 
 - Playback depends on native VLC and platform-specific embedding. Linux Wayland sessions may require XWayland for embedded video.
-- Xtream passwords are stored in the local SQLite database so sources can be reloaded. Logs are expected to redact passwords, but the database itself is not encrypted.
+- Xtream passwords are stored in the local SQLite database so sources can be reloaded. The database itself is not encrypted. On POSIX systems the default data directory `~/.simple_iptv` is restricted to mode 0700 and `database.db` to 0600 (Windows permissions are not changed). Log handlers mask `password`-style query values and URL userinfo passwords, but Xtream stream URLs carry the password in the path, so channel URLs must not be logged.
+- Remote downloads are bounded: very large playlists, Xtream responses, or EPG files (including oversized decompressed gzip EPGs) are rejected with an error, and downloads that exceed a time budget are aborted on a best-effort basis.
 - There is no account system, remote sync, or multi-device state.
 - Playlist and EPG downloads use blocking HTTP calls inside worker tasks; cancellation ignores stale results but cannot always abort an in-flight network request immediately.
 - Packaging/release distribution is not defined.

@@ -20,7 +20,7 @@ pip install -r requirements-dev.txt
 
 Install native VLC separately. The Python package `python-vlc` is only a binding.
 
-The GitHub Actions workflows use Python 3.12. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
+The GitHub Actions lint workflow uses Python 3.12; the tests workflow runs on Python 3.12 and 3.14. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
 
 ## Run
 
@@ -55,7 +55,7 @@ Run from repo root.
 | Lint | `ruff check .` | Matches `.github/workflows/lint.yml`. |
 | Format | `ruff format .` | Config lives in `pyproject.toml` (line-length 120, target py312). |
 | Check formatting | `ruff format --check .` | Useful in CI or before committing. |
-| Type check | `mypy app core infra ui` | Non-blocking during rollout; runs in CI with `continue-on-error`. |
+| Type check | `mypy app core infra ui` | Blocking error-count ratchet in CI: fails if the error count exceeds the maximum recorded in `.github/workflows/lint.yml` (`MYPY_MAX_ERRORS`). |
 | Install git hooks | `pre-commit install` | Runs ruff (lint + format) and hygiene hooks on commit. |
 | Syntax check | `python -m compileall app core infra ui tests` | Useful when Qt runtime is unavailable. |
 
@@ -90,7 +90,7 @@ Current tests cover:
 - theme tokens (painter-safe colors), channel row painting, and main-window/dialog layout invariants such as no clipping or overlap, elision, and empty-state actions (`tests/test_ui_theme.py`, `tests/test_ui_layout.py`)
 - startup and VLC-unavailable dialog behavior
 
-CI runs lint and tests on pull requests (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy` (the mypy step is informational and does not block the build).
+CI runs lint and tests on pull requests and on pushes to `main` (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy`; the mypy step is a blocking error-count ratchet that fails when the count exceeds `MYPY_MAX_ERRORS` (lower it as errors are fixed, never raise it).
 
 ## Debugging Tips
 

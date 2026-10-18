@@ -210,7 +210,7 @@ class XtreamClient:
                 "Xtream %s request returned HTTP error for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                self._redact_secrets(exc),
+                self._redact_secrets(str(exc)),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
         except (ConnectionError, SSLError) as exc:
@@ -249,7 +249,7 @@ class XtreamClient:
                 "Xtream %s request failed for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                self._redact_secrets(exc),
+                self._redact_secrets(str(exc)),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
         except RequestException as exc:
@@ -257,7 +257,7 @@ class XtreamClient:
                 "Xtream %s request failed for %s: %s",
                 action,
                 credentials.redacted_summary(),
-                self._redact_secrets(exc),
+                self._redact_secrets(str(exc)),
             )
             raise NetworkError("Failed to contact Xtream source") from exc
 

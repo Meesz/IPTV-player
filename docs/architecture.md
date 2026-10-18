@@ -42,6 +42,17 @@ EPG sources are XMLTV files or URLs. URL loads download to a temporary XML/XML.G
 
 Program times are normalized to timezone-aware UTC datetimes. UI display converts times to the local timezone when rendering channel rows.
 
+- Programmes that share a channel and start time (whole-second UTC) resolve "last wins": `EPGParser` replaces the earlier entry and adds a `duplicate_programme` parse warning, and `EPGRepository` saves with `INSERT OR REPLACE`.
+- Malformed XML (and other `ValueError` parse failures) from `EPGParser` is converted by `EPGService` into a `ParsingError`. The underlying parser error (logged and chained as the cause) includes the line and column; the `ParsingError` shown to the user names only the file.
+- URL downloads are size- and time-bounded (see Download Limits). Gzip EPGs are decompressed through `_LimitedReader` in `infra/parsers/epg_parser.py`, which fails once decompressed data exceeds `MAX_EPG_DECOMPRESSED_BYTES`.
+
+## Download Limits
+
+Remote playlist, Xtream, and EPG downloads stream through `read_bounded` in `core/bounded_download.py`, using the constants in `core/limits.py` (`MAX_PLAYLIST_DOWNLOAD_BYTES`, `MAX_EPG_DOWNLOAD_BYTES`, `MAX_XTREAM_RESPONSE_BYTES`, and per-source `*_DOWNLOAD_DEADLINE_SECONDS`). Exceeding a download budget raises `DownloadLimitError` (a `NetworkError` subclass) without the URL in the message, and `PlaylistService` does not retry it. The separate `MAX_EPG_DECOMPRESSED_BYTES` gzip limit is enforced by `_LimitedReader` and surfaces as a `ParsingError`.
+
+- The byte budgets (declared `Content-Length` and bytes actually read) are the hard memory guard.
+- The wall-clock deadline is best-effort: it is checked between chunks, so a server that trickles data can overrun it. Each socket read is still bounded by the request timeout.
+
 ## Persistence Model
 
 The default database path is:
@@ -84,6 +95,8 @@ Platform embedding behavior:
 
 Linux Wayland sessions may need XWayland for embedded video. The backend reports a warning when it detects a risky Wayland setup.
 
+Shutdown: `MainWindow.closeEvent` saves settings, then calls `PlayerWidget.shutdown`, cancels playlist and EPG loading, and waits up to 2 seconds (`QThreadPool.waitForDone`) for background tasks. `PlayerWidget.shutdown` is idempotent: it stops the reconnect timer, stops the VLC player, leaves fullscreen and hides/schedules deletion of the fullscreen window, then releases the VLC player. VLC errors during shutdown are logged by exception type only. Close can therefore wait briefly if a task (such as a playlist-manager probe on the shared global pool) is still running; an in-flight HTTP request is not aborted.
+
 ## Error Handling
 
 Domain errors live in `core/errors.py`:
@@ -102,6 +115,8 @@ The app is local-first and has no server-side auth boundary. The main sensitive 
 - Passwords are stored in the local SQLite database for source reloads.
 - `PlaylistReference.to_settings_value()` omits the password.
 - Xtream logging is designed to redact passwords and avoid logging raw credential URLs.
+- `app/main.py` installs `RedactingFormatter` (`core/redaction.py`) on both the console and rotating file log handlers. It applies `redact_text` to the whole formatted record, including chained tracebacks. It masks only query-style passwords and userinfo passwords; path-embedded Xtream stream passwords are not masked, so call sites must still not log channel URLs.
+- On POSIX, `SQLiteConnection` creates the data directory with mode 0700 and sets `database.db` (and `-wal`/`-shm` files when present) to 0600. The directory is chmod-ed only for the default `~/.simple_iptv` location, not for a caller-supplied parent. Failures to set modes are logged as warnings. The database is not encrypted, and no modes are changed on Windows.
 - Playlist and EPG URLs are passed through `core/redaction.py` (`redact_url`, `redact_text`, `redact_identity`) before they reach logs or error messages. This masks `password`/`passwd`/`pass`/`pwd` query values and basic-auth userinfo passwords. Xtream stream URLs carry credentials in the path (`/live/<user>/<password>/<id>`), so do not log channel URLs.
 
 Do not add logging that prints raw Xtream passwords, full authenticated URLs, or local database contents.
@@ -120,4 +135,4 @@ Do not add logging that prints raw Xtream passwords, full authenticated URLs, or
 - SQLite schema migrations are embedded in startup code rather than external migration files.
 - Xtream-compatible providers vary in response shape and transport behavior.
 - VLC embedding is platform-sensitive and may behave differently under Linux Wayland, macOS, and Windows setups.
-- Tests cover important seams, but there is no full app-level integration suite or CI test job yet.
+- Tests cover important seams, but there is no full app-level integration suite. CI runs pytest (Python 3.12 and 3.14, offscreen Qt), ruff, and a blocking mypy error-count ratchet on pull requests and pushes to `main`; mypy errors are not yet zero.

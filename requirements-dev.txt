@@ -9,7 +9,7 @@ pytest-qt==4.5.0
 # Lint + format (single tool: see [tool.ruff] in pyproject.toml)
 ruff==0.15.18
 
-# Type checking (non-blocking; see [tool.mypy] in pyproject.toml)
+# Type checking (CI error-count ratchet; see [tool.mypy] in pyproject.toml)
 mypy==2.1.0
 
 # Git hooks

@@ -74,8 +74,8 @@ The app currently supports:
 - Source-aware channel identity through `(url, playlist_path)` so the same stream URL can exist in multiple sources.
 - Playlist source metadata with source type, identity, channel count, load status, and last error.
 - Xtream source normalization, authentication, category fetch, live channel fetch, HTTPS fallback, encoded playback URLs, and redacted logging.
-- XMLTV parsing with namespace-tolerant child lookup, gzip support, UTC-aware program times, and parse warnings for invalid program dates.
-- M3U parsing with multiple encodings, double/single-quoted attributes, numeric metadata warnings, and orphan stream warnings.
+- XMLTV parsing with namespace-tolerant child lookup, gzip support (with a decompressed-size limit), size-limited downloads, UTC-aware program times, last-wins handling of duplicate programmes (with a parse warning), a `ParsingError` for malformed XML, and parse warnings for invalid program dates.
+- M3U parsing with UTF-8 (with or without BOM), UTF-16 only when a BOM is present, and cp1252/latin-1 fallback; double-quoted, single-quoted, or unquoted attributes; numeric metadata warnings, and orphan stream warnings.
 - Background playlist and EPG loading with stale worker result suppression.
 - Virtualized rich channel rows with logo placeholders, badges, current program text, and offscreen paint coverage.
 - Startup error dialogs for database/bootstrap failures and VLC-unavailable warnings.

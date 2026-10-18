@@ -33,7 +33,7 @@ max-statements = 50
 docstring-code-format = true
 
 [tool.mypy]
-# Pragmatic, non-blocking rollout. PyQt6 stubs are imperfect and python-vlc ships
+# Pragmatic rollout; CI enforces an error-count ratchet. PyQt6 stubs are imperfect and python-vlc ships
 # none, so missing imports are ignored; strict/disallow-untyped-defs are left off
 # for now and can be tightened once the tree is clean.
 python_version = "3.12"

@@ -4,8 +4,8 @@ This roadmap separates confirmed maintenance direction from speculative product 
 
 ## Immediate Fixes
 
-- **Dependency and tooling cleanup**: review whether every pinned dependency in `requirements.txt` is still needed, especially development and packaging tools.
-- **CI coverage**: add a pytest job once the Qt/PyQt6 test environment is reliable in CI.
+- **Dependency and tooling cleanup**: runtime pins in `requirements.txt` were audited and bumped for known advisories (PyQt6 and python-vlc unchanged), and Dependabot (`.github/dependabot.yml`) now checks pip and GitHub Actions weekly. Remaining: review whether every pinned dependency is still needed, especially development and packaging tools.
+- **CI coverage**: CI runs pytest (Python 3.12 and 3.14), ruff, and mypy on pull requests and pushes to `main`; mypy is a blocking error-count ratchet (maximum recorded in `.github/workflows/lint.yml`). Remaining gaps: mypy errors are not yet zero, pushes to other branches do not trigger CI, and there is no app-level integration suite.
 - **Packaging decision**: decide whether the app will ship as source-only, py2app, PyInstaller, platform packages, or another installer format.
 - **Document packaging only after it exists**: avoid adding release commands until the checked-in configuration supports them.
 - **Broaden regression coverage**: add tests for playlist switching, fullscreen transitions, favorites/history interactions, migration failures, and player state changes.
