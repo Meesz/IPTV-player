@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -32,7 +33,7 @@ def _resolve_log_level() -> int:
     return getattr(logging, raw_level, logging.INFO)
 
 
-LOG_FILE = "iptv_player.log"
+LOG_FILE_NAME = "iptv_player.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUP_COUNT = 2
 
@@ -48,17 +49,38 @@ _QT_LOG_LEVELS = {
 }
 
 
-def configure_logging() -> None:
-    handlers: list[logging.Handler] = [
-        logging.StreamHandler(),
-        RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"),
-    ]
+def default_log_path() -> Path:
+    """Log file inside the app data directory (the same one the database uses)."""
+    return Path.home() / ".simple_iptv" / LOG_FILE_NAME
+
+
+def configure_logging(log_path: Path | None = None) -> list[logging.Handler]:
+    """Log to the console and a rotating file; `log_path` overrides the default location.
+
+    The console handler is always installed. A missing log directory is created with mode
+    0o700 (an existing one is left alone). If the log file cannot be set up (unwritable
+    directory, no home directory), file logging is skipped with a warning and the app
+    keeps logging to the console only. Returns the handlers that were installed.
+    """
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    file_error: Exception | None = None
+    try:
+        path = log_path if log_path is not None else default_log_path()
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        handlers.append(
+            RotatingFileHandler(path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8")
+        )
+    except (OSError, RuntimeError) as exc:
+        file_error = exc
     # Tracebacks of chained requests errors can echo Xtream query passwords.
     formatter = RedactingFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     for handler in handlers:
         handler.setFormatter(formatter)
     logging.basicConfig(level=_resolve_log_level(), handlers=handlers)
+    if file_error is not None:
+        logger.warning("File logging disabled: could not set up log file: %s", file_error)
     logger.info("=== Session start (pid %s, Python %s) ===", os.getpid(), sys.version.split()[0])
+    return handlers
 
 
 def _forward_qt_message(msg_type, _context, message: str) -> None:

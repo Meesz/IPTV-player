@@ -36,6 +36,8 @@ The current source types are:
 
 `PlaylistReference.source_identity` is the stable stored identity for a playlist source. File sources normalize to absolute paths, URL sources use the trimmed URL, and Xtream sources use normalized server URL plus username/output. Channel identity is source-aware through `Channel.identity_key()`, which returns `(url, playlist_path)`.
 
+URL playlist downloads (`PlaylistService._download_with_retries`) make up to three attempts with a short exponential backoff (0.5 s, then 1 s). Timeouts, connection errors, 5xx responses, and 408/429 are retried; other 4xx responses fail immediately. Cancellation is checked before and after each backoff wait.
+
 ## EPG Flow
 
 EPG sources are XMLTV files or URLs. URL loads download to a temporary XML/XML.GZ file, then reuse the file parser. Parsed programs are stored in SQLite and kept in memory for the active session.

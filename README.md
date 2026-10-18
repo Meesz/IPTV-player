@@ -15,7 +15,7 @@ This repo is a desktop application, not a web service. There is no backend serve
 - Play streams through native VLC with buffering status, retry handling, reconnect caps, mute, fullscreen, copy URL, and manual retry controls.
 - Save favorites and recent channels with source-aware channel identity.
 - Persist UI state such as theme, window size, splitter sizes, active tab, selected category, search text, sort mode, mute state, and list display preferences.
-- Log application activity to `iptv_player.log`.
+- Log application activity to `~/.simple_iptv/iptv_player.log`.
 
 ## Tech Stack
 
@@ -80,7 +80,7 @@ python -m app.main
 On first launch the app creates:
 
 - SQLite database: `~/.simple_iptv/database.db`
-- Log file in the current working directory: `iptv_player.log` (rotates at 5 MB, keeping `.1` and `.2` backups)
+- Log file in the app data directory: `~/.simple_iptv/iptv_player.log` (rotates at 5 MB, keeping `.1` and `.2` backups)
 
 To reset local app state, stop the app and remove the database:
 

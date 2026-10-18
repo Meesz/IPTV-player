@@ -1,8 +1,11 @@
 """Diagnostic logging: handled failures and playback events reach the log without stream URLs."""
 
 import logging
+import os
 import sqlite3
+import stat
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -147,15 +150,98 @@ def test_redacting_formatter_masks_secrets_in_chained_tracebacks():
     assert "ConnectionError" in output
 
 
-def test_configure_logging_installs_redacting_formatter_on_all_handlers(monkeypatch):
-    captured = {}
+@pytest.fixture
+def umask022():
+    previous = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+@pytest.fixture
+def configure(monkeypatch):
+    """Call configure_logging without touching the root logger; close handlers afterwards."""
+    captured: dict = {}
+    created: list[logging.Handler] = []
     monkeypatch.setattr(logging, "basicConfig", lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr(app_main, "RotatingFileHandler", lambda *_a, **_k: logging.NullHandler())
 
-    app_main.configure_logging()
+    def _configure(*args, **kwargs):
+        handlers = app_main.configure_logging(*args, **kwargs)
+        created.extend(handlers)
+        return handlers
 
-    assert len(captured["handlers"]) == 2
-    assert all(isinstance(h.formatter, RedactingFormatter) for h in captured["handlers"])
+    _configure.captured = captured  # type: ignore[attr-defined]
+    yield _configure
+    for handler in created:
+        handler.close()
+
+
+def test_configure_logging_installs_redacting_formatter_on_all_handlers(configure, tmp_path):
+    handlers = configure(tmp_path / "iptv_player.log")
+
+    assert len(handlers) == 2
+    assert configure.captured["handlers"] == handlers  # type: ignore[attr-defined]
+    assert all(isinstance(h.formatter, RedactingFormatter) for h in handlers)
+
+
+def test_default_log_path_is_in_app_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    assert app_main.default_log_path() == tmp_path / ".simple_iptv" / "iptv_player.log"
+
+
+def test_configure_logging_creates_missing_dir_and_writes_file(configure, tmp_path, umask022):
+    log_path = tmp_path / "data" / "iptv_player.log"
+
+    handlers = configure(log_path)
+    record = logging.LogRecord("t", logging.INFO, __file__, 1, "hello-log-file", None, None)
+    for handler in handlers:
+        handler.handle(record)
+        handler.flush()
+
+    assert "hello-log-file" in log_path.read_text(encoding="utf-8")
+    if os.name == "posix":
+        assert stat.S_IMODE(log_path.parent.stat().st_mode) == 0o700
+
+
+def test_configure_logging_does_not_chmod_existing_dir(configure, tmp_path):
+    if os.name != "posix":
+        pytest.skip("POSIX permissions only")
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    existing.chmod(0o755)
+
+    configure(existing / "iptv_player.log")
+
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o755
+
+
+def test_configure_logging_falls_back_to_redacting_console_when_log_dir_unusable(configure, tmp_path, caplog):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file, not a directory", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        handlers = configure(blocker / "iptv_player.log")
+
+    assert len(handlers) == 1
+    assert isinstance(handlers[0].formatter, RedactingFormatter)
+    assert configure.captured["handlers"] == handlers  # type: ignore[attr-defined]
+    assert "File logging disabled" in caplog.text
+
+
+def test_configure_logging_falls_back_when_home_directory_unknown(configure, monkeypatch, caplog):
+    def _no_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(app_main, "default_log_path", _no_home)
+
+    with caplog.at_level(logging.WARNING):
+        handlers = configure()
+
+    assert len(handlers) == 1
+    assert all(isinstance(h.formatter, RedactingFormatter) for h in handlers)
+    assert "File logging disabled" in caplog.text
 
 
 def test_player_without_vlc_initialises_and_ignores_controls(qapp, monkeypatch):

@@ -157,6 +157,104 @@ def test_playlist_mid_stream_error_is_retried_and_mapped(monkeypatch, temp_dir):
     assert len(calls) == 3
 
 
+class _StatusResponse(_StreamResponse):
+    def __init__(self, status_code: int):
+        super().__init__(b"")
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        raise requests.exceptions.HTTPError(f"{self.status_code} Error for url: {PLAYLIST_URL}", response=self)  # type: ignore[arg-type]
+
+
+def _install_sequence(monkeypatch, responses):
+    calls: list[str] = []
+    queue = list(responses)
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return queue.pop(0)
+
+    monkeypatch.setattr("core.services.playlist_service.requests.get", fake_get)
+    return calls
+
+
+def test_playlist_404_is_not_retried(monkeypatch):
+    response = _StatusResponse(404)
+    calls = _install_sequence(monkeypatch, [response])
+    delays: list[float] = []
+    monkeypatch.setattr("core.services.playlist_service._sleep", delays.append)
+
+    with pytest.raises(NetworkError, match="Failed to download playlist"):
+        _playlist_service()._download_with_retries(PLAYLIST_URL)
+
+    assert len(calls) == 1
+    assert delays == []
+    assert response.closed
+
+
+@pytest.mark.parametrize("status", [408, 429, 500, 503])
+def test_playlist_transient_http_status_is_retried(monkeypatch, status):
+    calls = _install_sequence(monkeypatch, [_StatusResponse(status), _StreamResponse(M3U_BODY)])
+
+    assert _playlist_service()._download_with_retries(PLAYLIST_URL) == M3U_BODY
+    assert len(calls) == 2
+
+
+def test_playlist_http_error_without_response_is_retried(monkeypatch):
+    class _NoResponse(_StreamResponse):
+        def raise_for_status(self) -> None:
+            raise requests.exceptions.HTTPError("no response attached")
+
+    calls = _install_sequence(monkeypatch, [_NoResponse(b""), _StreamResponse(M3U_BODY)])
+
+    assert _playlist_service()._download_with_retries(PLAYLIST_URL) == M3U_BODY
+    assert len(calls) == 2
+
+
+def test_playlist_cancel_during_backoff_stops_retries_without_error_log(monkeypatch, caplog):
+    from concurrent.futures import CancelledError
+
+    from core.models import PlaylistReference
+
+    calls = _install_sequence(monkeypatch, [_StatusResponse(503)] * 3)
+    cancelled = {"flag": False}
+    monkeypatch.setattr("core.services.playlist_service._sleep", lambda _s: cancelled.update(flag=True))
+
+    with caplog.at_level(logging.DEBUG), pytest.raises(CancelledError):
+        _playlist_service()._load_from_url(
+            PlaylistReference(name="x", path=PLAYLIST_URL), cancel_callback=lambda: cancelled["flag"]
+        )
+
+    assert len(calls) == 1
+    assert "Unexpected playlist URL load failure" not in caplog.text
+
+
+def test_playlist_retry_backoff_is_exponential_and_skips_final_attempt(monkeypatch):
+    calls = _install_sequence(monkeypatch, [_StatusResponse(503)] * 3)
+    delays: list[float] = []
+    monkeypatch.setattr("core.services.playlist_service._sleep", delays.append)
+
+    with pytest.raises(NetworkError):
+        _playlist_service()._download_with_retries(PLAYLIST_URL)
+
+    assert len(calls) == 3
+    assert delays == [0.5, 1.0]
+
+
+def test_playlist_retry_does_not_sleep_after_cancellation(monkeypatch):
+    from concurrent.futures import CancelledError
+
+    calls = _install_sequence(monkeypatch, [_StatusResponse(503)] * 3)
+    delays: list[float] = []
+    monkeypatch.setattr("core.services.playlist_service._sleep", delays.append)
+
+    with pytest.raises(CancelledError):
+        _playlist_service()._download_with_retries(PLAYLIST_URL, cancel_callback=lambda: True)
+
+    assert len(calls) == 1
+    assert delays == []
+
+
 def test_epg_url_over_budget_raises_network_error_and_removes_temp_file(monkeypatch, tmp_path, temp_dir, caplog):
     monkeypatch.setattr(limits, "MAX_EPG_DOWNLOAD_BYTES", 20)
     response = _StreamResponse(EPG_XML)

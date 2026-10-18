@@ -28,7 +28,7 @@ The GitHub Actions lint workflow uses Python 3.12; the tests workflow runs on Py
 python -m app.main
 ```
 
-The app writes logs to `iptv_player.log` in the current working directory and stores local state in `~/.simple_iptv/database.db`.
+The app writes logs to `~/.simple_iptv/iptv_player.log` and stores local state in `~/.simple_iptv/database.db`. If the log file cannot be opened, the app falls back to console-only logging.
 The log rotates at 5 MB (two backups) and each run is bracketed by `=== Session start/end ===` lines. Besides service
 activity it records channels played (by name, never URL), playback state transitions, reconnects, every notification
 shown to the user, handled controller failures with tracebacks, and Qt runtime warnings (logger `qt`).
@@ -116,7 +116,7 @@ The VLC backend uses `set_xwindow` on Linux. Under Wayland, embedded playback ma
 
 ### Playlist or EPG source fails
 
-Check `iptv_player.log`. The app separates validation, network, parsing, and repository errors in service/controller paths. Use the playlist manager **Test Source** flow to validate a playlist without switching the active playlist.
+Check `~/.simple_iptv/iptv_player.log`. The app separates validation, network, parsing, and repository errors in service/controller paths. Use the playlist manager **Test Source** flow to validate a playlist without switching the active playlist.
 
 ### Reset local state
 

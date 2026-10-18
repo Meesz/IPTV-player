@@ -1,13 +1,14 @@
 import logging
 import os
 import tempfile
+import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import CancelledError
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
-from requests.exceptions import RequestException, Timeout
+from requests.exceptions import HTTPError, RequestException, Timeout
 
 from core import limits
 from core.bounded_download import read_bounded
@@ -19,6 +20,14 @@ from infra.parsers.m3u_parser import M3UParser
 from infra.providers.xtream_client import XtreamClient
 
 logger = logging.getLogger(__name__)
+
+# Delay before retry n is BASE * FACTOR ** (n - 1): 0.5 s, then 1 s with three attempts.
+RETRY_BACKOFF_BASE_SECONDS = 0.5
+RETRY_BACKOFF_FACTOR = 2
+# Client errors that may clear up on their own: Request Timeout and Too Many Requests.
+_TRANSIENT_CLIENT_ERRORS = frozenset({408, 429})
+# Module-level hook so tests can avoid real delays.
+_sleep = time.sleep
 
 
 class PlaylistService:
@@ -292,7 +301,7 @@ class PlaylistService:
         try:
             self._ensure_not_cancelled(cancel_callback)
             self._emit_progress(progress_callback, "Downloading playlist")
-            content = self._download_with_retries(url, max_retries=3)
+            content = self._download_with_retries(url, max_retries=3, cancel_callback=cancel_callback)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8") as tmp_file:
                 tmp_path = Path(tmp_file.name)
                 tmp_file.write(content)
@@ -314,6 +323,8 @@ class PlaylistService:
         except RequestException as exc:
             raise NetworkError(f"Failed to download playlist: {redact_url(url)}") from exc
         except ParsingError:
+            raise
+        except CancelledError:
             raise
         except Exception as exc:  # pragma: no cover - fallback
             logger.error("Unexpected playlist URL load failure (%s): %s", redact_url(url), redact_text(str(exc)))
@@ -391,7 +402,18 @@ class PlaylistService:
             self._current_playlist = playlist
         return playlist
 
-    def _download_with_retries(self, url: str, max_retries: int = 3) -> bytes:
+    @staticmethod
+    def _is_permanent_http_error(exc: HTTPError) -> bool:
+        """4xx responses (except 408/429) will not change on retry."""
+        status = getattr(exc.response, "status_code", None)
+        return isinstance(status, int) and 400 <= status < 500 and status not in _TRANSIENT_CLIENT_ERRORS
+
+    def _download_with_retries(
+        self,
+        url: str,
+        max_retries: int = 3,
+        cancel_callback: Callable[[], bool] | None = None,
+    ) -> bytes:
         if not self._is_valid_url(url):
             raise ValidationError(f"Invalid playlist URL: {redact_url(url)}")
 
@@ -419,8 +441,12 @@ class PlaylistService:
             except RequestException as exc:
                 logger.warning("Playlist download error (%s/%s): %s", attempt, max_retries, redact_text(str(exc)))
                 last_error = exc
+                if isinstance(exc, HTTPError) and self._is_permanent_http_error(exc):
+                    break
             if attempt < max_retries:
-                continue
+                self._ensure_not_cancelled(cancel_callback)
+                _sleep(RETRY_BACKOFF_BASE_SECONDS * RETRY_BACKOFF_FACTOR ** (attempt - 1))
+                self._ensure_not_cancelled(cancel_callback)
         if isinstance(last_error, Timeout):
             raise NetworkError(f"Timed out while downloading playlist: {redact_url(url)}") from last_error
         raise NetworkError(f"Failed to download playlist: {redact_url(url)}") from last_error

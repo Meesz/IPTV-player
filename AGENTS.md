@@ -13,7 +13,7 @@ packaging/release workflow. Entry point: `app/main.py` (`python -m app.main`).
 | `infra/` | SQLite repositories + embedded migrations (`db/sqlite_connection.py`), M3U/XMLTV parsers, Xtream client, VLC setup (`playback/vlc_backend.py`) |
 | `ui/controllers/` | Qt signal orchestration and background tasks |
 | `ui/widgets/`, `ui/windows/`, `ui/dialogs/`, `ui/styles/`, `ui/utils/` | Presentation |
-| `tests/` | Flat pytest suite; `conftest.py` provides the `qapp` fixture and sets offscreen Qt |
+| `tests/` | Flat pytest suite; `conftest.py` provides the `qapp` fixture, sets offscreen Qt, and redirects `Path.home()` to a temp dir for every test |
 
 ## Commands
 
@@ -26,7 +26,7 @@ Test/lint tools come from `requirements-dev.txt`; `requirements.txt` is runtime-
 | Full tests | `python -m pytest -q` |
 | Lint / format check | `ruff check .` / `ruff format --check .` |
 | Type check (CI ratchet: count must not rise) | `mypy app core infra ui` |
-| Run app (GUI; writes `~/.simple_iptv/` and `./iptv_player.log`; may use network) | `python -m app.main` |
+| Run app (GUI; writes `~/.simple_iptv/` including `iptv_player.log`; may use network) | `python -m app.main` |
 
 CI (PRs and pushes to main; tests on 3.12 + 3.14) runs ruff check, ruff format --check, pytest, and a mypy error-count ratchet.
 Ruff config and rule rationale live in `pyproject.toml`; pre-commit runs ruff on commit.

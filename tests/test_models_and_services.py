@@ -1509,7 +1509,25 @@ def test_epg_controller_ignores_stale_worker_result(monkeypatch):
     assert controller.last_loaded_source == "fast.xml"
 
 
-def test_main_reports_startup_errors(monkeypatch):
+def _run_main_closing_log_handlers(monkeypatch) -> int:
+    """Run app_main.main() and close the log handlers it builds (basicConfig is a no-op under pytest)."""
+    created: list[logging.Handler] = []
+    real_configure_logging = app_main.configure_logging
+
+    def _configure() -> list[logging.Handler]:
+        handlers = real_configure_logging()
+        created.extend(handlers)
+        return handlers
+
+    monkeypatch.setattr(app_main, "configure_logging", _configure)
+    try:
+        return app_main.main()
+    finally:
+        for handler in created:
+            handler.close()
+
+
+def test_main_reports_startup_errors(monkeypatch, isolated_home):
     calls: dict[str, object] = {}
 
     class _FakeApplication:
@@ -1533,7 +1551,8 @@ def test_main_reports_startup_errors(monkeypatch):
     monkeypatch.setattr(app_main, "create_window", _failing_create_window)
     monkeypatch.setattr(app_main.QMessageBox, "critical", _critical)
 
-    assert app_main.main() == 1
+    assert _run_main_closing_log_handlers(monkeypatch) == 1
+    assert (isolated_home / ".simple_iptv" / "iptv_player.log").is_file()
     assert calls["app_name"] == "Simple IPTV Player"
     assert calls["dialog"] == (
         "Startup Error",
@@ -1542,7 +1561,7 @@ def test_main_reports_startup_errors(monkeypatch):
     assert "exec_called" not in calls
 
 
-def test_main_warns_when_vlc_is_unavailable(monkeypatch):
+def test_main_warns_when_vlc_is_unavailable(monkeypatch, isolated_home):
     calls: dict[str, object] = {}
 
     class _FakeApplication:
@@ -1578,7 +1597,9 @@ def test_main_warns_when_vlc_is_unavailable(monkeypatch):
         lambda title, message: dialogs.append((title, message)),
     )
 
-    assert app_main.main() == 0
+    assert _run_main_closing_log_handlers(monkeypatch) == 0
+    # The default log file lands in the isolated home, never the real one.
+    assert (isolated_home / ".simple_iptv" / "iptv_player.log").is_file()
     assert (
         "VLC Unavailable",
         "Playback will be unavailable until VLC is installed and importable.\n\nVLC backend unavailable",
