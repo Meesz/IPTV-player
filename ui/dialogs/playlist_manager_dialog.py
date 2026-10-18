@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Sequence
 
-from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -17,14 +18,47 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QStyle,
     QStyleOption,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.models import PlaylistReference, PlaylistSourceType
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
 from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
+
+
+class _DetailValue(QLabel):
+    """Read-only detail value. ``text()`` is always the full value, also exposed as tooltip.
+
+    With ``elide=True`` the value stays on one line and is elided at paint time; otherwise it wraps.
+    """
+
+    def __init__(self, elide: bool = False) -> None:
+        super().__init__("")
+        self.setObjectName("playlist_detail_value")
+        self._elide = elide
+        self.setWordWrap(not elide)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+    def setText(self, text: str | None) -> None:
+        super().setText(text)
+        self.setToolTip(text or "")
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, super().minimumSizeHint().height())
+
+    def paintEvent(self, event) -> None:
+        if not self._elide:
+            super().paintEvent(event)
+            return
+        painter = QPainter(self)
+        painter.setPen(self.palette().windowText().color())
+        shown = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideMiddle, self.width())
+        painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown)
 
 
 class PlaylistManagerDialog(QDialog):
@@ -36,7 +70,8 @@ class PlaylistManagerDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("playlist_dialog")
         self.setWindowTitle("Playlist Manager")
-        self.setMinimumSize(760, 420)
+        self.setMinimumSize(880, 520)
+        self.resize(960, 580)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._active_playlist_path = ""
@@ -56,32 +91,37 @@ class PlaylistManagerDialog(QDialog):
 
     def _init_ui(self) -> None:  # noqa: PLR0915  (Qt UI builder; pre-existing size)
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(18, 18, 18, 18)
-        root_layout.setSpacing(14)
+        root_layout.setContentsMargins(24, 24, 24, 20)
+        root_layout.setSpacing(4)
 
-        title = QLabel("Playlist Library")
+        title = QLabel("Playlists")
         title.setObjectName("dialog_title")
         root_layout.addWidget(title)
 
-        self.feedback_label = QLabel("Manage saved playlist sources, validation, and last test results here.")
+        subtitle = QLabel("Saved sources for live TV. Pick one to load it into the player.")
+        subtitle.setObjectName("dialog_subtitle")
+        root_layout.addWidget(subtitle)
+
+        self.feedback_label = QLabel("Ready.")
         self.feedback_label.setObjectName("playlist_feedback")
         self.feedback_label.setWordWrap(True)
+        self.feedback_label.setProperty("stateTone", "ready")
+        root_layout.addSpacing(6)
         root_layout.addWidget(self.feedback_label)
+        root_layout.addSpacing(10)
 
-        shell = QFrame()
-        shell.setObjectName("playlist_dialog_card")
-        shell_layout = QHBoxLayout(shell)
-        shell_layout.setContentsMargins(16, 16, 16, 16)
-        shell_layout.setSpacing(14)
+        body = QHBoxLayout()
+        body.setSpacing(16)
 
         list_layout = QVBoxLayout()
-        list_layout.setSpacing(10)
+        list_layout.setSpacing(8)
 
-        self.header = QLabel("Saved playlists")
+        self.header = QLabel("SAVED PLAYLISTS")
         self.header.setObjectName("panel_heading")
         list_layout.addWidget(self.header)
 
         self.playlist_list = QListWidget()
+        self.playlist_list.setObjectName("playlist_list")
         self.playlist_list.itemSelectionChanged.connect(self._selection_changed)
         self.playlist_list.itemDoubleClicked.connect(self._edit_playlist)
         self.playlist_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -92,8 +132,8 @@ class PlaylistManagerDialog(QDialog):
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(8)
 
-        self.add_button = QPushButton("Add Playlist")
-        self.add_button.setProperty("accent", True)
+        self.add_button = QPushButton("Add")
+        self.add_button.setObjectName("playlist_add_button")
         self.add_menu = QMenu(self)
         self.add_menu.addAction("From File...", self._add_playlist_file)
         self.add_menu.addAction("From URL...", self._add_playlist_url)
@@ -106,7 +146,9 @@ class PlaylistManagerDialog(QDialog):
         self.remove_button.setEnabled(False)
         self.test_button = QPushButton("Test Source")
         self.test_button.setEnabled(False)
-        self.select_button = QPushButton("Select")
+        self.select_button = QPushButton("Load Playlist")
+        self.select_button.setProperty("accent", True)
+        self.select_button.setDefault(True)
         self.select_button.setEnabled(False)
 
         self.edit_button.clicked.connect(self._edit_playlist)
@@ -114,65 +156,79 @@ class PlaylistManagerDialog(QDialog):
         self.test_button.clicked.connect(self._test_selected_playlist)
         self.select_button.clicked.connect(self._select_playlist)
 
-        button_row.addWidget(self.add_button)
-        button_row.addWidget(self.edit_button)
-        button_row.addWidget(self.remove_button)
-        button_row.addWidget(self.test_button)
+        for button in (self.add_button, self.edit_button, self.remove_button, self.test_button):
+            button.setProperty("ghost", True)
+            button_row.addWidget(button)
         button_row.addStretch()
-        button_row.addWidget(self.select_button)
 
         list_layout.addLayout(button_row)
-        shell_layout.addLayout(list_layout, stretch=3)
+        body.addLayout(list_layout, stretch=5)
 
         self.details_card = QFrame()
         self.details_card.setObjectName("playlist_detail_card")
-        details_layout = QVBoxLayout(self.details_card)
-        details_layout.setContentsMargins(16, 16, 16, 16)
-        details_layout.setSpacing(10)
+        self.details_card.setMinimumWidth(320)
+        details_outer = QVBoxLayout(self.details_card)
+        details_outer.setContentsMargins(20, 18, 20, 18)
+        details_outer.setSpacing(12)
 
-        details_heading = QLabel("Details")
+        details_heading = QLabel("DETAILS")
         details_heading.setObjectName("panel_heading")
-        details_layout.addWidget(details_heading)
+        details_outer.addWidget(details_heading)
 
-        self.detail_name = self._detail_label("Name")
-        self.detail_source = self._detail_label("Source")
-        self.detail_path = self._detail_label("Path")
-        self.detail_channels = self._detail_label("Channels")
-        self.detail_loaded = self._detail_label("Last loaded")
-        self.detail_status = self._detail_label("Status")
-        self.detail_validation = self._detail_label("Validation")
+        self.details_placeholder = QLabel("Select a playlist to see its source, status and last test result.")
+        self.details_placeholder.setObjectName("placeholder_hint")
+        self.details_placeholder.setWordWrap(True)
+        self.details_placeholder.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        details_outer.addWidget(self.details_placeholder)
 
-        for label in (
-            self.detail_name,
-            self.detail_source,
-            self.detail_path,
-            self.detail_channels,
-            self.detail_loaded,
-            self.detail_status,
-            self.detail_validation,
+        self.details_form_host = QWidget()
+        form = QFormLayout(self.details_form_host)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(12)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        self.detail_name = _DetailValue(elide=True)
+        self.detail_source = _DetailValue()
+        self.detail_path = _DetailValue(elide=True)
+        self.detail_channels = _DetailValue()
+        self.detail_loaded = _DetailValue()
+        self.detail_status = _DetailValue()
+        self.detail_validation = _DetailValue()
+
+        for caption, value in (
+            ("NAME", self.detail_name),
+            ("SOURCE", self.detail_source),
+            ("PATH", self.detail_path),
+            ("CHANNELS", self.detail_channels),
+            ("LAST LOADED", self.detail_loaded),
+            ("STATUS", self.detail_status),
+            ("VALIDATION", self.detail_validation),
         ):
-            details_layout.addWidget(label)
-        details_layout.addStretch()
+            caption_label = QLabel(caption)
+            caption_label.setObjectName("panel_heading")
+            form.addRow(caption_label, value)
 
-        shell_layout.addWidget(self.details_card, stretch=2)
-        root_layout.addWidget(shell, stretch=1)
+        details_outer.addWidget(self.details_form_host)
+        details_outer.addStretch()
+
+        body.addWidget(self.details_card, stretch=4)
+        root_layout.addLayout(body, stretch=1)
 
         footer = QHBoxLayout()
+        footer.setContentsMargins(0, 16, 0, 0)
+        footer.setSpacing(8)
         footer.addStretch()
         self.cancel_button = QPushButton("Close")
         self.cancel_button.setProperty("ghost", True)
+        self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.reject)
         footer.addWidget(self.cancel_button)
+        footer.addWidget(self.select_button)
         root_layout.addLayout(footer)
 
         self._set_details(None)
-
-    @staticmethod
-    def _detail_label(title: str) -> QLabel:
-        label = QLabel(f"{title}: -")
-        label.setObjectName("playlist_detail_label")
-        label.setWordWrap(True)
-        return label
 
     def _selection_changed(self) -> None:
         has_selection = bool(self.playlist_list.selectedItems())
@@ -248,7 +304,8 @@ class PlaylistManagerDialog(QDialog):
         confirm = QMessageBox.question(
             self,
             "Confirm Removal",
-            f"Remove '{current_item.text()}' from the library?",
+            f"Remove '{playlist.name if isinstance(playlist, PlaylistReference) else current_item.text()}' "
+            "from the library?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
@@ -521,8 +578,8 @@ class PlaylistManagerDialog(QDialog):
 
     def _item_title(self, playlist: PlaylistReference) -> str:
         source_kind = playlist.source_type.value.upper()
-        suffix = " [ACTIVE]" if playlist.source_identity == self._active_playlist_path else ""
-        return f"{playlist.name} [{source_kind}]{suffix}"
+        suffix = "  ·  ACTIVE" if playlist.source_identity == self._active_playlist_path else ""
+        return f"{playlist.name}  ·  {source_kind}{suffix}"
 
     def _set_feedback(self, tone: str, message: str) -> None:
         self.feedback_label.setText(message)
@@ -531,34 +588,38 @@ class PlaylistManagerDialog(QDialog):
         self.feedback_label.style().polish(self.feedback_label)
 
     def _set_details(self, playlist: PlaylistReference | None) -> None:
+        self.details_placeholder.setVisible(playlist is None)
+        self.details_form_host.setVisible(playlist is not None)
         if not playlist:
-            self.detail_name.setText("Name: -")
-            self.detail_source.setText("Source: -")
-            self.detail_path.setText("Path: -")
-            self.detail_channels.setText("Channels: -")
-            self.detail_loaded.setText("Last loaded: -")
-            self.detail_status.setText("Status: -")
-            self.detail_validation.setText("Validation: -")
+            for value in (
+                self.detail_name,
+                self.detail_source,
+                self.detail_path,
+                self.detail_channels,
+                self.detail_loaded,
+                self.detail_status,
+                self.detail_validation,
+            ):
+                value.setText("")
             return
 
-        self.detail_name.setText(f"Name: {playlist.name}")
+        self.detail_name.setText(playlist.name)
         source_map = {
             PlaylistSourceType.FILE: "Local file",
             PlaylistSourceType.URL: "Remote URL",
             PlaylistSourceType.XTREAM: "Xtream Codes",
         }
-        self.detail_source.setText(f"Source: {source_map.get(playlist.source_type, 'Unknown')}")
-        self.detail_path.setText(f"Path: {playlist.source_summary()}")
-        self.detail_channels.setText(f"Channels: {playlist.channel_count if playlist.channel_count else 'Unknown'}")
-        self.detail_loaded.setText(f"Last loaded: {playlist.last_loaded_at or 'Never loaded'}")
+        self.detail_source.setText(source_map.get(playlist.source_type, "Unknown"))
+        self.detail_path.setText(playlist.source_summary())
+        self.detail_channels.setText(str(playlist.channel_count) if playlist.channel_count else "Unknown")
+        self.detail_loaded.setText(playlist.last_loaded_at or "Never loaded")
         status = playlist.last_status or "Not validated yet"
         if playlist.source_identity == self._active_playlist_path:
             status = f"{status} / Active"
-        self.detail_status.setText(f"Status: {status}")
+        self.detail_status.setText(status)
 
         _validation_status, validation_message = self._validation_messages.get(
             playlist.source_identity,
             ("pending", "Use Test Source to verify reachability and parsing."),
         )
-        text = validation_message
-        self.detail_validation.setText(f"Validation: {text}")
+        self.detail_validation.setText(validation_message)

@@ -1,9 +1,11 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
+CARD_WIDTH = 360
+
 
 class LoadingOverlay(QFrame):
-    """Blocking overlay used while long-running UI transitions are in progress."""
+    """Blocking scrim with a compact centred card, used during long-running UI transitions."""
 
     cancel_requested = pyqtSignal()
 
@@ -15,13 +17,13 @@ class LoadingOverlay(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 32, 32, 32)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.card = QFrame()
         self.card.setObjectName("busy_overlay_card")
+        self.card.setFixedWidth(CARD_WIDTH)
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(24, 24, 24, 24)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(24, 22, 24, 20)
+        card_layout.setSpacing(8)
 
         self.title_label = QLabel("Loading")
         self.title_label.setObjectName("busy_title")
@@ -34,18 +36,21 @@ class LoadingOverlay(QFrame):
         self.detail_label.setWordWrap(True)
         card_layout.addWidget(self.detail_label)
 
+        card_layout.addSpacing(6)
         self.progress = QProgressBar()
         self.progress.setObjectName("busy_progress")
         self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
         card_layout.addWidget(self.progress)
 
+        card_layout.addSpacing(8)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setProperty("ghost", True)
         self.cancel_button.clicked.connect(self.cancel_requested.emit)
-        card_layout.addWidget(self.cancel_button)
+        card_layout.addWidget(self.cancel_button, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        layout.addWidget(self.card)
+        # Alignment on the widget (not the layout) keeps the card compact instead of full width.
+        layout.addWidget(self.card, alignment=Qt.AlignmentFlag.AlignCenter)
         self.hide()
 
     def show_message(self, title: str, detail: str) -> None:

@@ -43,7 +43,7 @@ The app currently supports:
 
 ### Add and load a playlist
 
-1. Open **File -> Playlist Manager** or use `Ctrl+P`.
+1. Open **File -> Playlist Manager**, click **Sources** in the header, or use `Ctrl+P`.
 2. Add a local file, HTTP(S) URL, or Xtream source.
 3. Optionally test the source.
 4. Load the selected source into the main channel list.

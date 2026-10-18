@@ -1,115 +1,82 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QSizePolicy, QVBoxLayout
 
 from core.models import Program
 from ui.utils.time_format import format_display_time
 
 
 class EPGWidget(QFrame):
-    """A widget to display the Electronic Program Guide (EPG)."""
+    """Compact "Up next" column; the current program is shown by the now-playing block."""
 
     def __init__(self):
         super().__init__()
         self.setObjectName("epg_widget")
         self.setFrameStyle(QFrame.Shape.NoFrame)
-        self.setMinimumHeight(160)
         self._init_ui()
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        heading = QLabel("Now / Next")
-        heading.setObjectName("panel_heading")
-        layout.addWidget(heading)
+        self.heading = QLabel("UP NEXT")
+        self.heading.setObjectName("panel_heading")
+        self.heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.heading)
 
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(8)
-
-        self.current_title = QLabel("No program information")
-        self.current_title.setObjectName("current_title")
-        self.current_title.setWordWrap(True)
-        scroll_layout.addWidget(self.current_title)
-
-        self.current_time = QLabel("Load EPG data to see live scheduling.")
-        self.current_time.setObjectName("current_time")
-        scroll_layout.addWidget(self.current_time)
-
-        self.state_hint = QLabel("")
-        self.state_hint.setObjectName("placeholder_hint")
-        self.state_hint.setWordWrap(True)
-        self.state_hint.hide()
-        scroll_layout.addWidget(self.state_hint)
-
-        self.description = QLabel()
-        self.description.setObjectName("player_meta")
-        self.description.setWordWrap(True)
-        scroll_layout.addWidget(self.description)
-
-        upcoming_heading = QLabel("Coming Up")
-        upcoming_heading.setObjectName("panel_heading")
-        scroll_layout.addWidget(upcoming_heading)
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("placeholder_hint")
+        self.status_label.setWordWrap(True)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addWidget(self.status_label)
 
         self.upcoming_list = QListWidget()
         self.upcoming_list.setObjectName("upcoming_list")
         self.upcoming_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-        scroll_layout.addWidget(self.upcoming_list)
+        self.upcoming_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.upcoming_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.upcoming_list.setWordWrap(False)
+        self.upcoming_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.upcoming_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self.upcoming_list, stretch=100)
+        layout.addStretch(1)  # keeps heading and status line top-aligned while the list is hidden
 
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(scroll_widget)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.clear()
 
-        layout.addWidget(scroll_area)
+    def _show_status(self, text: str) -> None:
+        self.upcoming_list.clear()
+        self.upcoming_list.hide()
+        self.status_label.setText(text)
+        self.status_label.show()
 
     def clear(self) -> None:
-        self.current_title.setText("No program information")
-        self.current_time.setText("Load EPG data to see live scheduling.")
-        self.state_hint.setText("")
-        self.state_hint.hide()
-        self.description.setText("")
-        self.upcoming_list.clear()
-        self.upcoming_list.addItem("No upcoming schedule available.")
+        self._show_status("Select a channel to see what's on next.")
 
     def set_loading_state(self, message: str) -> None:
-        self.current_title.setText("Refreshing program guide")
-        self.current_time.setText(message)
-        self.state_hint.setText("Schedule data will appear here once the refresh finishes.")
-        self.state_hint.show()
-        self.description.setText("")
-        self.upcoming_list.clear()
-        self.upcoming_list.addItem("Loading schedule data...")
+        self._show_status(message or "Refreshing program guide...")
 
     def set_empty_state(self, title: str, detail: str) -> None:
-        self.current_title.setText(title)
-        self.current_time.setText(detail)
-        self.state_hint.setText("")
-        self.state_hint.hide()
-        self.description.setText("")
-        self.upcoming_list.clear()
-        self.upcoming_list.addItem("No upcoming schedule available.")
+        self._show_status(f"{title}\n{detail}" if detail else title)
 
     def set_current_program(self, program: Program | None) -> None:
+        """The running program is rendered elsewhere; only reset this column's state."""
         if not program:
             self.clear()
             return
-
-        time_str = f"{format_display_time(program.start_time)} - {format_display_time(program.end_time)}"
-        self.current_title.setText(program.title)
-        self.current_time.setText(time_str)
-        self.state_hint.setText("")
-        self.state_hint.hide()
-        self.description.setText(program.description or "No program description available.")
+        self.status_label.setText("")
+        self.status_label.hide()
 
     def set_upcoming_programs(self, programs: list[Program]) -> None:
-        self.upcoming_list.clear()
         if not programs:
-            self.upcoming_list.addItem("No upcoming schedule available.")
+            self._show_status("No upcoming schedule available.")
             return
+        self.upcoming_list.clear()
         for program in programs:
             time_str = format_display_time(program.start_time)
-            self.upcoming_list.addItem(f"{time_str}  {program.title}")
+            item = QListWidgetItem(f"{time_str}  {program.title}")
+            item.setToolTip(program.title)
+            self.upcoming_list.addItem(item)
+        self.status_label.setText("")
+        self.status_label.hide()
+        self.upcoming_list.show()

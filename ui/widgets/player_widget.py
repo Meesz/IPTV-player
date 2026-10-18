@@ -95,7 +95,7 @@ class PlayerWidget(QFrame):
         self.video_layout.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.video_surface)
 
-        self.placeholder = QLabel("No stream loaded")
+        self.placeholder = QLabel("No channel playing\nPick a channel from the guide to start watching.")
         self.placeholder.setObjectName("player_placeholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
@@ -349,7 +349,8 @@ class PlayerWidget(QFrame):
     def _position_overlay(self) -> None:
         overlay_width = min(max(220, self.video_surface.width() - 80), 420)
         self.status_overlay.resize(overlay_width, self.status_overlay.sizeHint().height() + 12)
+        # Anchor near the bottom edge so it never sits on top of the centred placeholder text.
         self.status_overlay.move(
             (self.video_surface.width() - self.status_overlay.width()) // 2,
-            max(24, (self.video_surface.height() - self.status_overlay.height()) // 2),
+            max(0, self.video_surface.height() - self.status_overlay.height() - 20),
         )

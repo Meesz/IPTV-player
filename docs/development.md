@@ -84,6 +84,7 @@ Current tests cover:
 - background controller stale, failure, and cancellation handling (`tests/test_async_controllers.py`)
 - headless `MainWindow` wiring with VLC disabled: load, play, favorites, history, save on close, restart (`tests/test_main_window_wiring.py`)
 - selected PyQt widget and delegate behavior
+- theme tokens (painter-safe colors), channel row painting, and main-window/dialog layout invariants such as no clipping or overlap, elision, and empty-state actions (`tests/test_ui_theme.py`, `tests/test_ui_layout.py`)
 - startup and VLC-unavailable dialog behavior
 
 CI runs lint and tests on pull requests (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy` (the mypy step is informational and does not block the build).

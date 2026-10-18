@@ -1,12 +1,8 @@
 class SearchBarStyle:
-    """Styles for the search bar widget."""
+    """Widget-level hookup for the search bar; colors and metrics come from the app theme."""
 
     SEARCH_BAR = """
         QLineEdit#channel_search_bar {
-            padding: 12px 14px 12px 14px;
-            border-radius: 16px;
-            min-width: 250px;
-            font-size: 13px;
-            font-weight: 500;
+            padding-left: 12px;
         }
     """

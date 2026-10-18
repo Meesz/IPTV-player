@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from core.models import Channel, Program
@@ -67,7 +67,7 @@ class ChannelListModel(QAbstractListModel):
         if role == self.BadgesRole:
             badges: list[tuple[str, str]] = []
             if channel.identity_key() == self._current_channel_key:
-                badges.append(("LIVE", "accent"))
+                badges.append(("PLAYING", "live"))
             if channel.identity_key() in self._favorite_keys:
                 badges.append(("FAV", "warning"))
             return badges
@@ -140,16 +140,39 @@ class ChannelListModel(QAbstractListModel):
 
 
 class ChannelRowDelegate(QStyledItemDelegate):
-    LOGO_SIZE = 42
+    """Flat, hairline-separated channel rows painted with painter-safe theme colors."""
+
+    LOGO_SIZE = 36
+    ROW_HEIGHT = 70
+    _PAD_X = 12
+    _PAD_Y = 8
+    _BAR_WIDTH = 3
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._tokens = Themes.tokens("dark")
+        self._mode = "dark"
 
     def set_theme_mode(self, mode: str) -> None:
-        self._tokens = Themes.tokens(mode)
+        self._mode = mode
 
-    def paint(  # noqa: PLR0915  (custom delegate painting; pre-existing size)
+    def _color(self, key: str) -> QColor:
+        return Themes.color(self._mode, key)
+
+    @staticmethod
+    def _font(base: QFont, pixel_size: int, *, semibold: bool) -> QFont:
+        font = QFont(base)
+        font.setPixelSize(pixel_size)
+        font.setWeight(QFont.Weight.DemiBold if semibold else QFont.Weight.Normal)
+        return font
+
+    @staticmethod
+    def _secondary_lines(subtitle: str, meta: str) -> list[str]:
+        """Secondary text lines, without repeating the subtitle that meta already contains."""
+        if subtitle and meta and subtitle in (part.strip() for part in meta.split("|")):
+            return [meta]
+        return [line for line in (subtitle, meta) if line]
+
+    def paint(  # noqa: PLR0915  (custom delegate painting)
         self,
         painter: QPainter,
         option: QStyleOptionViewItem,
@@ -158,137 +181,141 @@ class ChannelRowDelegate(QStyledItemDelegate):
         painter.save()
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-            rect = option.rect.adjusted(0, 4, 0, -4)
+            rect = option.rect
             selected = bool(option.state & QStyle.StateFlag.State_Selected)
             hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
 
-            background = QColor(self._tokens["surface_hover"] if hovered else self._tokens["surface"])
-            border = QColor(self._tokens["border_soft"])
+            fill: QColor | None = None
             if selected:
-                background = QColor(self._tokens["selection"])
-                border = QColor(self._tokens["accent"])
+                fill = self._color("accent_soft")
+            elif hovered:
+                fill = self._color("row_hover")
+            if fill is not None:
+                path = QPainterPath()
+                path.addRoundedRect(QRectF(rect.adjusted(4, 2, -4, -2)), 8, 8)
+                painter.fillPath(path, fill)
 
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(rect), 14, 14)
-            painter.fillPath(path, background)
-            painter.setPen(QPen(border, 1))
-            painter.drawPath(path)
-
-            content_rect = rect.adjusted(14, 12, -14, -12)
-            logo_rect = QRect(
-                content_rect.left(),
-                content_rect.top(),
-                self.LOGO_SIZE,
-                self.LOGO_SIZE,
-            )
-            logo_bg = QPainterPath()
-            logo_bg.addRoundedRect(QRectF(logo_rect), 12, 12)
-            painter.fillPath(logo_bg, QColor(self._tokens["panel_alt"]))
-            painter.setPen(QPen(QColor(self._tokens["border_soft"]), 1))
-            painter.drawPath(logo_bg)
-
-            pixmap = index.data(ChannelListModel.LogoPixmapRole)
-            if pixmap is not None:
-                painter.setClipPath(logo_bg)
-                painter.drawPixmap(logo_rect, pixmap)
-                painter.setClipping(False)
-
-            text_left = logo_rect.right() + 12
-            text_width = max(0, content_rect.right() - text_left)
-            text_rect = QRect(text_left, content_rect.top(), text_width, content_rect.height())
+            # Hairline separator between rows.
+            painter.setPen(QPen(self._color("hairline"), 1))
+            painter.drawLine(rect.left() + self._PAD_X, rect.bottom(), rect.right() - self._PAD_X, rect.bottom())
 
             title = str(index.data(ChannelListModel.TitleRole) or "")
             subtitle = str(index.data(ChannelListModel.SubtitleRole) or "")
             meta = str(index.data(ChannelListModel.MetaRole) or "")
             badges = list(index.data(ChannelListModel.BadgesRole) or [])
+            playing = any(text == "PLAYING" for text, _tone in badges)
 
-            fm = painter.fontMetrics()
-            line_h = fm.height()
-            gap = 4
-            badges_width = self._paint_badges(painter, text_rect, badges)
+            if playing:
+                bar = QPainterPath()
+                bar.addRoundedRect(
+                    QRectF(rect.left() + 1, rect.top() + 10, self._BAR_WIDTH, rect.height() - 20),
+                    1.5,
+                    1.5,
+                )
+                painter.fillPath(bar, self._color("live"))
+
+            content = rect.adjusted(self._PAD_X + 2, self._PAD_Y, -self._PAD_X, -self._PAD_Y)
+            logo_rect = QRect(
+                content.left(),
+                rect.top() + (rect.height() - self.LOGO_SIZE) // 2,
+                self.LOGO_SIZE,
+                self.LOGO_SIZE,
+            )
+            self._paint_logo(painter, logo_rect, index.data(ChannelListModel.LogoPixmapRole))
+
+            text_left = logo_rect.right() + 1 + 12
+            text_rect = QRect(text_left, content.top(), max(0, content.right() + 1 - text_left), content.height())
+
+            title_font = self._font(option.font, 13, semibold=True)
+            # Subtitle (12px, muted) then meta (11px, faint); both must fit under the title.
+            line_fonts = (
+                self._font(option.font, 12, semibold=False),
+                self._font(option.font, 11, semibold=False),
+            )
+            painter.setFont(title_font)
+            title_h = painter.fontMetrics().height()
+
+            badges_width = self._paint_badges(
+                painter, QRect(text_rect.left(), text_rect.top(), text_rect.width(), title_h), badges
+            )
             title_rect = QRect(
                 text_rect.left(),
                 text_rect.top(),
-                max(0, text_rect.width() - badges_width - 8),
-                line_h + 2,
+                max(0, text_rect.width() - (badges_width + 8 if badges_width else 0)),
+                title_h,
             )
-            subtitle_rect = QRect(text_rect.left(), text_rect.top() + line_h + gap, text_rect.width(), line_h)
-            meta_rect = QRect(text_rect.left(), text_rect.top() + 2 * (line_h + gap), text_rect.width(), line_h)
-
-            title_font = QFont(option.font)
-            title_font.setBold(True)
             painter.setFont(title_font)
-            painter.setPen(QColor(self._tokens["text"]))
-            title_metrics = painter.fontMetrics()
+            painter.setPen(self._color("text"))
             painter.drawText(
                 title_rect,
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                title_metrics.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()),
+                painter.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()),
             )
 
-            subtitle_font = QFont(option.font)
-            subtitle_font.setBold(False)
-            painter.setFont(subtitle_font)
-            painter.setPen(QColor(self._tokens["muted"]))
-            subtitle_metrics = painter.fontMetrics()
-            painter.drawText(
-                subtitle_rect,
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                subtitle_metrics.elidedText(
-                    subtitle,
-                    Qt.TextElideMode.ElideRight,
-                    subtitle_rect.width(),
-                ),
-            )
-
-            if meta:
+            y = text_rect.top() + title_h + 2
+            for position, line in enumerate(self._secondary_lines(subtitle, meta)):
+                painter.setFont(line_fonts[min(position, 1)])
+                metrics = painter.fontMetrics()
+                line_h = metrics.height()
+                if y + line_h > rect.bottom() - 1:
+                    break
+                painter.setPen(self._color("muted" if position == 0 else "faint"))
+                line_rect = QRect(text_rect.left(), y, text_rect.width(), line_h)
                 painter.drawText(
-                    meta_rect,
+                    line_rect,
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                    subtitle_metrics.elidedText(meta, Qt.TextElideMode.ElideRight, meta_rect.width()),
+                    metrics.elidedText(line, Qt.TextElideMode.ElideRight, line_rect.width()),
                 )
+                y += line_h
         finally:
             painter.restore()
 
+    def _paint_logo(self, painter: QPainter, logo_rect: QRect, pixmap: object) -> None:
+        logo_bg = QPainterPath()
+        logo_bg.addRoundedRect(QRectF(logo_rect), 8, 8)
+        painter.fillPath(logo_bg, self._color("raised"))
+        if pixmap is None or pixmap.isNull():
+            return
+        side = min(pixmap.width(), pixmap.height())
+        source = QRect((pixmap.width() - side) // 2, (pixmap.height() - side) // 2, side, side)
+        painter.save()
+        painter.setClipPath(logo_bg)
+        painter.drawPixmap(logo_rect, pixmap, source)
+        painter.restore()
+
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
-        fm = QFontMetrics(option.font)
-        line = fm.height()
-        return QSize(option.rect.width(), max(72, 3 * line + 2 * 4 + 24))
+        # Width is intentionally small and independent of option.rect: the view stretches rows
+        # to the viewport, and a stale rect width would create a horizontal scroll range.
+        return QSize(1, self.ROW_HEIGHT)
 
     def _paint_badges(
         self,
         painter: QPainter,
-        text_rect: QRect,
+        title_line: QRect,
         badges: list[tuple[str, str]],
     ) -> int:
+        """Paint right-aligned status markers on the title line and return the width used."""
         if not badges:
             return 0
 
-        badge_font = QFont(painter.font())
-        badge_font.setBold(True)
-        badge_font.setPointSize(max(10, badge_font.pointSize() - 1))
-        painter.setFont(badge_font)
+        marker_font = self._font(painter.font(), 11, semibold=True)
+        painter.setFont(marker_font)
         metrics = painter.fontMetrics()
-        x = text_rect.right()
+        x = title_line.right() + 1
         total_width = 0
 
         for badge_text, tone in reversed(badges):
-            badge_width = metrics.horizontalAdvance(badge_text) + 16
-            badge_rect = QRect(x - badge_width, text_rect.top() + 1, badge_width, 20)
-            badge_bg = QColor(self._tokens["accent_soft"])
-            badge_fg = QColor(self._tokens["warning"] if tone == "warning" else self._tokens["accent"])
+            glyph = "★" if badge_text == "FAV" else badge_text
+            width = metrics.horizontalAdvance(glyph)
+            badge_rect = QRect(x - width, title_line.top(), width, title_line.height())
+            painter.setPen(self._color("warning" if tone == "warning" else "live"))
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, glyph)
+            x -= width + 8
+            total_width += width + 8
 
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(badge_rect), 10, 10)
-            painter.fillPath(path, badge_bg)
-            painter.setPen(badge_fg)
-            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
-
-            x -= badge_width + 6
-            total_width += badge_width + 6
-
-        return total_width
+        return max(0, total_width - 8)
 
 
 class ChannelListView(QListView):
@@ -304,6 +331,7 @@ class ChannelListView(QListView):
         super().__init__(parent)
         self.setObjectName("channel_list")
         self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self.setUniformItemSizes(True)
         self.setMouseTracking(True)
@@ -381,7 +409,7 @@ class ChannelListView(QListView):
         if bottom_index.isValid():
             end_row = bottom_index.row()
         else:
-            estimated = max(1, self.viewport().height() // 88 + 1)
+            estimated = max(1, self.viewport().height() // ChannelRowDelegate.ROW_HEIGHT + 1)
             end_row = min(row_count - 1, start_row + estimated)
 
         return [

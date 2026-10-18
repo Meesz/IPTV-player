@@ -38,9 +38,12 @@ class MenuBar(QMenuBar):
 
         self.epg_url_input = QLineEdit()
         self.epg_url_input.setObjectName("epg_url_input")
-        self.epg_url_input.setPlaceholderText("Enter EPG URL...")
-        self.load_epg_url_button = QPushButton("Load")
-        self.load_epg_url_button.setProperty("accent", True)
+        self.epg_url_input.setPlaceholderText("XMLTV guide URL")
+        self.epg_url_input.setMaximumWidth(320)
+        self.epg_url_input.setClearButtonEnabled(True)
+        self.load_epg_url_button = QPushButton("Load guide")
+        self.load_epg_url_button.setProperty("ghost", True)
+        self.load_epg_url_button.setToolTip("Load the XMLTV guide from this URL")
 
     def _init_view_menu(self):
         view_menu = self.addMenu("&View")

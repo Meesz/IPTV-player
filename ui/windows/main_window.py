@@ -1,15 +1,16 @@
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPushButton,
+    QSizePolicy,
     QSplitter,
     QToolBar,
     QVBoxLayout,
@@ -24,6 +25,7 @@ from ui.controllers.main_controller import MainController
 from ui.controllers.playlist_controller import PlaylistController
 from ui.controllers.settings_controller import SettingsController
 from ui.dialogs.playlist_manager_dialog import PlaylistManagerDialog
+from ui.styles.icons import make_icon
 from ui.styles.themes import Themes
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.loading_overlay import LoadingOverlay
@@ -60,6 +62,7 @@ class MainWindow(QMainWindow):
         self._pending_channel_group = settings.last_channel_group or ""
         self._playlist_loading_active = False
         self._playlist_render_active = False
+        self._last_playback_state: tuple[str, str] | None = None
 
         self._apply_settings_to_window()
         self._init_ui()
@@ -84,8 +87,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
 
         layout = QVBoxLayout(self.central_widget)
-        layout.setContentsMargins(18, 16, 18, 18)
-        layout.setSpacing(14)
+        layout.setContentsMargins(12, 8, 12, 12)
+        layout.setSpacing(8)
 
         self.menu_bar = MenuBar(self)
         self.setMenuBar(self.menu_bar)
@@ -109,6 +112,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.splitter, stretch=1)
 
         self.notification = NotificationWidget(self)
+        # Keep toasts off the header and control bar (and off the native video surface).
+        self.notification.set_anchor(self.right_panel.now_playing_card)
         self.loading_overlay = LoadingOverlay(self.central_widget)
         self.loading_overlay.cancel_requested.connect(self._on_loading_cancel_requested)
         self._sync_loading_overlay_geometry()
@@ -118,27 +123,35 @@ class MainWindow(QMainWindow):
         self.toolbar.setObjectName("main_toolbar")
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
+        self.toolbar.setFixedHeight(48)
 
-        epg_widget = QWidget()
-        epg_layout = QHBoxLayout(epg_widget)
-        epg_layout.setContentsMargins(0, 0, 0, 0)
-        epg_layout.setSpacing(10)
-        epg_layout.addWidget(self.menu_bar.epg_url_input, stretch=1)
-        epg_layout.addWidget(self.menu_bar.load_epg_url_button)
-        self.toolbar.addWidget(epg_widget)
-        self.toolbar.addSeparator()
+        self.sources_button = QPushButton("Sources")
+        self.sources_button.setProperty("ghost", True)
+        self.sources_button.setToolTip("Playlist Manager (Ctrl+P)")
+        self.sources_button.setAccessibleName("Sources")
+        self.sources_button.setIconSize(QSize(18, 18))
+        self.sources_button.clicked.connect(lambda _checked=False: self.menu_bar.playlist_manager_action.trigger())
+        self.toolbar.addWidget(self.sources_button)
 
-        self.playlist_status_label = QLabel("Playlist: none")
+        self.playlist_status_label = QLabel("No playlist")
         self.playlist_status_label.setObjectName("playlist_status_chip")
         self.playlist_status_label.setProperty("stateTone", "default")
-        self.playlist_status_label.setMaximumWidth(280)
+        self.playlist_status_label.setMaximumWidth(260)
         self.epg_status_label = QLabel("EPG not loaded")
         self.epg_status_label.setObjectName("epg_status_chip")
         self.epg_status_label.setProperty("stateTone", "warning")
-        self.epg_status_label.setMaximumWidth(280)
+        self.epg_status_label.setMaximumWidth(260)
 
         self.toolbar.addWidget(self.playlist_status_label)
         self.toolbar.addWidget(self.epg_status_label)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.toolbar.addWidget(spacer)
+
+        self.menu_bar.epg_url_input.setMinimumWidth(160)
+        self.toolbar.addWidget(self.menu_bar.epg_url_input)
+        self.toolbar.addWidget(self.menu_bar.load_epg_url_button)
         self.addToolBar(self.toolbar)
 
     def _connect_signals(self) -> None:
@@ -163,6 +176,7 @@ class MainWindow(QMainWindow):
         self.history_controller.error_occurred.connect(self._on_error)
 
         self.menu_bar.playlist_manager_action.triggered.connect(self._open_playlist_manager)
+        self.left_panel.manage_sources_requested.connect(self._open_playlist_manager)
         self.menu_bar.load_epg_file_action.triggered.connect(self._load_epg_file)
         self.menu_bar.load_epg_url_button.clicked.connect(self._load_epg_url)
         self.menu_bar.refresh_epg_action.triggered.connect(self._refresh_epg)
@@ -200,6 +214,17 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(Themes.get_dark_theme() if self._theme == "dark" else Themes.get_light_theme())
         if hasattr(self, "left_panel"):
             self.left_panel.set_theme_mode(self._theme)
+        if hasattr(self, "right_panel"):
+            self.right_panel.set_theme_mode(self._theme)
+        if hasattr(self, "sources_button"):
+            self.sources_button.setIcon(
+                make_icon(
+                    "sources",
+                    Themes.color(self._theme, "text"),
+                    18,
+                    disabled_color=Themes.color(self._theme, "faint"),
+                )
+            )
 
     def _apply_saved_preferences(self) -> None:
         settings = self.settings_controller.settings
@@ -245,6 +270,7 @@ class MainWindow(QMainWindow):
                 "channels",
                 "No playlist loaded",
                 "Add or select a playlist to browse channels.",
+                action_label="Open Playlist Manager",
             )
             return
 
@@ -304,25 +330,27 @@ class MainWindow(QMainWindow):
             "Fetching channels and validating the source. Results will appear here once parsing finishes.",
         )
         self.show_notification("Loading playlist...", NotificationType.INFO, duration=1200)
-        self._set_status_chip(self.playlist_status_label, "Playlist: loading...", "warning")
+        self._set_status_chip(self.playlist_status_label, "Loading playlist...", "warning")
 
     def _on_playlist_loading_progress(self, message: str) -> None:
         self.loading_overlay.update_detail(message)
         self.right_panel.set_playback_state("connecting", message)
         self.left_panel.show_loading_state("channels", "Loading playlist", message)
-        self._set_status_chip(self.playlist_status_label, f"Playlist: {message}", "warning")
+        self._set_status_chip(self.playlist_status_label, message, "warning")
 
     def _on_playlist_loading_cancelled(self) -> None:
         self.left_panel.cancel_channel_population()
         self._playlist_loading_active = False
         self._playlist_render_active = False
+        self._sync_playback_chip()
         self.loading_overlay.hide()
         self._set_main_interaction_enabled(True)
-        self._set_status_chip(self.playlist_status_label, "Playlist: load cancelled", "warning")
+        self._set_status_chip(self.playlist_status_label, "Load cancelled", "warning")
         self.left_panel.show_loading_state(
             "channels",
             "Playlist load cancelled",
             "Select a playlist source to try again.",
+            action_label="Open Playlist Manager",
         )
 
     def _on_playlist_loading_finished(self) -> None:
@@ -331,7 +359,7 @@ class MainWindow(QMainWindow):
     def _on_playlist_loaded(self, playlist: Playlist) -> None:
         self._active_playlist_path = playlist.source_path
         playlist_name = playlist.source_reference.display_label() if playlist.source_reference else playlist.name
-        self._set_status_chip(self.playlist_status_label, "Playlist: rendering...", "warning")
+        self._set_status_chip(self.playlist_status_label, "Rendering channels...", "warning")
 
         self.left_panel.category_combo.blockSignals(True)
         self.left_panel.category_combo.clear()
@@ -405,17 +433,15 @@ class MainWindow(QMainWindow):
 
     def _on_epg_loading_started(self) -> None:
         self._set_status_chip(self.epg_status_label, "EPG: loading...", "warning")
-        self.left_panel.epg_widget.set_loading_state("Refreshing EPG source")
+        self.right_panel.epg_widget.set_loading_state("Refreshing EPG source")
 
     def _on_epg_loading_progress(self, message: str) -> None:
         self._set_status_chip(self.epg_status_label, f"EPG: {message}", "warning")
-        self.left_panel.set_epg_status(f"EPG: {message}")
-        self.left_panel.epg_widget.set_loading_state(message)
+        self.right_panel.epg_widget.set_loading_state(message)
 
     def _on_epg_loading_cancelled(self) -> None:
         self._set_status_chip(self.epg_status_label, "EPG: load cancelled", "warning")
-        self.left_panel.set_epg_status("EPG: load cancelled")
-        self.left_panel.epg_widget.set_empty_state(
+        self.right_panel.epg_widget.set_empty_state(
             "EPG refresh cancelled",
             "The previous guide data remains unchanged.",
         )
@@ -448,15 +474,11 @@ class MainWindow(QMainWindow):
         if self._current_channel:
             self._update_epg(self._current_channel.epg_id)
         else:
-            self.left_panel.epg_widget.set_empty_state(
+            self.right_panel.epg_widget.set_empty_state(
                 "Guide data ready",
-                "Select a channel to see live and upcoming programming.",
+                "Select a channel to see upcoming programming.",
             )
         warning_count = len(self.epg_controller.last_warnings)
-        source_type = "URL" if self.epg_controller.last_loaded_is_url else "File"
-        self.left_panel.set_epg_status(
-            f"EPG: {source_type} / {self.epg_controller.loaded_channel_count} channels / {loaded_at}"
-        )
         if warning_count:
             self.show_notification(
                 f"EPG loaded for {self.epg_controller.loaded_channel_count} channels with {warning_count} warnings",
@@ -516,9 +538,19 @@ class MainWindow(QMainWindow):
 
     def _update_epg(self, channel_id: str) -> Program | None:
         program = self.epg_controller.get_current_program(channel_id)
-        self.left_panel.epg_widget.set_current_program(program)
         upcoming = self.epg_controller.get_upcoming_programs(channel_id)
-        self.left_panel.epg_widget.set_upcoming_programs(upcoming)
+        epg_widget = self.right_panel.epg_widget
+        if not program and not upcoming:
+            if self.epg_controller.loaded_channel_count == 0:
+                epg_widget.set_empty_state(
+                    "No guide loaded",
+                    "Load an XMLTV guide from the EPG menu or the header field.",
+                )
+            else:
+                epg_widget.set_empty_state("No guide data for this channel.", "")
+        else:
+            epg_widget.set_current_program(program)
+            epg_widget.set_upcoming_programs(upcoming)
         playlist_label = (
             self.playlist_controller.get_current_playlist().source_reference.display_label()
             if self.playlist_controller.get_current_playlist()
@@ -648,6 +680,12 @@ class MainWindow(QMainWindow):
         self._refresh_recent_channels()
 
     def _on_playback_state_changed(self, state: str, detail: str) -> None:
+        self._last_playback_state = (state, detail)
+        self.right_panel.set_playback_state(state, detail)
+
+    def _sync_playback_chip(self) -> None:
+        # Playlist loading overrides the chip with "connecting"; restore the player's real state.
+        state, detail = self._last_playback_state or (self.right_panel.player_widget.current_state, "")
         self.right_panel.set_playback_state(state, detail)
 
     def _open_playlist_manager(self) -> None:
@@ -707,21 +745,28 @@ class MainWindow(QMainWindow):
             text = "EPG not loaded"
             tone = "warning"
         self._set_status_chip(self.epg_status_label, text, tone)
-        self.left_panel.set_epg_status(text)
 
     @staticmethod
     def _set_status_chip(label: QLabel, text: str, tone: str) -> None:
-        metrics = label.fontMetrics()
-        label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, 260))
-        label.setToolTip(text)
         label.setProperty("stateTone", tone)
         label.style().unpolish(label)
         label.style().polish(label)
+        # Measure the chip chrome (padding, border, margin) from the polished style so the
+        # ellipsis is computed for the real text width and never clipped.
+        label.setText(text)
+        metrics = label.fontMetrics()
+        chrome = max(0, label.sizeHint().width() - metrics.horizontalAdvance(text))
+        text_width = max(0, label.maximumWidth() - chrome)
+        label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, text_width))
+        label.setToolTip(text)
 
     def _on_error(self, message: str) -> None:
+        was_loading_playlist = self._playlist_loading_active or self._playlist_render_active
         self.left_panel.cancel_channel_population()
         self._playlist_loading_active = False
         self._playlist_render_active = False
+        if was_loading_playlist:
+            self._sync_playback_chip()
         self.loading_overlay.hide()
         self._set_main_interaction_enabled(True)
         self.show_notification(message, NotificationType.ERROR)
@@ -750,7 +795,7 @@ class MainWindow(QMainWindow):
             event.accept()
             return
         if key == Qt.Key.Key_L and mods == Qt.KeyboardModifier.ControlModifier:
-            self.left_panel.search_bar.setFocus()
+            self.left_panel.focus_search()
             event.accept()
             return
         super().keyPressEvent(event)
@@ -798,7 +843,7 @@ class MainWindow(QMainWindow):
         self.loading_overlay.update_detail(f"Rendering channel list ({loaded_count:,} / {total_count:,})")
         self._set_status_chip(
             self.playlist_status_label,
-            f"Playlist: rendering {loaded_count:,}/{total_count:,}",
+            f"Rendering {loaded_count:,}/{total_count:,}",
             "warning",
         )
 
@@ -806,6 +851,7 @@ class MainWindow(QMainWindow):
         playlist = self._current_playlist()
         if playlist is None:
             self._playlist_render_active = False
+            self._sync_playback_chip()
             self.loading_overlay.hide()
             self._set_main_interaction_enabled(True)
             return
@@ -814,13 +860,14 @@ class MainWindow(QMainWindow):
         self._persist_playlist_state(playlist)
         self._refresh_favorites(refresh_channels=False)
         self._refresh_recent_channels()
+        self._sync_playback_chip()
         self._restore_pending_channel(playlist)
         self._playlist_render_active = False
         self.loading_overlay.hide()
         self._set_main_interaction_enabled(True)
         self._set_status_chip(
             self.playlist_status_label,
-            f"Playlist: {playlist_name} ({len(playlist.channels)} ch)",
+            f"{playlist_name} · {len(playlist.channels)} ch",
             "success",
         )
 

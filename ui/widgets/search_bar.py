@@ -14,6 +14,7 @@ class SearchBar(QLineEdit):
         self.setObjectName("channel_search_bar")
         self.setPlaceholderText("Search channels or groups")
         self.setClearButtonEnabled(True)
+        self.setAccessibleName("Search channels")
         self.setStyleSheet(SearchBarStyle.SEARCH_BAR)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)

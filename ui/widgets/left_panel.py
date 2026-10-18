@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -22,7 +23,6 @@ from PyQt6.QtWidgets import (
 from core.models import Channel, Program
 from ui.styles.themes import Themes
 from ui.widgets.channel_list_view import ChannelListView
-from ui.widgets.epg_widget import EPGWidget
 from ui.widgets.search_bar import SearchBar
 
 SORT_OPTIONS = [
@@ -32,6 +32,7 @@ SORT_OPTIONS = [
     ("Favorites First", "favorites_first"),
 ]
 
+_OPEN_MANAGER_LABEL = "Open Playlist Manager"
 _EMPTY_CHANNELS_TITLE = "No channels match"
 _EMPTY_CHANNELS_DETAIL = "Adjust the category or search filters to broaden the results."
 _EMPTY_FAVORITES_TITLE = "No favorite channels"
@@ -106,7 +107,6 @@ class ChannelLogoProvider(QWidget):
 
     @staticmethod
     def _fallback_logo(text: str, mode: str = "dark") -> QPixmap:
-        tokens = Themes.tokens(mode)
         size = 42
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -114,7 +114,7 @@ class ChannelLogoProvider(QWidget):
         seed = max(1, sum(ord(char) for char in text))
         hue = seed % 360
         background = QColor.fromHsl(hue, 130, 108)
-        foreground = QColor(tokens["text"])
+        foreground = Themes.color(mode, "text")
 
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -132,16 +132,22 @@ class ChannelLogoProvider(QWidget):
 
 
 class CollectionStateWidget(QFrame):
-    def __init__(self, title: str, detail: str):
+    """Calm, centred empty/loading state with an optional action button."""
+
+    action_requested = pyqtSignal()
+
+    def __init__(self, title: str, detail: str, action_label: str = ""):
         super().__init__()
         self.setObjectName("collection_state")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 24, 22, 24)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(8)
+        layout.addStretch(1)
 
         self.title_label = QLabel(title)
         self.title_label.setObjectName("state_title")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setWordWrap(True)
         layout.addWidget(self.title_label)
 
         self.detail_label = QLabel(detail)
@@ -149,15 +155,29 @@ class CollectionStateWidget(QFrame):
         self.detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.detail_label.setWordWrap(True)
         layout.addWidget(self.detail_label)
-        layout.addStretch()
 
-    def set_content(self, title: str, detail: str) -> None:
+        self.action_button = QPushButton()
+        self.action_button.setProperty("accent", True)
+        self.action_button.clicked.connect(self.action_requested)
+        layout.addSpacing(4)
+        layout.addWidget(self.action_button, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(2)
+        self._set_action(action_label)
+
+    def _set_action(self, action_label: str) -> None:
+        self.action_button.setText(action_label)
+        self.action_button.setVisible(bool(action_label))
+
+    def set_content(self, title: str, detail: str, action_label: str = "") -> None:
         self.title_label.setText(title)
         self.detail_label.setText(detail)
+        self._set_action(action_label)
 
 
 class LeftPanel(QFrame):
-    """A panel containing channel categories, lists, and EPG information."""
+    """Guide panel: channel/favorite/recent collections with search and filters."""
+
+    manage_sources_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -174,53 +194,21 @@ class LeftPanel(QFrame):
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(14)
-
-        title = QLabel("Library")
-        title.setObjectName("section_title")
-        layout.addWidget(title)
-
-        self.filter_card = QFrame()
-        self.filter_card.setObjectName("filter_card")
-        filter_layout = QVBoxLayout(self.filter_card)
-        filter_layout.setContentsMargins(16, 16, 16, 16)
-        filter_layout.setSpacing(12)
-
-        self.search_bar = SearchBar()
-        filter_layout.addWidget(self.search_bar)
-
-        controls = QHBoxLayout()
-        controls.setContentsMargins(0, 0, 0, 0)
-        controls.setSpacing(10)
-
-        self.category_combo = QComboBox()
-        self.category_combo.setPlaceholderText("Category")
-        controls.addWidget(self.category_combo, stretch=2)
-
-        self.sort_combo = QComboBox()
-        for label, value in SORT_OPTIONS:
-            self.sort_combo.addItem(label, value)
-        controls.addWidget(self.sort_combo, stretch=1)
-
-        filter_layout.addLayout(controls)
-
-        self.search_current_group_checkbox = QCheckBox("Filter search to current category")
-        self.search_current_group_checkbox.setChecked(True)
-        filter_layout.addWidget(self.search_current_group_checkbox)
-
-        layout.addWidget(self.filter_card)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
         self.tabs = QTabWidget()
+        tab_bar = self.tabs.tabBar()
+        tab_bar.setExpanding(True)
+        tab_bar.setUsesScrollButtons(False)
+        tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
+        tab_bar.setDrawBase(False)
         self.channel_list = ChannelListView(self._logo_provider)
         self.channel_list.visible_channels_changed.connect(self._schedule_visible_program_refresh)
         self.favorites_list = ChannelListView(self._logo_provider)
         self.recent_list = ChannelListView(self._logo_provider)
 
-        self.tabs.addTab(
-            self._wrap_collection(self.channel_list, "No playlist loaded", "Load a playlist to browse channels."),
-            "Channels",
-        )
+        self.tabs.addTab(self._build_channels_page(), "Channels")
         self.tabs.addTab(
             self._wrap_collection(self.favorites_list, _EMPTY_FAVORITES_TITLE, _EMPTY_FAVORITES_DETAIL),
             "Favorites",
@@ -231,31 +219,69 @@ class LeftPanel(QFrame):
         )
         layout.addWidget(self.tabs, stretch=1)
 
-        self.epg_status_label = QLabel("EPG unavailable")
-        self.epg_status_label.setObjectName("epg_status")
-        layout.addWidget(self.epg_status_label)
+    def _build_channels_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(8)
 
-        self.epg_widget = EPGWidget()
-        layout.addWidget(self.epg_widget)
+        self.search_bar = SearchBar()
+        layout.addWidget(self.search_bar)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(8)
+
+        self.category_combo = QComboBox()
+        self.category_combo.setPlaceholderText("Category")
+        controls.addWidget(self.category_combo, stretch=2)
+
+        self.sort_combo = QComboBox()
+        for label, value in SORT_OPTIONS:
+            self.sort_combo.addItem(label, value)
+        controls.addWidget(self.sort_combo, stretch=1)
+        layout.addLayout(controls)
+
+        self.search_current_group_checkbox = QCheckBox("Search within category")
+        self.search_current_group_checkbox.setChecked(True)
+        layout.addWidget(self.search_current_group_checkbox)
+
+        layout.addWidget(
+            self._wrap_collection(
+                self.channel_list,
+                "No playlist loaded",
+                "Load a playlist to browse channels.",
+                action_label=_OPEN_MANAGER_LABEL,
+            ),
+            stretch=1,
+        )
+        return page
 
     def _wrap_collection(
         self,
         widget: QWidget,
         title: str,
         detail: str,
+        *,
+        action_label: str = "",
     ) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
 
         stacked = QStackedWidget()
-        state = CollectionStateWidget(title, detail)
+        state = CollectionStateWidget(title, detail, action_label)
+        state.action_requested.connect(self.manage_sources_requested)
         stacked.addWidget(widget)
         stacked.addWidget(state)
         layout.addWidget(stacked)
         self._collection_views[widget] = (stacked, state)
         stacked.setCurrentWidget(state)
         return container
+
+    def focus_search(self) -> None:
+        self.tabs.setCurrentIndex(0)
+        self.search_bar.setFocus()
 
     def add_channels(
         self,
@@ -387,12 +413,9 @@ class LeftPanel(QFrame):
         if current_channel_key:
             self.recent_list.select_channel_key(current_channel_key)
 
-    def show_loading_state(self, target: str, title: str, detail: str) -> None:
+    def show_loading_state(self, target: str, title: str, detail: str, *, action_label: str = "") -> None:
         widget = self._widget_for_target(target)
-        self._set_collection_state(widget, title, detail)
-
-    def set_epg_status(self, message: str) -> None:
-        self.epg_status_label.setText(message)
+        self._set_collection_state(widget, title, detail, action_label)
 
     def set_sort_mode(self, mode: str) -> None:
         index = self.sort_combo.findData(mode)
@@ -416,9 +439,9 @@ class LeftPanel(QFrame):
         }
         return mapping[target]
 
-    def _set_collection_state(self, widget: QWidget, title: str, detail: str) -> None:
+    def _set_collection_state(self, widget: QWidget, title: str, detail: str, action_label: str = "") -> None:
         stacked, state = self._collection_views[widget]
-        state.set_content(title, detail)
+        state.set_content(title, detail, action_label)
         stacked.setCurrentWidget(state)
 
     def _show_collection(self, widget: QWidget) -> None:
