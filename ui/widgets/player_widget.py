@@ -1,4 +1,5 @@
 import logging
+import re
 
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
@@ -6,6 +7,13 @@ from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from infra.playback.vlc_backend import VLCBackend
 
 logger = logging.getLogger(__name__)
+
+# Playback errors may echo the stream URL, and Xtream URLs carry the password in the path.
+_URL_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+
+
+def _mask_urls(text: str) -> str:
+    return _URL_RE.sub("<url>", text)
 
 
 class MediaEventHandler(QObject):
@@ -250,7 +258,7 @@ class PlayerWidget(QFrame):
     def _set_state(self, state: str, detail: str = "") -> None:
         # Buffering re-enters this on every cache tick, so only transitions are logged.
         if state != self.current_state:
-            logger.info("Playback state %s -> %s (%s)", self.current_state, state, detail)
+            logger.info("Playback state %s -> %s (%s)", self.current_state, state, _mask_urls(detail))
         self.current_state = state
         self.playback_state_changed.emit(state, detail)
 
@@ -280,6 +288,7 @@ class PlayerWidget(QFrame):
             self.status_overlay.hide()
 
     def _handle_playback_error(self, error_msg: str) -> None:
+        log_msg = _mask_urls(error_msg)
         self.placeholder.setText(error_msg)
         self.placeholder.show()
 
@@ -288,7 +297,7 @@ class PlayerWidget(QFrame):
             delay = min(2**self.reconnect_attempts, 30)
             logger.warning(
                 "Playback error (%s); reconnect attempt %s/%s in %ss",
-                error_msg,
+                log_msg,
                 self.reconnect_attempts,
                 self.max_reconnect_attempts,
                 delay,
@@ -299,7 +308,7 @@ class PlayerWidget(QFrame):
             self.reconnect_timer.start(int(delay * 1000))
             return
 
-        logger.error("Playback error (%s); giving up after %s reconnect attempts", error_msg, self.reconnect_attempts)
+        logger.error("Playback error (%s); giving up after %s reconnect attempts", log_msg, self.reconnect_attempts)
         self._set_state("error", error_msg)
 
     def _reconnect(self) -> None:

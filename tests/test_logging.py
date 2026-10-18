@@ -101,3 +101,14 @@ def test_qt_messages_are_forwarded_at_matching_level(caplog):
     (record,) = caplog.records
     assert record.levelno == logging.WARNING
     assert record.getMessage() == "Could not parse stylesheet"
+
+
+def test_player_masks_stream_url_echoed_in_error_message(player, caplog):
+    player.current_url = SECRET_STREAM_URL
+    player.max_reconnect_attempts = 0
+
+    with caplog.at_level(logging.INFO, logger="ui.widgets.player_widget"):
+        player._handle_playback_error(f"cannot open {SECRET_STREAM_URL}")
+
+    assert "Playback error (cannot open <url>)" in caplog.text
+    assert "SECRETTOKEN" not in caplog.text
