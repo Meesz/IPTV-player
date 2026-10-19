@@ -24,7 +24,7 @@ The app currently supports:
 - Playlist source validation and duplicate detection.
 - XMLTV EPG import from local files or URLs, including gzip-compressed XMLTV files.
 - Automatic provider guide (`xmltv.php`) for Xtream sources when no manual EPG source is configured.
-- Channel browsing by category, search, and sort mode.
+- Channel browsing by category (searchable category picker), search, and sort mode.
 - Large-list rendering through a virtualized list view.
 - VLC-backed live playback.
 - Favorites and recent playback history.

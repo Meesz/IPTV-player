@@ -402,6 +402,12 @@ class Themes:
                 selection-color: {text};
             }}
 
+            QFrame#searchable_combo_popup {{
+                background-color: {panel};
+                border: 1px solid {hairline_strong};
+                border-radius: 8px;
+            }}
+
             QListWidget,
             QListView,
             QScrollArea {{

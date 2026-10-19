@@ -25,6 +25,7 @@ from core.models import Channel, Program
 from ui.styles.themes import Themes
 from ui.widgets.channel_list_view import ChannelListView
 from ui.widgets.search_bar import SearchBar
+from ui.widgets.searchable_combo_box import SearchableComboBox
 
 SORT_OPTIONS = [
     ("A-Z", "name_asc"),
@@ -248,7 +249,11 @@ class LeftPanel(QFrame):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(8)
 
-        self.category_combo = QComboBox()
+        self.category_combo = SearchableComboBox(
+            search_placeholder="Search categories",
+            empty_text="No matching categories",
+            pinned_texts=("All",),
+        )
         self.category_combo.setPlaceholderText("Category")
         controls.addWidget(self.category_combo, stretch=2)
 
