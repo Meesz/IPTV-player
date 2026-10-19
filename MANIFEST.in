@@ -1,2 +1,5 @@
 include README.md
-include simple_iptv/playback/*.py
+recursive-include app *.py
+recursive-include core *.py
+recursive-include infra *.py
+recursive-include ui *.py

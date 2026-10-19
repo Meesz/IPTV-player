@@ -1,0 +1,110 @@
+import logging
+import os
+import sys
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class VLCBackend:
+    """Manages VLC initialization and provides a clean interface for media playback."""
+
+    _instance = None
+    _vlc = None
+
+    @classmethod
+    def initialize(cls) -> tuple[bool, str | None]:
+        """Initialize VLC environment before application starts."""
+        try:
+            # Try to determine Python architecture
+            is_64bits = sys.maxsize > 2**32
+
+            # Set up Windows environment first
+            if sys.platform == "win32":
+                vlc_path = "C:\\Program Files\\VideoLAN\\VLC" if is_64bits else "C:\\Program Files (x86)\\VideoLAN\\VLC"
+                if not os.path.exists(vlc_path):
+                    error_msg = (
+                        f"Error: VLC not found in {vlc_path}\nPlease install {'64' if is_64bits else '32'}-bit VLC"
+                    )
+                    return False, error_msg
+
+                os.environ["PATH"] = vlc_path + ";" + os.environ["PATH"]
+                os.add_dll_directory(vlc_path)
+
+            # Now try to import VLC
+            try:
+                import vlc  # noqa: PLC0415  (lazy import: VLC is an optional native dependency)
+
+                cls._vlc = vlc
+                # Add some default options?
+                cls._instance = cls._vlc.Instance()
+                return True, None
+            except ImportError as e:
+                error_msg = f"Failed to import VLC: {e!s}"
+                logger.error(error_msg)
+                return False, error_msg
+
+        except Exception as e:
+            error_msg = f"Failed to initialize VLC: {e!s}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    @classmethod
+    def get_instance(cls) -> Any:
+        """Get the VLC instance."""
+        return cls._instance
+
+    @classmethod
+    def get_vlc(cls) -> Any:
+        """Get the VLC module."""
+        return cls._vlc
+
+    @classmethod
+    def create_player(cls) -> Any:
+        """Create a new media player instance."""
+        if not cls._instance:
+            raise RuntimeError("VLC not initialized. Call initialize() first.")
+        return cls._instance.media_player_new()
+
+    @classmethod
+    def bind_video_output(  # noqa: PLR0911  (per-platform branches)
+        cls, player: Any, window_id: int, qt_platform: str = ""
+    ) -> tuple[bool, str | None]:
+        """Bind VLC video output to a widget.
+
+        `qt_platform` is the effective Qt platform plugin name (`QGuiApplication.platformName()`).
+        Returns `(embedded, message)`. `embedded` is False when VLC must not be started because it
+        would open its own detached window; `message` then explains why. When `embedded` is True,
+        `message` is an optional advisory note (or None).
+        """
+        if not player:
+            return False, "VLC media player is unavailable"
+
+        if sys.platform == "win32":
+            player.set_hwnd(window_id)
+            return True, None
+
+        if sys.platform.startswith("linux"):
+            session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
+            has_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or session_type == "wayland"
+            display = os.environ.get("DISPLAY", "").strip()
+            # winId() is only an X11 window id under the xcb Qt platform plugin.
+            if qt_platform != "xcb":
+                found = f"Qt platform is '{qt_platform or 'unknown'}'"
+                if display:
+                    return False, (
+                        f"Embedded video needs X11 ({found}); restart with QT_QPA_PLATFORM=xcb "
+                        "(requires the Qt xcb platform plugin, e.g. libxcb-cursor)."
+                    )
+                return False, f"Embedded video needs X11 or XWayland, but no DISPLAY is available ({found})."
+
+            player.set_xwindow(int(window_id))
+            if has_wayland:
+                return True, "Wayland session detected; using XWayland video embedding."
+            return True, None
+
+        if sys.platform == "darwin":
+            player.set_nsobject(int(window_id))
+            return True, None
+
+        return False, f"Unsupported video embedding platform: {sys.platform}"

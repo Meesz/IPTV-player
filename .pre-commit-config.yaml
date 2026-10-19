@@ -1,0 +1,26 @@
+# Pre-commit hooks for local quality gates. Install once with `pre-commit install`.
+# Mirrors the CI lint job (see .github/workflows/lint.yml). mypy is intentionally
+# left out here during the non-blocking rollout — it runs in CI only.
+
+# `.codex` is a read-only (0-byte) sentinel file the hygiene hooks cannot rewrite.
+exclude: '^\.codex$'
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.18
+    hooks:
+      # Linter (with autofix) must run before the formatter.
+      - id: ruff-check
+        args: [--fix]
+      # Formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files

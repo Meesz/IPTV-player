@@ -1,0 +1,479 @@
+import logging
+import re
+
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtWidgets import QFrame, QLabel, QStackedLayout, QVBoxLayout, QWidget
+
+from infra.playback.vlc_backend import VLCBackend
+
+logger = logging.getLogger(__name__)
+
+# Playback errors may echo the stream URL, and Xtream URLs carry the password in the path.
+_URL_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+
+
+def _mask_urls(text: str) -> str:
+    return _URL_RE.sub("<url>", text)
+
+
+class MediaEventHandler(QObject):
+    """Handler for VLC media events with Qt signals."""
+
+    error_occurred = pyqtSignal(str)
+    media_playing = pyqtSignal()
+    media_stopped = pyqtSignal()
+    media_buffering = pyqtSignal(float)
+    video_output_changed = pyqtSignal(int)
+
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+        self.vlc = VLCBackend.get_vlc()
+        self._setup_events()
+
+    def _setup_events(self) -> None:
+        if not self.player:
+            return
+
+        events = self.player.event_manager()
+        events.event_attach(self.vlc.EventType.MediaPlayerPlaying, self._on_playing)
+        events.event_attach(self.vlc.EventType.MediaPlayerStopped, self._on_stopped)
+        events.event_attach(self.vlc.EventType.MediaPlayerEncounteredError, self._on_error)
+        events.event_attach(self.vlc.EventType.MediaPlayerBuffering, self._on_buffering)
+        events.event_attach(self.vlc.EventType.MediaPlayerVout, self._on_vout)
+
+    def _on_vout(self, event) -> None:
+        count = event.u.new_count if hasattr(event, "u") else 0
+        self.video_output_changed.emit(int(count))
+
+    def _on_playing(self, event) -> None:
+        self.media_playing.emit()
+
+    def _on_stopped(self, event) -> None:
+        self.media_stopped.emit()
+
+    def _on_error(self, event) -> None:
+        logger.error("VLC reported MediaPlayerEncounteredError")
+        self.error_occurred.emit("Media playback failed")
+
+    def _on_buffering(self, event) -> None:
+        cache_percentage = event.u.new_cache if hasattr(event, "u") else 0
+        self.media_buffering.emit(cache_percentage)
+
+
+class FullscreenPlayerWindow(QWidget):
+    exit_requested = pyqtSignal()
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.Window)
+        self.setWindowTitle("Simple IPTV Player")
+        self.setObjectName("player_fullscreen_window")
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._layout = layout
+
+    def set_player_widget(self, widget: QWidget) -> None:
+        if self._layout.indexOf(widget) == -1:
+            self._layout.addWidget(widget)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.exit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:
+        self.exit_requested.emit()
+        event.ignore()
+
+
+class VideoSurface(QWidget):
+    """Native window VLC renders into. It has no children and Qt never paints it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("player_video_surface")
+        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+
+    def paintEngine(self):
+        return None
+
+    def paintEvent(self, event) -> None:
+        return None
+
+
+class PlayerWidget(QFrame):
+    """A widget that displays and controls VLC media playback."""
+
+    playback_state_changed = pyqtSignal(str, str)
+
+    def __init__(self):  # noqa: PLR0915  (Qt widget setup; pre-existing size)
+        super().__init__()
+        self.setObjectName("player_canvas")
+        self.setMinimumSize(480, 270)
+        self.page_stack = QStackedLayout(self)
+        self.page_stack.setContentsMargins(0, 0, 0, 0)
+        self.page_stack.setStackingMode(QStackedLayout.StackingMode.StackOne)
+
+        # Status text lives on its own page: Qt must never paint into the VLC render window.
+        self.message_surface = QFrame()
+        self.message_surface.setObjectName("player_message_surface")
+        self.message_surface.setFrameStyle(QFrame.Shape.NoFrame)
+        self.message_layout = QVBoxLayout(self.message_surface)
+        self.message_layout.setContentsMargins(0, 0, 0, 0)
+        self.page_stack.addWidget(self.message_surface)
+
+        self.video_surface = VideoSurface()
+        self.page_stack.addWidget(self.video_surface)
+
+        self.placeholder = QLabel("No channel playing\nPick a channel from the guide to start watching.")
+        self.placeholder.setObjectName("player_placeholder")
+        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder.setWordWrap(True)
+        self.message_layout.addWidget(self.placeholder)
+
+        self.status_overlay = QLabel(self.message_surface)
+        self.status_overlay.setObjectName("player_overlay")
+        self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_overlay.setWordWrap(True)
+        self.status_overlay.hide()
+
+        success, error = VLCBackend.initialize()
+        self.vlc_available = success
+        self.vlc = None
+        self.instance = None
+        self.player = None
+        self.current_state = "idle"
+        self.is_fullscreen = False
+        self.current_url = None
+        self.fullscreen_window: FullscreenPlayerWindow | None = None
+        self.normal_parent = None
+        self.normal_layout = None
+        self.normal_index = None
+        self.normal_stretch = None
+        self._embedding_warning = ""
+        self._embedding_available = True
+        self._last_bind_result: tuple[bool, str | None] | None = None
+
+        self.reconnect_timer = QTimer(self)
+        self.reconnect_timer.setSingleShot(True)
+        self.reconnect_timer.timeout.connect(self._reconnect)
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5
+
+        if not success:
+            self.placeholder.setText(error or "VLC backend unavailable")
+            self._set_state("error", error or "VLC backend unavailable")
+            return
+
+        self.vlc = VLCBackend.get_vlc()
+        self.instance = VLCBackend.get_instance()
+        self.player = VLCBackend.create_player()
+
+        self.event_handler = MediaEventHandler(self.player)
+        self.event_handler.error_occurred.connect(self._handle_playback_error)
+        self.event_handler.media_playing.connect(self._on_media_playing)
+        self.event_handler.media_stopped.connect(self._on_media_stopped)
+        self.event_handler.media_buffering.connect(self._on_media_buffering)
+        self.event_handler.video_output_changed.connect(self._on_video_output_changed)
+
+        self._setup_player()
+
+        self.setMouseTracking(True)
+
+        self._set_state("idle", "Awaiting stream selection")
+
+    def _setup_player(self) -> None:
+        if not self.vlc_available or not self.player:
+            return
+
+        try:
+            self.video_surface.winId()
+            result = VLCBackend.bind_video_output(
+                self.player,
+                int(self.video_surface.winId()),
+                QGuiApplication.platformName(),
+            )
+            self._embedding_available, message = result
+            self._embedding_warning = message or ""
+            # _setup_player re-runs on show and fullscreen changes; log only when the outcome changes.
+            if result != self._last_bind_result:
+                self._last_bind_result = result
+                if not self._embedding_available:
+                    logger.warning("Video embedding unavailable: %s", message)
+                elif message:
+                    logger.info("%s", message)
+            self.player.video_set_key_input(False)
+            self.player.video_set_mouse_input(False)
+        except Exception as exc:
+            logger.warning("Failed to bind VLC window handle: %s", exc)
+            self._embedding_available = False
+            self._embedding_warning = "Could not attach the video surface to VLC"
+
+    def _show_video_page(self) -> None:
+        self.page_stack.setCurrentWidget(self.video_surface)
+
+    def _show_message_page(self) -> None:
+        self.page_stack.setCurrentWidget(self.message_surface)
+
+    def _on_video_output_changed(self, count: int) -> None:
+        # Only a real VLC video output makes the render surface visible; buffering ticks never switch.
+        # VLC events arrive queued, so a late "vout exists" after stop/error must not reveal the surface.
+        if count > 0 and self.current_state in ("idle", "error"):
+            return
+        if count > 0:
+            self._show_video_page()
+        else:
+            self._show_message_page()
+
+    def play(self, url: str, *, is_retry: bool = False) -> None:
+        self._show_message_page()
+        if not self.vlc_available or not self.player:
+            self.placeholder.setText("VLC backend unavailable")
+            self.placeholder.show()
+            self._set_state("error", "VLC backend unavailable")
+            return
+
+        self.reconnect_timer.stop()
+        if not self._embedding_available:
+            # Without a bound surface VLC would open its own window, and closing it kills the app.
+            message = self._embedding_warning or "Embedded video output is unavailable"
+            self.current_url = None
+            self.reconnect_attempts = 0
+            self.placeholder.setText(message)
+            self.placeholder.show()
+            self._set_state("error", message)
+            return
+        if not is_retry:
+            self.reconnect_attempts = 0
+        self.current_url = url
+
+        try:
+            self._show_status("Connecting to stream...")
+            self._set_state("connecting", "Preparing live stream")
+            media = self.instance.media_new(url)
+
+            if url.startswith(("rtmp://", "rtsp://")):
+                media.add_option("network-caching=1500")
+            else:
+                media.add_option("network-caching=1000")
+
+            media.add_option("clock-jitter=0")
+            media.add_option("clock-synchro=0")
+
+            self.player.set_media(media)
+            self.player.play()
+        except Exception as exc:
+            # str(exc) may echo the stream URL, so only the type is logged.
+            logger.error("VLC failed to start stream: %s", type(exc).__name__)
+            self._handle_playback_error(str(exc))
+
+    def stop(self) -> None:
+        self._show_message_page()
+        if self.vlc_available and self.player:
+            if self.is_fullscreen:
+                self._exit_fullscreen()
+            self.player.stop()
+            self.placeholder.show()
+            self.reconnect_timer.stop()
+            self.reconnect_attempts = 0
+        self._set_state("idle", "Awaiting stream selection")
+
+    def shutdown(self) -> None:
+        """Release playback resources for application exit. Idempotent."""
+        self.reconnect_timer.stop()
+        self.current_url = None
+        self._show_message_page()
+        # Stop playback before touching the video surface; _setup_player is a no-op once player is None.
+        player, self.player = self.player, None
+        if player is not None:
+            self._call_vlc_for_shutdown(player, "stop")
+        if self.is_fullscreen:
+            self._exit_fullscreen()
+        if self.fullscreen_window is not None:
+            # closeEvent ignores close requests, so hide and schedule deletion instead.
+            self.fullscreen_window.hide()
+            self.fullscreen_window.deleteLater()
+            self.fullscreen_window = None
+        if player is not None:
+            self._call_vlc_for_shutdown(player, "release")
+
+    @staticmethod
+    def _call_vlc_for_shutdown(player, name: str) -> None:
+        try:
+            getattr(player, name)()
+        except Exception as exc:
+            # str(exc) may echo the stream URL, so only the type is logged.
+            logger.warning("VLC %s failed during shutdown: %s", name, type(exc).__name__)
+
+    def pause(self) -> None:
+        if self.vlc_available and self.player:
+            self.player.pause()
+
+    def retry_now(self) -> bool:
+        if not self.current_url:
+            return False
+        self.reconnect_timer.stop()
+        self.play(self.current_url, is_retry=True)
+        return True
+
+    def set_volume(self, volume: int) -> None:
+        if self.vlc_available and self.player:
+            self.player.audio_set_volume(max(0, min(100, volume)))
+
+    def is_muted(self) -> bool:
+        if self.vlc_available and self.player:
+            return bool(self.player.audio_get_mute())
+        return False
+
+    def set_muted(self, muted: bool) -> None:
+        if self.vlc_available and self.player:
+            self.player.audio_set_mute(bool(muted))
+
+    def toggle_mute(self) -> bool:
+        next_state = not self.is_muted()
+        self.set_muted(next_state)
+        return next_state
+
+    def toggle_fullscreen(self) -> bool:
+        if not self.vlc_available or not self.player or not self.player.is_playing():
+            return False
+        if self.is_fullscreen:
+            self._exit_fullscreen()
+        else:
+            self._enter_fullscreen()
+        return True
+
+    def _set_state(self, state: str, detail: str = "") -> None:
+        # Buffering re-enters this on every cache tick, so only transitions are logged.
+        if state != self.current_state:
+            logger.info("Playback state %s -> %s (%s)", self.current_state, state, _mask_urls(detail))
+        self.current_state = state
+        self.playback_state_changed.emit(state, detail)
+
+    def _show_status(self, message: str, duration: int = 2000) -> None:
+        self.status_overlay.setText(message)
+        self.status_overlay.adjustSize()
+        self._position_overlay()
+        self.status_overlay.show()
+        QTimer.singleShot(duration, self.status_overlay.hide)
+
+    def _on_media_playing(self) -> None:
+        self.placeholder.hide()
+        self.status_overlay.hide()
+        self.reconnect_attempts = 0
+        self._set_state("playing", "Stream is live")
+
+    def _on_media_stopped(self) -> None:
+        self._show_message_page()
+        self.placeholder.show()
+        self._set_state("idle", "Playback stopped")
+
+    def _on_media_buffering(self, cache_percentage: float) -> None:
+        if cache_percentage < 100:
+            detail = f"Buffering {int(cache_percentage)}%"
+            self._show_status(detail)
+            self._set_state("buffering", detail)
+        else:
+            self.status_overlay.hide()
+
+    def _handle_playback_error(self, error_msg: str) -> None:
+        log_msg = _mask_urls(error_msg)
+        self._show_message_page()
+        self.placeholder.setText(error_msg)
+        self.placeholder.show()
+
+        if self.current_url and self.reconnect_attempts < self.max_reconnect_attempts:
+            self.reconnect_attempts += 1
+            delay = min(2**self.reconnect_attempts, 30)
+            logger.warning(
+                "Playback error (%s); reconnect attempt %s/%s in %ss",
+                log_msg,
+                self.reconnect_attempts,
+                self.max_reconnect_attempts,
+                delay,
+            )
+            detail = f"Retrying in {delay}s"
+            self._show_status(detail, duration=delay * 1000)
+            self._set_state("reconnecting", detail)
+            self.reconnect_timer.start(int(delay * 1000))
+            return
+
+        logger.error("Playback error (%s); giving up after %s reconnect attempts", log_msg, self.reconnect_attempts)
+        self._set_state("error", error_msg)
+
+    def _reconnect(self) -> None:
+        if self.current_url and self.player:
+            self.play(self.current_url, is_retry=True)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if self.toggle_fullscreen():
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _enter_fullscreen(self) -> None:
+        self.normal_parent = self.parent()
+        self.normal_layout = self.parent().layout() if self.parent() else None
+        # QLayout defines __len__, so an empty layout is falsy; compare with None explicitly.
+        if self.normal_layout is not None:
+            self.normal_index = self.normal_layout.indexOf(self)
+            self.normal_stretch = self.normal_layout.stretch(self.normal_index)
+            self.normal_layout.removeWidget(self)
+
+        if self.fullscreen_window is None:
+            self.fullscreen_window = FullscreenPlayerWindow()
+            self.fullscreen_window.exit_requested.connect(self._exit_fullscreen)
+
+        self.setParent(self.fullscreen_window)
+        self.fullscreen_window.set_player_widget(self)
+        self.fullscreen_window.showFullScreen()
+        self.show()
+        self._setup_player()
+        self.is_fullscreen = True
+
+    def _exit_fullscreen(self) -> None:
+        if not self.is_fullscreen:
+            return
+        if self.fullscreen_window is not None:
+            self.fullscreen_window.layout().removeWidget(self)
+            self.fullscreen_window.hide()
+        self.setParent(self.normal_parent)
+        # The layout is empty here (we removed ourselves), so a truthiness check would skip re-inserting.
+        if self.normal_layout is not None and self.normal_index is not None:
+            self.normal_layout.insertWidget(self.normal_index, self, stretch=self.normal_stretch)
+
+        self.show()
+        self._setup_player()
+        self.is_fullscreen = False
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
+            self._exit_fullscreen()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._setup_player()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_overlay()
+
+    def _position_overlay(self) -> None:
+        overlay_width = min(max(220, self.message_surface.width() - 80), 420)
+        self.status_overlay.resize(overlay_width, self.status_overlay.sizeHint().height() + 12)
+        # Anchor near the bottom edge so it never sits on top of the centred placeholder text.
+        self.status_overlay.move(
+            (self.message_surface.width() - self.status_overlay.width()) // 2,
+            max(0, self.message_surface.height() - self.status_overlay.height() - 20),
+        )

@@ -1,0 +1,52 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: mypy (error-count ratchet)
+        # Blocking: fails if the mypy error count exceeds the recorded maximum, or if
+        # mypy crashes (exit >= 2) or prints no parseable summary.
+        env:
+          MYPY_MAX_ERRORS: "75" # lower this when errors are fixed; never raise it
+        run: |
+          set +e
+          mypy app core infra ui | tee mypy.out
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ge 2 ]; then
+            echo "mypy failed to run (exit $status)"; exit 1
+          fi
+          if grep -q '^Success: no issues found' mypy.out; then
+            errors=0
+          else
+            errors=$(sed -nE 's/^Found ([0-9]+) errors? in .*/\1/p' mypy.out | tail -n 1)
+          fi
+          if [ -z "$errors" ]; then
+            echo "Could not parse mypy summary"; exit 1
+          fi
+          echo "mypy errors: $errors (max $MYPY_MAX_ERRORS)"
+          if [ "$errors" -gt "$MYPY_MAX_ERRORS" ]; then
+            echo "mypy error count exceeds the allowed maximum"; exit 1
+          fi

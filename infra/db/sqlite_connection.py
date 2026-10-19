@@ -1,0 +1,319 @@
+import logging
+import os
+import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Explicit lock-wait budget (matches Python's implicit default of 5 seconds).
+BUSY_TIMEOUT_SECONDS = 5.0
+
+_CREATE_PLAYLISTS_SQL = """
+CREATE TABLE playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'file',
+    path TEXT NOT NULL DEFAULT '',
+    is_url BOOLEAN NOT NULL DEFAULT 0,
+    source_identity TEXT NOT NULL,
+    xtream_server_url TEXT NOT NULL DEFAULT '',
+    xtream_username TEXT NOT NULL DEFAULT '',
+    xtream_password TEXT NOT NULL DEFAULT '',
+    xtream_output TEXT NOT NULL DEFAULT 'ts',
+    channel_count INTEGER NOT NULL DEFAULT 0,
+    last_loaded_at TEXT NOT NULL DEFAULT '',
+    last_status TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT ''
+)
+"""
+_CREATE_PLAYLISTS_INDEX_SQL = "CREATE UNIQUE INDEX ux_playlists_source_identity ON playlists (source_identity)"
+
+
+@contextmanager
+def _atomic(conn: sqlite3.Connection) -> Generator[None, None, None]:
+    """Run statements in one explicit transaction; roll back and re-raise on error.
+
+    Do not call ``executescript`` inside: it implicitly commits.
+    """
+    conn.commit()  # no implicit transaction may be pending before BEGIN
+    conn.execute("BEGIN")
+    try:
+        yield
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
+class SQLiteConnection:
+    """Manages SQLite database connection and initialization."""
+
+    def __init__(self, db_path: Path | None = None):
+        is_default_location = db_path is None
+        if db_path is None:
+            self.db_path = Path.home() / ".simple_iptv" / "database.db"
+        else:
+            self.db_path = db_path
+
+        posix = os.name == "posix"
+        if posix:
+            self.db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if is_default_location:
+                self._chmod_private(self.db_path.parent, 0o700)
+            if self.db_path.exists():
+                self._chmod_private(self.db_path, 0o600)
+            else:
+                try:
+                    os.close(os.open(self.db_path, os.O_CREAT | os.O_WRONLY, 0o600))
+                except OSError:
+                    logger.warning("Could not pre-create database file %s", self.db_path)
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_database()
+        if posix:
+            for suffix in ("", "-wal", "-shm"):
+                path = self.db_path.with_name(self.db_path.name + suffix)
+                if path.exists():
+                    self._chmod_private(path, 0o600)
+
+    @staticmethod
+    def _chmod_private(path: Path, mode: int) -> None:
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            logger.warning("Could not set permissions on %s", path)
+
+    @contextmanager
+    def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Get a database connection context manager."""
+        conn = sqlite3.connect(str(self.db_path), timeout=BUSY_TIMEOUT_SECONDS)
+        conn.row_factory = sqlite3.Row
+        try:
+            self._apply_connection_pragmas(conn)
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _apply_connection_pragmas(conn: sqlite3.Connection) -> None:
+        """Per-connection PRAGMAs; these do not persist in the database file."""
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-2000")
+        conn.execute("PRAGMA temp_store=MEMORY")
+
+    def _init_database(self):
+        """Initialize the database with required tables."""
+        try:
+            with self.get_connection() as conn:
+                # WAL is persistent in the file and cannot change inside a transaction.
+                conn.execute("PRAGMA journal_mode=WAL")
+
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    );
+
+                    CREATE TABLE IF NOT EXISTS epg_data (
+                        channel_id TEXT,
+                        start_time INTEGER,
+                        end_time INTEGER,
+                        title TEXT,
+                        description TEXT,
+                        PRIMARY KEY (channel_id, start_time)
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_epg_channel_time
+                        ON epg_data (channel_id, start_time, end_time);
+
+                    CREATE TABLE IF NOT EXISTS favorites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        playlist_path TEXT NOT NULL DEFAULT '',
+                        group_name TEXT,
+                        logo TEXT,
+                        epg_id TEXT,
+                        UNIQUE (url, playlist_path)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS recent_channels (
+                        url TEXT NOT NULL,
+                        playlist_path TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        group_name TEXT,
+                        logo TEXT,
+                        epg_id TEXT,
+                        played_at INTEGER NOT NULL,
+                        PRIMARY KEY (url, playlist_path)
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_recent_channels_played_at
+                        ON recent_channels (played_at DESC);
+
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_path', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_path', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_loaded_at', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_source_type', 'file');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_identity', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('volume', '100');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('is_muted', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_channel_url', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_channel_group', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('window_width', '1280');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('window_height', '720');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('play_on_single_click', 'false');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('show_now_playing_in_list', 'true');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('search_current_category_only', 'true');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('channel_sort_mode', 'name_asc');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('splitter_sizes', '390,960');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('active_tab_index', '0');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('selected_category', 'All');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('search_text', '');
+                    INSERT OR IGNORE INTO settings (key, value) VALUES ('left_panel_visible', 'true');
+                """
+                )
+                self._ensure_playlists_table(conn)
+                self._ensure_favorites_table(conn)
+                logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+            raise
+
+    @staticmethod
+    def _ensure_favorites_table(conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(favorites)").fetchall()}
+        if "playlist_path" in columns:
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_favorites_identity ON favorites (url, playlist_path)")
+            return
+
+        with _atomic(conn):
+            conn.execute("ALTER TABLE favorites RENAME TO favorites_legacy")
+            conn.execute(
+                """
+                CREATE TABLE favorites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    playlist_path TEXT NOT NULL DEFAULT '',
+                    group_name TEXT,
+                    logo TEXT,
+                    epg_id TEXT,
+                    UNIQUE (url, playlist_path)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_favorites_identity ON favorites (url, playlist_path)")
+            conn.execute(
+                """
+                INSERT INTO favorites (name, url, playlist_path, group_name, logo, epg_id)
+                SELECT name, url, '', group_name, logo, epg_id
+                FROM favorites_legacy
+                """
+            )
+            conn.execute("DROP TABLE favorites_legacy")
+
+    @staticmethod
+    def _ensure_playlists_table(conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(playlists)").fetchall()}
+        if not columns:
+            with _atomic(conn):
+                conn.execute(_CREATE_PLAYLISTS_SQL)
+                conn.execute(_CREATE_PLAYLISTS_INDEX_SQL)
+            return
+
+        if {
+            "source_type",
+            "source_identity",
+            "xtream_server_url",
+            "xtream_username",
+            "xtream_password",
+            "xtream_output",
+        } <= columns:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_playlists_source_identity ON playlists (source_identity)"
+            )
+            return
+
+        select_fields = [
+            "id",
+            "name",
+            "path",
+            "COALESCE(is_url, 0) AS is_url",
+            "channel_count" if "channel_count" in columns else "0 AS channel_count",
+            "last_loaded_at" if "last_loaded_at" in columns else "'' AS last_loaded_at",
+            "last_status" if "last_status" in columns else "'' AS last_status",
+            "last_error" if "last_error" in columns else "'' AS last_error",
+        ]
+        legacy_rows = conn.execute(f"SELECT {', '.join(select_fields)} FROM playlists").fetchall()
+
+        skipped_duplicates = 0
+        # One transaction: a failure rolls back to the legacy table so the next
+        # start retries instead of finding a half-migrated database.
+        with _atomic(conn):
+            conn.execute("ALTER TABLE playlists RENAME TO playlists_legacy")
+            conn.execute(_CREATE_PLAYLISTS_SQL)
+            conn.execute(_CREATE_PLAYLISTS_INDEX_SQL)
+
+            for row in legacy_rows:
+                source_type = "url" if row["is_url"] else "file"
+                normalized_path = str(row["path"] or "").strip()
+                if source_type == "file" and normalized_path:
+                    # Use abspath (not Path.resolve) so migrated identities match the
+                    # runtime identity produced by PlaylistReference.normalized_path();
+                    # resolve() follows symlinks and would orphan migrated rows.
+                    normalized_path = os.path.abspath(normalized_path)
+                source_identity = f"{source_type}::{normalized_path}"
+                # INSERT OR IGNORE: distinct legacy paths can collapse to one identity
+                # (e.g. "a.m3u" and "sub/../a.m3u"). Dropping the duplicate keeps the
+                # migration non-fatal instead of aborting startup and locking the user
+                # out of the entire database.
+                cursor = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO playlists (
+                        name,
+                        source_type,
+                        path,
+                        is_url,
+                        source_identity,
+                        channel_count,
+                        last_loaded_at,
+                        last_status,
+                        last_error
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["name"],
+                        source_type,
+                        normalized_path,
+                        row["is_url"],
+                        source_identity,
+                        row["channel_count"],
+                        row["last_loaded_at"],
+                        row["last_status"],
+                        row["last_error"],
+                    ),
+                )
+                if cursor.rowcount == 0:
+                    skipped_duplicates += 1
+
+            conn.execute("DROP TABLE playlists_legacy")
+
+        if skipped_duplicates:
+            logger.warning(
+                "Playlist migration skipped %s duplicate legacy row(s) that collapsed to an existing identity",
+                skipped_duplicates,
+            )
