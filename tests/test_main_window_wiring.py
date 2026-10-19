@@ -1,7 +1,7 @@
 """Headless MainWindow wiring: real controllers and SQLite on tmp_path, VLC disabled.
 
 Covers load -> settings/library, channel activation -> play/last channel/history,
-favourite toggle, close -> UI state persisted and restart restore (TEST_AUDIT.md F6).
+favourite toggle, close -> UI state persisted and restart restore (docs/archive/TEST_AUDIT.md F6).
 """
 
 import logging
