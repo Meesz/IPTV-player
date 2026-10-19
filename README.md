@@ -10,7 +10,7 @@ This repo is a desktop application, not a web service. There is no backend serve
 - Add Xtream-compatible live TV sources through `player_api.php` credentials.
 - Test playlist sources from the playlist manager without replacing the active playlist.
 - Load XMLTV EPG data from local XML/XML.GZ files or HTTP(S) URLs. Xtream sources load the provider's own guide (`xmltv.php`) automatically when no manual guide is set.
-- Browse channels by category, search by name/group, sort results, and show current program metadata when EPG data is available.
+- Browse channels by category (the category picker has a search field, handy for providers with hundreds of categories), search by name/group, sort results, and show current program metadata when EPG data is available.
 - Render large channel lists through a `QListView` model/delegate instead of one widget per row.
 - Show channel logos from HTTP(S) URLs or local image paths, with a generated placeholder while loading or on failure.
 - Play streams through native VLC with buffering status, retry handling, reconnect caps, mute, fullscreen, copy URL, and manual retry controls.

@@ -217,6 +217,23 @@ def test_closing_window_persists_ui_state(qapp, loaded_window, db_path):
     assert settings.splitter_sizes == tuple(window.splitter.sizes())
 
 
+def test_category_picked_by_search_filters_list_and_survives_restart(qapp, make_window, loaded_window, db_path):
+    combo = loaded_window.left_panel.category_combo
+    combo.showPopup()
+    combo.search_field.setText("spo")
+    combo._choose_popup_index(combo.popup_list.currentIndex())
+    _wait_for_render(qapp, loaded_window)
+
+    model = loaded_window.left_panel.channel_list.channel_model
+    assert [model.channel_at(row).name for row in range(model.rowCount())] == ["Sport One"]
+    loaded_window.close()
+
+    restarted = make_window(db_path)
+    _wait_for_render(qapp, restarted)
+
+    assert restarted.left_panel.category_combo.currentText() == "Sports"
+
+
 def test_closing_window_saves_settings_before_player_shutdown(loaded_window, monkeypatch):
     calls: list[str] = []
     real_save = loaded_window.settings_controller.save_settings
