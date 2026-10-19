@@ -80,6 +80,8 @@ python -m app.main
 | `Esc` | Exit fullscreen |
 | `Up` / `Down` / `PgUp` / `PgDn`, `Enter`, `Esc` | Navigate, confirm, and close the category and sort pickers |
 
+`Space`, `M`, and `F` are handled by the main window, so they only work when the focused widget does not consume the key. Text fields (channel search, category search, XMLTV URL) and the channel lists (which use Qt's default key handling, such as type-ahead search) can swallow them.
+
 ## Your data
 
 On first launch the app creates, in `~/.simple_iptv/`:
