@@ -1,66 +1,50 @@
 # Simple IPTV Player
 
-Simple IPTV Player is a local PyQt6 desktop app for loading IPTV sources, browsing channels, viewing XMLTV program data, and playing live streams through VLC. It stores playlists, favorites, recent channels, EPG cache data, and UI preferences in a local SQLite database.
+[![Tests](https://github.com/Meesz/IPTV-player/actions/workflows/tests.yml/badge.svg)](https://github.com/Meesz/IPTV-player/actions/workflows/tests.yml)
+[![Lint](https://github.com/Meesz/IPTV-player/actions/workflows/lint.yml/badge.svg)](https://github.com/Meesz/IPTV-player/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 
-This repo is a desktop application, not a web service. There is no backend server, cloud sync, account system, or packaged release workflow configured in the current codebase.
+A local desktop app for watching live TV from your own IPTV sources. Load M3U playlists or Xtream Codes accounts, browse channels with an XMLTV program guide, and play streams through VLC.
 
-## Current Features
+It is a local PyQt6 app, not a web service: there is no backend, account system, cloud sync, recording, or packaged release. Everything is stored in a local SQLite database.
 
-- Load M3U/M3U8 playlists from local files or HTTP(S) URLs.
-- Add Xtream-compatible live TV sources through `player_api.php` credentials.
-- Test playlist sources from the playlist manager without replacing the active playlist.
-- Load XMLTV EPG data from local XML/XML.GZ files or HTTP(S) URLs. Xtream sources load the provider's own guide (`xmltv.php`) automatically when no manual guide is set.
-- Browse channels by category (the category picker has a search field, handy for providers with hundreds of categories), search by name/group, sort results, and show current program metadata when EPG data is available.
-- Render large channel lists through a `QListView` model/delegate instead of one widget per row.
-- Show channel logos from HTTP(S) URLs or local image paths, with a generated placeholder while loading or on failure.
-- Play streams through native VLC with buffering status, retry handling, reconnect caps, mute, fullscreen, copy URL, and manual retry controls.
-- Save favorites and recent channels with source-aware channel identity.
-- Persist UI state such as theme, window size, splitter sizes, active tab, selected category, search text, sort mode, mute state, and list display preferences.
-- Log application activity to `~/.simple_iptv/iptv_player.log`.
+## Features
 
-## Tech Stack
+- Load M3U/M3U8 playlists from local files or HTTP(S) URLs, or add Xtream Codes live TV sources.
+- Test a source without replacing the active playlist.
+- Load XMLTV guide data from files (XML/XML.GZ) or URLs; Xtream sources use the provider's guide automatically.
+- Browse by category (with a searchable category picker for providers with hundreds of categories), search, sort, and see the current program per channel.
+- Handles large channel lists smoothly, with channel logos and a placeholder while loading.
+- Playback with buffering status, automatic reconnect, retry, mute, fullscreen, and copy-URL controls.
+- Favorites and recently played channels.
+- Remembers your window layout, active tab, category, search text, sort mode, and mute state.
 
-- Python desktop application
-- PyQt6 for the UI
-- SQLite through the standard `sqlite3` module
-- VLC playback through `python-vlc` plus the native VLC runtime
-- `requests` for playlist, EPG, and Xtream HTTP calls; Qt's `QNetworkAccessManager` for channel logo images
-- pytest and pytest-qt for tests, pinned in `requirements-dev.txt`
-- Ruff for linting and formatting (configured in `pyproject.toml`) and mypy for type checking
-- GitHub Actions CI on pull requests and pushes to `main`: ruff, pytest, and a blocking mypy error-count ratchet
+## Quick start
 
-## Requirements
+Requirements:
 
-- Python 3.12 or newer. CI tests run on Python 3.12 and 3.14, and Ruff/mypy target 3.12. No `requires-python` is declared, so older versions are simply untested.
-- `pip`
-- Native VLC media player installed on the machine
-
-`python-vlc` does not bundle VLC itself. Install the VLC desktop/runtime package separately before expecting playback to work.
-
-Install VLC examples:
+- Python 3.12 or newer.
+- Native VLC media player. `python-vlc` does not bundle VLC, so install it separately or playback will not work.
 
 ```bash
 # Ubuntu / Debian
 sudo apt install vlc
-
 # Fedora
 sudo dnf install vlc
-
 # macOS with Homebrew
 brew install --cask vlc
 ```
 
-On Windows, install VLC from VideoLAN. The app looks in the standard `C:\Program Files\VideoLAN\VLC` or `C:\Program Files (x86)\VideoLAN\VLC` paths depending on Python architecture.
+On Windows, install VLC from VideoLAN. The app looks in `C:\Program Files\VideoLAN\VLC` or `C:\Program Files (x86)\VideoLAN\VLC`, depending on Python architecture.
 
-## Installation
-
-Run from the repository root:
+Then, from the repository root:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt       # to run the app
-pip install -r requirements-dev.txt   # for development: runtime deps plus pytest, ruff, mypy, pre-commit
+pip install -r requirements.txt
+python -m app.main
 ```
 
 On Windows PowerShell:
@@ -69,105 +53,108 @@ On Windows PowerShell:
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -r requirements-dev.txt
-```
-
-## Run The App
-
-```bash
 python -m app.main
 ```
 
-On first launch the app creates:
+## Using the app
 
-- SQLite database: `~/.simple_iptv/database.db`
-- Log file in the app data directory: `~/.simple_iptv/iptv_player.log` (rotates at 5 MB, keeping `.1` and `.2` backups)
+**Add a source.** Click **Sources** in the header (or press `Ctrl+P`, or use File > Playlist Manager). In the Playlist Manager, open the **Add** menu and choose **From File...** (`.m3u`, `.m3u8`), **From URL...**, or **From Xtream Codes...**. The Xtream dialog asks for server URL, username, password, and output format; when editing a saved source, leaving the password blank keeps the saved one. The manager also offers Edit (rename), Remove, **Test Source**, and **Load Playlist**; right-clicking a source offers Edit, Test Source, and Remove.
 
-To reset local app state, stop the app and remove the database:
+**Add a program guide (EPG).** Paste an XMLTV URL into the header's "XMLTV guide URL" field and click **Load guide**, or use File > EPG > **Load from File...**. File > EPG > **Refresh Last Source** (`Ctrl+R`) reloads the last guide. For Xtream sources, leaving the field empty loads the provider's guide. A guide older than 12 hours is refreshed, and a status chip shows the EPG state.
 
-```bash
-rm ~/.simple_iptv/database.db
-```
+**Browse.** The library has **Channels**, **Favorites**, and **Recent** tabs (Recent holds the last 12 channels). Pick a category from the searchable **Category** picker (or "All"), type in "Search channels or groups" (`Ctrl+L` focuses it), and sort A-Z, Z-A, by Group, or Favorites First. "Search within category" is on by default; turn it off to search all channels.
 
-The database is recreated on the next launch.
+**Play.** Double-click a channel, or enable View > **Play on Single Click**. The player has play, mute, fullscreen, **Retry stream**, **Copy stream URL**, and **Channel info** buttons. Mark a favorite with the star **Favorite** button in the channel details panel. The View menu also toggles "Show Current Program in Lists" and "Show Library Panel".
 
-### Back up before upgrading
+### Keyboard shortcuts
 
-Schema migrations run automatically at startup and are one-way: once a newer version has
-migrated `database.db`, an older checkout cannot reliably read it. Before pulling a new
-version, stop the app and copy the database together with its WAL files:
+| Key | Action |
+|-----|--------|
+| `Ctrl+P` | Open Playlist Manager |
+| `Ctrl+R` | Refresh last EPG source |
+| `Ctrl+L` | Focus channel search |
+| `Ctrl+Q` | Quit |
+| `Space` | Play / pause |
+| `M` | Mute |
+| `F` | Fullscreen |
+| `Esc` | Exit fullscreen |
+| `Up` / `Down` / `PgUp` / `PgDn`, `Enter`, `Esc` | Navigate, confirm, and close the category and sort pickers |
+
+## Your data
+
+On first launch the app creates, in `~/.simple_iptv/`:
+
+- `database.db`: playlists, favorites, recent channels, EPG cache, and UI state.
+- `iptv_player.log`: rotates at 5 MB, keeping `.1` and `.2` backups.
+
+To reset local state, stop the app and run `rm ~/.simple_iptv/database.db`; it is recreated on the next launch.
+
+**Back up before upgrading.** Schema migrations run automatically at startup and are one-way: once a newer version has migrated `database.db`, an older checkout cannot reliably read it. Before pulling a new version, stop the app and copy the database together with its WAL files:
 
 ```bash
 mkdir -p ~/simple_iptv_backup
 cp ~/.simple_iptv/database.db* ~/simple_iptv_backup/
 ```
 
-To roll back, stop the app, check out the older version, and copy the files back into
-`~/.simple_iptv/`. The backup contains your Xtream credentials (see Current Limitations), so
-keep it private.
+To roll back, stop the app, check out the older version, and copy the files back into `~/.simple_iptv/`. The backup contains your Xtream credentials (see [Limitations](#limitations)), so keep it private.
 
-## Environment Variables
+### Environment variables
 
-| Name | Used by | Default | Purpose |
-|------|---------|---------|---------|
-| `IPTV_LOG_LEVEL` | `app/main.py` | `INFO` | Sets Python logging level. Invalid values fall back to `INFO`. |
-| `QT_QPA_PLATFORM` | Qt/tests | unset | Set to `offscreen` for headless test runs when needed. The pytest fixture sets this if it is missing. On Linux Wayland with XWayland the app sets `xcb;wayland` itself when this is unset; an existing value is never overridden. |
-| `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, `DISPLAY` | VLC embedding on Linux | system-provided | Used to detect Wayland/XWayland embedding caveats. |
+None are required for normal use; see `.env.example` for a template.
 
-See `.env.example` for a template. None of these variables are required for normal use.
+| Name | Default | Purpose |
+|------|---------|---------|
+| `IPTV_LOG_LEVEL` | `INFO` | Python logging level. Invalid values fall back to `INFO`. |
+| `QT_QPA_PLATFORM` | unset | Qt platform plugin. Set to `offscreen` for headless runs (the pytest fixture does this if unset). An existing value is never overridden. |
+| `WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`, `DISPLAY` | system-provided | On Linux, if a Wayland session is detected (`WAYLAND_DISPLAY` set or `XDG_SESSION_TYPE=wayland`), `DISPLAY` is set (XWayland available), and `QT_QPA_PLATFORM` is unset, the app sets `QT_QPA_PLATFORM=xcb;wayland` itself. |
 
-## Common Commands
+## Limitations
 
-Run commands from the repository root unless noted.
+- Playback depends on native VLC and platform-specific video embedding. Playback is refused with an error when embedded video is impossible (for example, a Wayland session without XWayland).
+- Xtream passwords are stored in the local SQLite database so sources can be reloaded, and the database is not encrypted. On POSIX systems `~/.simple_iptv` is restricted to mode 0700 and `database.db` to 0600 (Windows permissions are not changed). Logs mask `password`-style query values and URL userinfo passwords, but Xtream stream URLs carry the password in the path, so channel URLs must not be logged.
+- Remote downloads are bounded: very large playlists, Xtream responses, or EPG files (including oversized decompressed gzip EPGs) are rejected with an error, and downloads exceeding a time budget are aborted on a best-effort basis.
+- No account system, remote sync, or multi-device state.
+- Channel logos are fetched directly by the channel list (10 s transfer timeout, up to 500 images cached in memory, nothing cached on disk). Unlike playlist and EPG downloads, logo responses have no size limit.
+- Playlist and EPG downloads use blocking HTTP calls in worker tasks; cancelling ignores stale results but cannot always abort an in-flight request immediately.
+- Packaging and release distribution are not defined.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt   # runtime deps plus pytest, ruff, mypy, pre-commit
+```
+
+Run from the repository root:
 
 | Task | Command |
 |------|---------|
-| Install runtime deps | `pip install -r requirements.txt` |
-| Install dev/test deps | `pip install -r requirements-dev.txt` |
-| Run app | `python -m app.main` |
-| Run tests | `python -m pytest -q` |
+| Tests | `python -m pytest -q` |
 | Lint | `ruff check .` |
 | Check formatting | `ruff format --check .` |
-| Format Python files | `ruff format .` |
+| Format | `ruff format .` |
 | Type check (CI blocks if the error count rises) | `mypy app core infra ui` |
 | Install git hooks | `pre-commit install` |
-| Syntax/import sanity check | `python -m compileall app core infra ui tests` |
 
-No packaged build command is configured. `MANIFEST.in` exists, but `pyproject.toml` has no `[project]` or `[build-system]` table, so the repo cannot be built as a package. Packaging/release distribution is not defined.
+CI runs on pull requests and pushes to `main`: ruff check, ruff format check, pytest (Python 3.12 and 3.14), and the mypy error-count ratchet.
 
-## Project Structure
+No packaged build is configured: `MANIFEST.in` exists, but `pyproject.toml` has no `[project]` or `[build-system]` table.
 
-- `app/` - application startup, logging, dependency wiring, and top-level error dialogs.
-- `core/` - domain models, typed settings, service logic, and domain error types.
-- `infra/db/` - SQLite connection management and repositories.
-- `infra/parsers/` - M3U/M3U8 and XMLTV parsing.
-- `infra/providers/` - Xtream-compatible API client.
-- `infra/playback/` - VLC initialization and platform-specific video embedding.
-- `ui/controllers/` - Qt signal-based controllers and background task orchestration.
-- `ui/windows/` - main application window.
-- `ui/widgets/` - player, panels, channel list view, notifications, loading overlay, and EPG widgets.
-- `ui/dialogs/` - playlist manager and Xtream source dialogs.
-- `ui/styles/` - theme tokens and Qt stylesheets.
-- `tests/` - pytest coverage for models, services, repositories, parsers, controllers, and selected UI behavior.
-- `docs/` - product, architecture, development, and roadmap notes.
+| Path | Contents |
+|------|----------|
+| `app/` | Startup, logging, dependency wiring, top-level error dialogs |
+| `core/` | Domain models, typed settings, services, domain errors |
+| `infra/` | SQLite (`db/`), M3U/XMLTV parsers, Xtream client (`providers/`), VLC setup (`playback/`) |
+| `ui/` | Controllers, main window, widgets, dialogs, styles |
+| `tests/` | pytest suite for models, services, repositories, parsers, controllers, selected UI |
+| `docs/` | Product, architecture, development, and roadmap notes |
 
-## Current Limitations
+See [docs/development.md](docs/development.md) for the full workflow and [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
 
-- Playback depends on native VLC and platform-specific embedding. On Linux Wayland sessions the app requests the `xcb` (XWayland) Qt platform automatically unless `QT_QPA_PLATFORM` is set; playback is refused with an error when embedded video is impossible (for example no XWayland).
-- Xtream passwords are stored in the local SQLite database so sources can be reloaded. The database itself is not encrypted. On POSIX systems the default data directory `~/.simple_iptv` is restricted to mode 0700 and `database.db` to 0600 (Windows permissions are not changed). Log handlers mask `password`-style query values and URL userinfo passwords, but Xtream stream URLs carry the password in the path, so channel URLs must not be logged.
-- Remote downloads are bounded: very large playlists, Xtream responses, or EPG files (including oversized decompressed gzip EPGs) are rejected with an error, and downloads that exceed a time budget are aborted on a best-effort basis.
-- There is no account system, remote sync, or multi-device state.
-- Channel logos are fetched directly by the channel list (10 s transfer timeout, up to 500 images cached in memory, nothing cached on disk). Unlike playlist/EPG downloads, logo responses have no size limit.
-- Playlist and EPG downloads use blocking HTTP calls inside worker tasks; cancellation ignores stale results but cannot always abort an in-flight network request immediately.
-- Packaging/release distribution is not defined.
+## Roadmap
 
-## Roadmap Summary
+Near-term work focuses on dependency/tooling cleanup, stronger integration tests, clearer packaging decisions, and polish around source validation, error reporting, and playback edge cases. Cloud sync, recording, and advanced provider features are speculative. See [docs/roadmap.md](docs/roadmap.md).
 
-Near-term work should focus on dependency/tooling cleanup, stronger integration test coverage, clearer packaging decisions, and continued polish around source validation, error reporting, and playback edge cases. Longer-term ideas such as cloud sync, recording, and advanced provider features are speculative.
-
-See [docs/roadmap.md](docs/roadmap.md) for the detailed roadmap.
-
-## Deeper Docs
+## Docs
 
 - [Product notes](docs/product.md)
 - [Architecture](docs/architecture.md)
@@ -181,4 +168,4 @@ Historical, point-in-time reports (not current guidance): [Phase 3 status](docs/
 
 ## License
 
-Released under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
+Released under the [MIT License](LICENSE).
