@@ -3,7 +3,7 @@
 # Direct development dependencies only; pip resolves the transitive set.
 
 # Testing
-pytest==9.0.3
+pytest==9.1.1
 pytest-qt==4.5.0
 
 # Lint + format (single tool: see [tool.ruff] in pyproject.toml)
