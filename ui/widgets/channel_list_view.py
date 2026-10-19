@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PyQt6.QtWidgets import QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from core.models import Channel, Program
 from ui.styles.themes import Themes
@@ -318,6 +320,17 @@ class ChannelRowDelegate(QStyledItemDelegate):
         return max(0, total_width - 8)
 
 
+_DATA_ONLY_ROLES = frozenset(
+    {
+        ChannelListModel.SubtitleRole,
+        ChannelListModel.MetaRole,
+        ChannelListModel.BadgesRole,
+        ChannelListModel.LogoPixmapRole,
+        ChannelListModel.LogoSourceRole,
+    }
+)
+
+
 class ChannelListView(QListView):
     channel_clicked = pyqtSignal(object)
     channel_activated = pyqtSignal(object)
@@ -357,6 +370,23 @@ class ChannelListView(QListView):
     @property
     def channel_model(self) -> ChannelListModel:
         return self._model
+
+    def dataChanged(
+        self,
+        top_left: QModelIndex,
+        bottom_right: QModelIndex,
+        roles: Iterable[int] = (),
+    ) -> None:
+        # QListView::dataChanged restarts the Batched layout for any change, which resets the
+        # scroll range to the first batch and clamps the scroll position. Roles that cannot
+        # change row geometry (fixed row height + uniform sizes) only need a repaint, which
+        # QAbstractItemView::dataChanged does for the visible rows in range. An empty role
+        # list means "everything", so it keeps the full QListView handling.
+        role_list = list(roles)
+        if role_list and _DATA_ONLY_ROLES.issuperset(role_list):
+            QAbstractItemView.dataChanged(self, top_left, bottom_right, role_list)
+            return
+        super().dataChanged(top_left, bottom_right, role_list)
 
     def set_theme_mode(self, mode: str) -> None:
         self._delegate.set_theme_mode(mode)

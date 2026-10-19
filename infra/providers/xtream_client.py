@@ -97,6 +97,13 @@ class XtreamClient:
         channels: list[Channel] = []
         skipped_non_live = 0
         skipped_invalid = 0
+        # Normalize credentials and build the invariant URL parts once per fetch.
+        stream_credentials = (self.last_effective_credentials or credentials).normalized()
+        url_prefix = (
+            f"{stream_credentials.server_url}/live/"
+            f"{quote(stream_credentials.username, safe='')}/{quote(stream_credentials.password, safe='')}/"
+        )
+        url_suffix = f".{stream_credentials.output}"
         for item in payload:
             if not isinstance(item, dict):
                 skipped_invalid += 1
@@ -114,17 +121,12 @@ class XtreamClient:
             category_id = str(item.get("category_id", "")).strip()
             group_name = categories.get(category_id) or str(item.get("category_name", "")).strip()
             channel_number = self._to_int(item.get("num"))
-            effective_credentials = self.last_effective_credentials or credentials
-            logger.debug(
-                "Mapping Xtream live stream %s for %s",
-                stream_id,
-                effective_credentials.redacted_summary(),
-            )
+            encoded_stream_id = quote(stream_id, safe="")
 
             channels.append(
                 Channel(
                     name=name,
-                    url=self._build_live_stream_url(effective_credentials, stream_id),
+                    url=f"{url_prefix}{encoded_stream_id}{url_suffix}",
                     group=group_name,
                     logo=str(item.get("stream_icon", "") or "").strip(),
                     epg_id=str(

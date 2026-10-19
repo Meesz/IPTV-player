@@ -1,9 +1,12 @@
+import gc
 import gzip
 import logging
 import os
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from core import limits
 from core.models import EPGChannel, ParseWarning, Program
@@ -30,6 +33,12 @@ class _LimitedReader:
         return data
 
 
+_DATE_14_RE = re.compile(r"^(\d{14})(?:\s*([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?")
+_DATE_12_RE = re.compile(r"^(\d{12})(?:\s*([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?")
+# Keyed by the offset in minutes, which is bounded (only valid |offset| < 24h are stored).
+_TZ_CACHE: dict[int, timezone] = {}
+
+
 class EPGParser:
     """Parser for XMLTV EPG payloads."""
 
@@ -38,15 +47,15 @@ class EPGParser:
         if not date_str:
             raise ValueError("Empty date")
         normalized = date_str.strip()
-        match = re.match(r"^(\d{14})(?:\s*([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?", normalized)
+        match = _DATE_14_RE.match(normalized)
         if not match:
-            match = re.match(r"^(\d{12})(?:\s*([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?", normalized)
+            match = _DATE_12_RE.match(normalized)
             if not match:
                 raise ValueError(f"Unsupported date format: {date_str}")
 
         base = match.group(1)
         tz = match.group(2)
-        dt = datetime.strptime(base, "%Y%m%d%H%M") if len(base) == 12 else datetime.strptime(base, "%Y%m%d%H%M%S")
+        dt = EPGParser._naive_datetime(base)
 
         if not tz or tz == "Z":
             return dt.replace(tzinfo=UTC)
@@ -54,8 +63,33 @@ class EPGParser:
         normalized_tz = tz.replace(":", "")
         sign = 1 if normalized_tz.startswith("+") else -1
         offset = sign * (int(normalized_tz[1:3]) * 60 + int(normalized_tz[3:5]))
-        aware = dt.replace(tzinfo=timezone(timedelta(minutes=offset)))
-        return aware.astimezone(UTC)
+        tzinfo = _TZ_CACHE.get(offset)
+        if tzinfo is None:
+            tzinfo = timezone(timedelta(minutes=offset))  # raises ValueError for |offset| >= 24h
+            _TZ_CACHE[offset] = tzinfo
+        return dt.replace(tzinfo=tzinfo).astimezone(UTC)
+
+    @staticmethod
+    def _naive_datetime(base: str) -> datetime:
+        """Build the naive datetime for a 12/14 digit string.
+
+        Plain ASCII digits with in-range fields take a fast path. Anything else
+        (non-ASCII digits, out-of-range fields) is delegated to ``strptime`` so the
+        accepted inputs and the raised ``ValueError`` messages stay unchanged.
+        """
+        if base.isascii():
+            try:
+                return datetime(
+                    int(base[0:4]),
+                    int(base[4:6]),
+                    int(base[6:8]),
+                    int(base[8:10]),
+                    int(base[10:12]),
+                    int(base[12:14]) if len(base) == 14 else 0,
+                )
+            except ValueError:
+                pass
+        return datetime.strptime(base, "%Y%m%d%H%M") if len(base) == 12 else datetime.strptime(base, "%Y%m%d%H%M%S")
 
     @staticmethod
     def parse(file_path: str) -> dict[str, EPGChannel]:
@@ -70,19 +104,23 @@ class EPGParser:
         if os.path.getsize(file_path) == 0:
             raise ValueError("EPG file is empty")
 
-        root = EPGParser._read_root(file_path)
+        # The parse allocates millions of long-lived objects and no cycles; generational GC
+        # passes over them are pure overhead. Restore the caller's GC state afterwards.
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            return EPGParser._parse_stream(file_path)
+        finally:
+            if gc_was_enabled:
+                gc.enable()
 
-        root_tag = EPGParser._local_name(root.tag)
-        if root_tag != "tv":
-            raise ValueError("Invalid XMLTV format: missing root 'tv'")
-
+    @staticmethod
+    def _parse_stream(file_path: str) -> tuple[dict[str, EPGChannel], list[ParseWarning]]:
         epg_data: dict[str, EPGChannel] = {}
         warnings: list[ParseWarning] = []
         seen: dict[tuple[str, int], int] = {}
         duplicates = 0
-        for program in root.iter():
-            if EPGParser._local_name(program.tag) != "programme":
-                continue
+        for program in EPGParser._iter_programmes(file_path):
             channel_id = program.get("channel")
             if not channel_id:
                 continue
@@ -143,20 +181,51 @@ class EPGParser:
         return epg_data, warnings
 
     @staticmethod
-    def _read_root(file_path: str) -> ET.Element:
+    def _iter_programmes(file_path: str) -> Iterator[ET.Element]:
+        """Stream ``<programme>`` elements in document order.
+
+        Raises for a non-``tv`` root before yielding anything. Each element is cleared and
+        detached once the consumer asks for the next one, so memory stays flat. Malformed
+        XML is only detected when the stream reaches it, so yielded data is provisional
+        until the generator is exhausted.
+        """
         with open(file_path, "rb") as stream:
             signature = stream.read(2)
 
         try:
             if signature == b"\x1f\x8b":
-                with gzip.open(file_path, "rb") as stream:
-                    tree = ET.parse(_LimitedReader(stream, limits.MAX_EPG_DECOMPRESSED_BYTES))
+                with gzip.open(file_path, "rb") as gz_stream:
+                    yield from EPGParser._iter_events(_LimitedReader(gz_stream, limits.MAX_EPG_DECOMPRESSED_BYTES))
             else:
-                tree = ET.parse(file_path)
+                yield from EPGParser._iter_events(file_path)
         except ET.ParseError as exc:
             line, column = exc.position
             raise ValueError(f"Malformed XML in EPG file (line {line}, column {column}): {exc}") from exc
-        return tree.getroot()
+
+    @staticmethod
+    def _iter_events(source: Any) -> Iterator[ET.Element]:
+        local_names: dict[str, str] = {}
+        root: ET.Element | None = None
+        for event, elem in ET.iterparse(source, events=("start", "end")):
+            if event == "start":
+                if root is None:
+                    # The first start event is the document root.
+                    root = elem
+                    if EPGParser._local_name(elem.tag) != "tv":
+                        raise ValueError("Invalid XMLTV format: missing root 'tv'")
+                continue
+            tag = elem.tag
+            name = local_names.get(tag)
+            if name is None:
+                name = local_names[tag] = EPGParser._local_name(tag)
+            if name == "programme":
+                yield elem
+                elem.clear()
+                # Drop processed siblings (programmes, unread channels, closed wrappers) from
+                # the root. Open wrappers stay reachable through the parser's own stack, so
+                # later children are still attached to them and parsed.
+                if root is not None:  # always true: the first start event set it
+                    del root[:]
 
     @staticmethod
     def _local_name(tag: str) -> str:
