@@ -181,4 +181,4 @@ Historical, point-in-time reports (not current guidance): [Phase 3 status](docs/
 
 ## License
 
-This repository does not currently include a `LICENSE` file.
+Released under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
