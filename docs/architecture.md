@@ -48,9 +48,17 @@ Xtream provider guides: after an Xtream playlist finishes rendering, `MainWindow
 
 Program times are normalized to timezone-aware UTC datetimes. UI display converts times to the local timezone when rendering channel rows.
 
+- `EPGParser` streams the file with `ET.iterparse` and clears each `<programme>` element once it is consumed, so parser memory stays flat for large guides. The root must be `tv` (checked on the first element). Malformed XML is only detected when the stream reaches it. Python's garbage collector is paused during the parse and restored afterwards.
+
 - Programmes that share a channel and start time (whole-second UTC) resolve "last wins": `EPGParser` replaces the earlier entry and adds a `duplicate_programme` parse warning, and `EPGRepository` saves with `INSERT OR REPLACE`.
 - Malformed XML (and other `ValueError` parse failures) from `EPGParser` is converted by `EPGService` into a `ParsingError`. The underlying parser error (logged and chained as the cause) includes the line and column; the `ParsingError` shown to the user names only the file.
 - URL downloads are size- and time-bounded (see Download Limits). Gzip EPGs are decompressed through `_LimitedReader` in `infra/parsers/epg_parser.py`, which fails once decompressed data exceeds `MAX_EPG_DECOMPRESSED_BYTES`.
+
+## Channel Logos
+
+`ChannelLogoProvider` (`ui/widgets/left_panel.py`) loads channel logos for the list delegate. HTTP(S) logo URLs are fetched asynchronously with Qt's `QNetworkAccessManager` (10 s transfer timeout); other values are treated as local image paths. A generated placeholder is shown while loading or on failure. Scaled pixmaps are kept in an in-memory LRU cache of 500 entries, which is cleared on theme change; nothing is cached on disk.
+
+This is the one network path that runs in the widget layer instead of a service. It is not covered by `core/limits.py` or `read_bounded`.
 
 ## Download Limits
 
@@ -141,4 +149,5 @@ Do not add logging that prints raw Xtream passwords, full authenticated URLs, or
 - SQLite schema migrations are embedded in startup code rather than external migration files.
 - Xtream-compatible providers vary in response shape and transport behavior.
 - VLC embedding is platform-sensitive and may behave differently under Linux Wayland, macOS, and Windows setups. On Linux, playback needs the `xcb` Qt platform (XWayland on Wayland) and is refused otherwise.
+- Logo downloads run in the widget layer outside the bounded-download helpers, so a single logo response has no size limit.
 - Tests cover important seams, but there is no full app-level integration suite. CI runs pytest (Python 3.12 and 3.14, offscreen Qt), ruff, and a blocking mypy error-count ratchet on pull requests and pushes to `main`; mypy errors are not yet zero.

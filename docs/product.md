@@ -78,7 +78,7 @@ The app currently supports:
 - XMLTV parsing with namespace-tolerant child lookup, gzip support (with a decompressed-size limit), size-limited downloads, UTC-aware program times, last-wins handling of duplicate programmes (with a parse warning), a `ParsingError` for malformed XML, and parse warnings for invalid program dates.
 - M3U parsing with UTF-8 (with or without BOM), UTF-16 only when a BOM is present, and cp1252/latin-1 fallback; double-quoted, single-quoted, or unquoted attributes; numeric metadata warnings, and orphan stream warnings.
 - Background playlist and EPG loading with stale worker result suppression.
-- Virtualized rich channel rows with logo placeholders, badges, current program text, and offscreen paint coverage.
+- Virtualized rich channel rows with channel logos (HTTP(S) or local paths, with generated placeholders), badges, current program text, and offscreen paint coverage.
 - Startup error dialogs for database/bootstrap failures and VLC-unavailable warnings.
 
 ## Planned Features
@@ -87,7 +87,7 @@ Confirmed near-term direction is maintenance and product hardening, not a new pr
 
 - Clean up dependency/tooling drift.
 - Decide and document a real packaging/release workflow.
-- Add more integration coverage around playlist switching, full playback UI flows, fullscreen, and persistence migrations.
+- Add app-level integration coverage for full playback UI flows (service-level playlist switching, fullscreen round-trip, and migration tests already exist).
 - Improve source diagnostics, parse warning visibility, and user-facing failure messages.
 - Continue hardening playback embedding, especially on Linux Wayland/XWayland setups.
 

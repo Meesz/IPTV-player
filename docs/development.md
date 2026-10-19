@@ -20,7 +20,7 @@ pip install -r requirements-dev.txt
 
 Install native VLC separately. The Python package `python-vlc` is only a binding.
 
-The GitHub Actions lint workflow uses Python 3.12; the tests workflow runs on Python 3.12 and 3.14. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
+Use Python 3.12 or newer. The GitHub Actions lint workflow uses Python 3.12; the tests workflow runs on Python 3.12 and 3.14. No `requires-python` is declared, so older versions are untested. If PyQt6 wheels are unavailable for a very new Python version on your platform, use Python 3.12 for local development.
 
 ## Run
 
@@ -84,7 +84,14 @@ Current tests cover:
 - EPG parsing/loading, timezone handling, and now/next boundaries (`tests/test_epg_now_next.py`)
 - SQLite repositories and schema migrations (playlists and legacy favorites)
 - Xtream client URL/auth/error behavior
-- background controller stale, failure, and cancellation handling (`tests/test_async_controllers.py`)
+- background controller stale, failure, and cancellation handling (`tests/test_async_controllers.py`), plus cancellation of the playlist-manager probe (`tests/test_probe_cancellation.py`)
+- service-level playlist switching (`tests/test_playlist_switching.py`)
+- download size/time budgets (`tests/test_download_limits.py`)
+- playback history pruning (`tests/test_history_repository.py`)
+- log setup and fallbacks, redaction, and keeping stream URLs out of logs (`tests/test_logging.py`)
+- channel logo loading and caching (`tests/test_logo_provider.py`)
+- player fullscreen round-trips, video surface switching, and platform embedding decisions (`tests/test_player_fullscreen.py`, `tests/test_player_surface.py`, `tests/test_video_embedding.py`)
+- the widget-to-repository/parser/HTTP import boundary (`tests/test_layer_boundaries.py`)
 - headless `MainWindow` wiring with VLC disabled: load, play, favorites, history, save on close, restart (`tests/test_main_window_wiring.py`)
 - selected PyQt widget and delegate behavior
 - theme tokens (painter-safe colors), channel row painting, and main-window/dialog layout invariants such as no clipping or overlap, elision, and empty-state actions (`tests/test_ui_theme.py`, `tests/test_ui_layout.py`)

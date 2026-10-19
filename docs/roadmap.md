@@ -8,7 +8,7 @@ This roadmap separates confirmed maintenance direction from speculative product 
 - **CI coverage**: CI runs pytest (Python 3.12 and 3.14), ruff, and mypy on pull requests and pushes to `main`; mypy is a blocking error-count ratchet (maximum recorded in `.github/workflows/lint.yml`). Remaining gaps: mypy errors are not yet zero, pushes to other branches do not trigger CI, and there is no app-level integration suite.
 - **Packaging decision**: decide whether the app will ship as source-only, py2app, PyInstaller, platform packages, or another installer format.
 - **Document packaging only after it exists**: avoid adding release commands until the checked-in configuration supports them.
-- **Broaden regression coverage**: add tests for playlist switching, fullscreen transitions, favorites/history interactions, and player state changes.
+- **Broaden regression coverage**: service-level playlist switching (`tests/test_playlist_switching.py`), fullscreen round-trips (`tests/test_player_fullscreen.py`), and headless favorites/history wiring (`tests/test_main_window_wiring.py`) are covered. Remaining: playlist switching through the UI and player state changes against real VLC playback.
 
 ## Short-Term Improvements
 
@@ -25,6 +25,11 @@ This roadmap separates confirmed maintenance direction from speculative product 
 - Add import/export for local app data, excluding or clearly warning about credentials.
 - Add a real packaging and release workflow after the chosen platform strategy is implemented.
 - Consider external migration files if SQLite schema changes become more frequent.
+- **Move Xtream passwords to the OS keychain** (via `keyring`; needs a new dependency). Whole-database encryption is not planned: with no master password the key would live next to the database, so it adds a native dependency (SQLCipher) without real protection. The password is currently stored in plain text in `playlists` and is also embedded in the path of Xtream channel URLs stored in `favorites` and `recent_channels`, so the work needs:
+  - a keychain-backed credential store, with `playlists` keeping only a reference;
+  - Xtream channel URLs persisted without the password and rebuilt at load/play time, which changes how `(url, playlist_path)` identity is stored;
+  - a migration that rewrites existing rows and moves existing passwords into the keychain;
+  - an explicit fallback when no keychain backend is available (e.g. headless Linux without Secret Service).
 
 ## Long-Term Ideas
 
