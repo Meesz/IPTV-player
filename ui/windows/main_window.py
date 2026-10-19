@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, QThreadPool
@@ -37,6 +37,10 @@ from ui.widgets.right_panel import RightPanel
 logger = logging.getLogger(__name__)
 
 _SHUTDOWN_WAIT_MS = 2000
+
+# Provider xmltv.php guides can be tens of MB; reuse the cached guide until it is this old.
+_XTREAM_EPG_REFRESH_INTERVAL = timedelta(hours=12)
+_EPG_LOADED_AT_FORMAT = "%Y-%m-%d %H:%M"
 
 _NOTIFICATION_LOG_LEVELS = {
     NotificationType.WARNING: logging.WARNING,
@@ -467,12 +471,23 @@ class MainWindow(QMainWindow):
         return
 
     def _on_epg_loaded(self) -> None:
-        loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-        if self.epg_controller.last_loaded_is_url:
+        loaded_at = datetime.now().strftime(_EPG_LOADED_AT_FORMAT)
+        if self.epg_controller.last_loaded_xtream_identity:
+            self.settings_controller.save_settings(
+                {
+                    "epg_url": "",
+                    "last_epg_path": "",
+                    "last_epg_xtream_identity": self.epg_controller.last_loaded_xtream_identity,
+                    "last_epg_loaded_at": loaded_at,
+                }
+            )
+            self.menu_bar.epg_url_input.clear()
+        elif self.epg_controller.last_loaded_is_url:
             self.settings_controller.save_settings(
                 {
                     "epg_url": self.epg_controller.last_loaded_source,
                     "last_epg_path": "",
+                    "last_epg_xtream_identity": "",
                     "last_epg_loaded_at": loaded_at,
                 }
             )
@@ -481,6 +496,7 @@ class MainWindow(QMainWindow):
                 {
                     "last_epg_path": self.epg_controller.last_loaded_source,
                     "epg_url": "",
+                    "last_epg_xtream_identity": "",
                     "last_epg_loaded_at": loaded_at,
                 }
             )
@@ -745,6 +761,9 @@ class MainWindow(QMainWindow):
     def _load_epg_url(self) -> None:
         url = self.menu_bar.epg_url_input.text().strip()
         if not url:
+            # An empty field on an Xtream source switches back to the provider's own guide.
+            if self._load_xtream_epg():
+                return
             self.show_notification("Enter an EPG URL", NotificationType.WARNING)
             return
         self.epg_controller.load_epg_url(url)
@@ -758,7 +777,46 @@ class MainWindow(QMainWindow):
         if last_epg_url:
             self.epg_controller.load_epg_url(last_epg_url)
             return
+        if self._load_xtream_epg():
+            return
         self.show_notification("No previous EPG source to refresh", NotificationType.WARNING)
+
+    def _active_xtream_reference(self) -> PlaylistReference | None:
+        playlist = self._current_playlist()
+        reference = playlist.source_reference if playlist else None
+        if reference is None or reference.source_type != PlaylistSourceType.XTREAM:
+            return None
+        return reference
+
+    def _load_xtream_epg(self) -> bool:
+        reference = self._active_xtream_reference()
+        if reference is None:
+            return False
+        return self.epg_controller.load_epg_xtream(reference.normalized_xtream(), reference.source_identity)
+
+    def _auto_load_xtream_epg(self) -> None:
+        """Load the provider guide for an Xtream source unless a manual guide is configured."""
+        reference = self._active_xtream_reference()
+        if reference is None:
+            return
+        if self.settings_controller.get_setting("last_epg_path", "") or self.settings_controller.get_setting(
+            "last_epg_url", ""
+        ):
+            return
+        if (
+            self.settings_controller.get_setting("last_epg_xtream_identity", "") == reference.source_identity
+            and self._epg_cache_is_fresh()
+        ):
+            return
+        self._load_xtream_epg()
+
+    def _epg_cache_is_fresh(self) -> bool:
+        loaded_at = self.settings_controller.get_setting("last_epg_loaded_at", "")
+        try:
+            loaded = datetime.strptime(loaded_at, _EPG_LOADED_AT_FORMAT)
+        except ValueError:
+            return False
+        return datetime.now() - loaded < _XTREAM_EPG_REFRESH_INTERVAL
 
     def _update_epg_status_label(self) -> None:
         loaded_at = self.settings_controller.get_setting("last_epg_loaded_at", "")
@@ -918,3 +976,4 @@ class MainWindow(QMainWindow):
             )
         else:
             self.show_notification(f"Loaded {len(playlist.channels)} channels", NotificationType.SUCCESS)
+        self._auto_load_xtream_epg()

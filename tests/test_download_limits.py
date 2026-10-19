@@ -9,7 +9,7 @@ import pytest
 import requests
 
 from core import limits
-from core.bounded_download import read_bounded
+from core.bounded_download import USER_AGENT, read_bounded
 from core.errors import DownloadLimitError, NetworkError, ParsingError
 from core.models import XtreamCredentials
 from core.services.epg_service import EPGService
@@ -66,6 +66,7 @@ def _install_playlist_get(monkeypatch, response):
 
     def fake_get(url, **kwargs):
         assert kwargs.get("stream") is True
+        assert kwargs.get("headers") == {"User-Agent": USER_AGENT}
         calls.append(url)
         return response
 
@@ -277,6 +278,20 @@ def test_epg_url_within_budget_loads(monkeypatch, tmp_path, temp_dir):
 
     assert service.loaded_channels == ["c"]
     assert list(temp_dir.iterdir()) == []
+
+
+def test_epg_url_download_sends_app_user_agent(monkeypatch, tmp_path, temp_dir):
+    # Some Xtream providers answer 403 to the default python-requests User-Agent.
+    seen_headers: list[dict] = []
+
+    def fake_get(url, **kwargs):
+        seen_headers.append(kwargs.get("headers"))
+        return _StreamResponse(EPG_XML)
+
+    monkeypatch.setattr("core.services.epg_service.requests.get", fake_get)
+    _epg_service(tmp_path).load_epg_from_url(EPG_URL)
+
+    assert seen_headers == [{"User-Agent": USER_AGENT}]
 
 
 def test_xtream_response_over_budget_raises_network_error(monkeypatch):

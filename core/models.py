@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 
 class PlaylistSourceType(str, Enum):
@@ -44,6 +44,12 @@ class XtreamCredentials:
             password=self.password.strip(),
             output=self.output.strip().lower() or "ts",
         )
+
+    def epg_url(self) -> str:
+        """Return the provider's XMLTV guide endpoint; the URL carries the password."""
+        creds = self.normalized()
+        query = urlencode({"username": creds.username, "password": creds.password})
+        return f"{creds.server_url}/xmltv.php?{query}"
 
     def redacted_summary(self) -> str:
         parsed = urlparse(self.normalize_server_url(self.server_url))
@@ -229,6 +235,7 @@ class Settings:
     last_epg_path: str = ""
     last_epg_url: str = ""
     last_epg_loaded_at: str = ""
+    last_epg_xtream_identity: str = ""
     window_width: int = 1280
     window_height: int = 720
     play_on_single_click: bool = False
@@ -258,6 +265,7 @@ class Settings:
             last_epg_path=kwargs.get("last_epg_path", self.last_epg_path),
             last_epg_url=kwargs.get("last_epg_url", self.last_epg_url),
             last_epg_loaded_at=kwargs.get("last_epg_loaded_at", self.last_epg_loaded_at),
+            last_epg_xtream_identity=str(kwargs.get("last_epg_xtream_identity", self.last_epg_xtream_identity)),
             window_width=kwargs.get("window_width", self.window_width),
             window_height=kwargs.get("window_height", self.window_height),
             play_on_single_click=kwargs.get("play_on_single_click", self.play_on_single_click),

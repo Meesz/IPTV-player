@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from PyQt6.QtCore import QEvent
 
-from core.models import PlaylistReference, PlaylistSourceType
+from core.models import Playlist, PlaylistReference, PlaylistSourceType, XtreamCredentials
 from core.services.epg_service import EPGService
 from core.services.favorites_service import FavoritesService
 from core.services.history_service import HistoryService
@@ -257,3 +257,83 @@ def test_restart_restores_last_playlist_and_channel(
     assert playlist is not None
     assert playlist.source_reference.source_identity == file_identity
     assert played_urls == [channel.url]
+
+
+XTREAM_PASSWORD = "s3cret-pass"
+
+
+@pytest.fixture
+def xtream_window(qapp, make_window, db_path, monkeypatch):
+    """A window whose active playlist is an Xtream source; guide downloads are recorded, not fetched."""
+    window = make_window(db_path)
+    window.epg_controller._thread_pool = _SyncPool()
+    requested: list[str] = []
+    monkeypatch.setattr(EPGService, "load_epg_from_url", lambda self, url, **_kwargs: requested.append(url))
+    reference = PlaylistReference(
+        name="Provider",
+        path="",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials("http://provider.example:8080/", "user", XTREAM_PASSWORD),
+    )
+    window.playlist_controller.service.set_current_playlist(
+        Playlist(name="Provider", source_path=reference.source_identity, source_reference=reference)
+    )
+    window.requested_epg_urls = requested
+    window.xtream_identity = reference.source_identity
+    return window
+
+
+def test_xtream_epg_url_targets_xmltv_endpoint():
+    credentials = XtreamCredentials("http://provider.example:8080/player_api.php", " user ", "p&ss word")
+    assert credentials.epg_url() == "http://provider.example:8080/xmltv.php?username=user&password=p%26ss+word"
+
+
+def test_xtream_source_auto_loads_provider_guide_without_storing_password(qapp, xtream_window, db_path):
+    window = xtream_window
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+
+    assert window.requested_epg_urls == [
+        f"http://provider.example:8080/xmltv.php?username=user&password={XTREAM_PASSWORD}"
+    ]
+    settings = _reload_settings(db_path).settings
+    assert settings.last_epg_url == ""
+    assert settings.last_epg_path == ""
+    assert settings.last_epg_xtream_identity == window.xtream_identity
+    assert window.menu_bar.epg_url_input.text() == ""
+    with SQLiteConnection(db_path=db_path).get_connection() as conn:
+        stored_values = [row[0] for row in conn.execute("SELECT value FROM settings")]
+    assert not any(XTREAM_PASSWORD in value for value in stored_values)
+
+
+def test_xtream_guide_is_not_redownloaded_while_cache_is_fresh(qapp, xtream_window):
+    window = xtream_window
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+    assert len(window.requested_epg_urls) == 1
+
+    window.settings_controller.save_setting("last_epg_loaded_at", "2000-01-01 00:00")
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+    assert len(window.requested_epg_urls) == 2
+
+
+def test_manual_guide_url_disables_xtream_auto_load(qapp, xtream_window):
+    window = xtream_window
+    window.settings_controller.save_setting("epg_url", "http://guide.example/epg.xml")
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+    assert window.requested_epg_urls == []
+
+
+def test_refresh_and_empty_guide_field_fall_back_to_xtream_guide(qapp, xtream_window):
+    window = xtream_window
+    window._refresh_epg()
+    qapp.processEvents()
+    window.menu_bar.epg_url_input.clear()
+    window._load_epg_url()
+    qapp.processEvents()
+    assert len(window.requested_epg_urls) == 2
+    assert all("/xmltv.php?" in url for url in window.requested_epg_urls)

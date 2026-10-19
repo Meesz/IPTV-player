@@ -11,7 +11,7 @@ from requests import Response
 from requests.exceptions import ConnectionError, HTTPError, RequestException, SSLError, Timeout
 
 from core import limits
-from core.bounded_download import read_bounded
+from core.bounded_download import USER_AGENT, read_bounded
 from core.errors import DownloadLimitError, NetworkError, ParsingError, ValidationError
 from core.models import Channel, XtreamCredentials
 
@@ -26,7 +26,7 @@ class XtreamClient:
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "SimpleIPTVPlayer/1.0",
+                "User-Agent": USER_AGENT,
                 "Accept": "application/json, text/plain, */*",
                 "Connection": "close",
             }

@@ -987,7 +987,7 @@ def test_xtream_client_success_path(monkeypatch):
         def close(self):
             return None
 
-    def _fake_get(url, timeout, stream=False):
+    def _fake_get(url, timeout, stream=False, headers=None):
         calls.append(url)
         if "action=get_live_categories" in url:
             return _Response([{"category_id": "7", "category_name": "News"}])
@@ -1193,7 +1193,7 @@ def test_xtream_client_retries_http_over_https(monkeypatch, caplog):
         def close(self):
             return None
 
-    def _fake_get(url, timeout, stream=False):
+    def _fake_get(url, timeout, stream=False, headers=None):
         calls.append(url)
         if url.startswith("http://"):
             raise requests.exceptions.ConnectionError("reset")

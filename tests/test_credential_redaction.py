@@ -35,7 +35,7 @@ def test_xtream_redacts_password_on_http_error(monkeypatch, caplog):
     client = XtreamClient(timeout=5)
     credentials = _make_credentials()
 
-    def _fake_get(url, timeout, stream=False):
+    def _fake_get(url, timeout, stream=False, headers=None):
         response = requests.Response()
         response.status_code = 401
         response.url = url
@@ -58,7 +58,7 @@ def test_xtream_redacts_password_on_connection_error(monkeypatch, caplog):
     client = XtreamClient(timeout=5)
     credentials = _make_credentials()
 
-    def _fake_get(url, timeout, stream=False):
+    def _fake_get(url, timeout, stream=False, headers=None):
         # urllib3/requests embed the full request path+query in this message.
         raise requests.exceptions.ConnectionError(
             f"HTTPSConnectionPool(host='provider.example', port=443): "
@@ -108,7 +108,9 @@ def test_epg_url_failure_redacts_password_in_log(monkeypatch, caplog):
         def close(self):
             return None
 
-    monkeypatch.setattr("core.services.epg_service.requests.get", lambda url, timeout=20, stream=False: _Resp())
+    monkeypatch.setattr(
+        "core.services.epg_service.requests.get", lambda url, timeout=20, stream=False, headers=None: _Resp()
+    )
     url = f"http://host/xmltv.php?username=alice&password={_SECRET}&type=m3u_plus"
 
     with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"), pytest.raises(RepositoryError):
@@ -121,7 +123,7 @@ def test_epg_url_network_error_message_is_redacted(monkeypatch):
     """The NetworkError surfaced to the UI must not contain the password."""
     service = EPGService(_NoopRepo())  # type: ignore[arg-type]
 
-    def _timeout(url, timeout=20, stream=False):
+    def _timeout(url, timeout=20, stream=False, headers=None):
         raise requests.exceptions.Timeout("slow")
 
     monkeypatch.setattr("core.services.epg_service.requests.get", _timeout)
@@ -160,7 +162,7 @@ def test_epg_url_failure_redacts_basic_auth_in_log(monkeypatch, caplog):
     """A userinfo password must not reach the log on a download failure."""
     service = EPGService(_NoopRepo())  # type: ignore[arg-type]
 
-    def _conn_error(url, timeout=20, stream=False):
+    def _conn_error(url, timeout=20, stream=False, headers=None):
         raise requests.exceptions.ConnectionError("refused")
 
     monkeypatch.setattr("core.services.epg_service.requests.get", _conn_error)
@@ -192,17 +194,17 @@ def _playlist_service() -> PlaylistService:
     return PlaylistService(None, xtream_client=XtreamClient())  # type: ignore[arg-type]
 
 
-def _raise_timeout(url, timeout=20, stream=False):
+def _raise_timeout(url, timeout=20, stream=False, headers=None):
     raise requests.exceptions.Timeout(f"timed out fetching {url}")
 
 
-def _raise_connection_error(url, timeout=20, stream=False):
+def _raise_connection_error(url, timeout=20, stream=False, headers=None):
     raise requests.exceptions.ConnectionError(
         f"HTTPConnectionPool(host='host', port=80): Max retries exceeded with url: {url}"
     )
 
 
-def _raise_http_error(url, timeout=20, stream=False):
+def _raise_http_error(url, timeout=20, stream=False, headers=None):
     raise requests.exceptions.HTTPError(f"404 Client Error: Not Found for url: {url}")
 
 
@@ -233,7 +235,7 @@ def test_m3u_url_failure_does_not_leak_password(monkeypatch, caplog, failure):
 
 def test_m3u_url_success_does_not_leak_password(monkeypatch, caplog):
     monkeypatch.setattr(
-        "core.services.playlist_service.requests.get", lambda url, timeout=20, stream=False: _OkResponse()
+        "core.services.playlist_service.requests.get", lambda url, timeout=20, stream=False, headers=None: _OkResponse()
     )
 
     with caplog.at_level(logging.DEBUG):
@@ -330,7 +332,7 @@ def test_redact_url_masks_unparseable_bad_port_urls(url):
 
 
 def test_m3u_url_with_bad_port_does_not_leak_password(monkeypatch, caplog):
-    def _fail(url, timeout=20, stream=False):
+    def _fail(url, timeout=20, stream=False, headers=None):
         raise requests.exceptions.ConnectionError(f"cannot connect to {url}")
 
     monkeypatch.setattr("core.services.playlist_service.requests.get", _fail)
@@ -399,7 +401,9 @@ def test_epg_unexpected_failure_log_redacts_exception_text(monkeypatch, caplog):
             return None
 
     service = EPGService(_LeakyRepo())  # type: ignore[arg-type]
-    monkeypatch.setattr("core.services.epg_service.requests.get", lambda url, timeout=20, stream=False: _Resp())
+    monkeypatch.setattr(
+        "core.services.epg_service.requests.get", lambda url, timeout=20, stream=False, headers=None: _Resp()
+    )
 
     with caplog.at_level(logging.DEBUG, logger="core.services.epg_service"), pytest.raises(RuntimeError):
         service.load_epg_from_url("http://host/xmltv.php")

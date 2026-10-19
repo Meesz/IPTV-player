@@ -11,7 +11,7 @@ import requests
 from requests.exceptions import HTTPError, RequestException, Timeout
 
 from core import limits
-from core.bounded_download import read_bounded
+from core.bounded_download import USER_AGENT, read_bounded
 from core.errors import NetworkError, ParsingError, ValidationError
 from core.models import Channel, ChannelQuery, Playlist, PlaylistReference, PlaylistSourceType
 from core.redaction import redact_identity, redact_text, redact_url
@@ -420,7 +420,7 @@ class PlaylistService:
         last_error: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
-                response = requests.get(url, timeout=20, stream=True)
+                response = requests.get(url, timeout=20, stream=True, headers={"User-Agent": USER_AGENT})
                 try:
                     response.raise_for_status()
                 except BaseException:

@@ -8,6 +8,9 @@ from typing import Any, Protocol
 from core.errors import DownloadLimitError
 from core.limits import DOWNLOAD_CHUNK_BYTES
 
+# Some providers reject the default python-requests User-Agent with 403.
+USER_AGENT = "SimpleIPTVPlayer/1.0"
+
 
 class _ByteSink(Protocol):
     def write(self, data: bytes, /) -> Any: ...

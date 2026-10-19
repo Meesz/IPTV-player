@@ -11,7 +11,7 @@ import requests
 from requests.exceptions import RequestException, Timeout
 
 from core import limits
-from core.bounded_download import read_bounded
+from core.bounded_download import USER_AGENT, read_bounded
 from core.errors import NetworkError, ParsingError, RepositoryError
 from core.models import EPGChannel, ParseWarning, Program
 from core.redaction import redact_text, redact_url
@@ -76,7 +76,7 @@ class EPGService:
         try:
             self._ensure_not_cancelled(cancel_callback)
             self._emit_progress(progress_callback, "Downloading EPG")
-            response = requests.get(url, timeout=20, stream=True)
+            response = requests.get(url, timeout=20, stream=True, headers={"User-Agent": USER_AGENT})
             response.raise_for_status()
             parsed_url = urlparse(url)
             suffix = ".xml.gz" if parsed_url.path.endswith(".gz") else ".xml"

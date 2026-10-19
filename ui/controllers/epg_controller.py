@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
-from core.models import ParseWarning, Program
+from core.models import ParseWarning, Program, XtreamCredentials
 from core.services.epg_service import EPGService
 from ui.controllers.background_tasks import BackgroundTask, create_background_task
 
@@ -23,6 +23,7 @@ class EPGController(QObject):
         self._workers: dict[int, BackgroundTask] = {}
         self._last_loaded_source = ""
         self._last_loaded_is_url = False
+        self._last_loaded_xtream_identity = ""
         self._last_warnings: list[ParseWarning] = []
 
     def load_epg_file(self, path: str) -> bool:
@@ -30,6 +31,15 @@ class EPGController(QObject):
 
     def load_epg_url(self, url: str) -> bool:
         return self._start_load(self.service.load_epg_from_url, url, is_url=True)
+
+    def load_epg_xtream(self, credentials: XtreamCredentials, source_identity: str) -> bool:
+        """Load the provider's xmltv.php guide without remembering the credentialed URL."""
+        return self._start_load(
+            self.service.load_epg_from_url,
+            credentials.epg_url(),
+            is_url=True,
+            xtream_identity=source_identity,
+        )
 
     def get_current_program(self, channel_id: str) -> Program | None:
         if not channel_id:
@@ -54,6 +64,10 @@ class EPGController(QObject):
         return self._last_loaded_is_url
 
     @property
+    def last_loaded_xtream_identity(self) -> str:
+        return self._last_loaded_xtream_identity
+
+    @property
     def last_warnings(self) -> list[ParseWarning]:
         return list(self._last_warnings)
 
@@ -65,13 +79,15 @@ class EPGController(QObject):
         if emit_signal:
             self.loading_cancelled.emit()
 
-    def _start_load(self, loader, source: str, *, is_url: bool) -> bool:
+    def _start_load(self, loader, source: str, *, is_url: bool, xtream_identity: str = "") -> bool:
         self.cancel_loading(emit_signal=True)
         self._task_sequence += 1
         task_id = self._task_sequence
         self._active_task_id = task_id
-        self._last_loaded_source = source
+        # Xtream guide URLs embed the password, so remember the source identity instead.
+        self._last_loaded_source = xtream_identity or source
         self._last_loaded_is_url = is_url
+        self._last_loaded_xtream_identity = xtream_identity
         self._last_warnings = []
 
         self.loading_started.emit()

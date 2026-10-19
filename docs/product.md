@@ -23,6 +23,7 @@ The app currently supports:
 - Xtream-compatible live TV sources.
 - Playlist source validation and duplicate detection.
 - XMLTV EPG import from local files or URLs, including gzip-compressed XMLTV files.
+- Automatic provider guide (`xmltv.php`) for Xtream sources when no manual EPG source is configured.
 - Channel browsing by category, search, and sort mode.
 - Large-list rendering through a virtualized list view.
 - VLC-backed live playback.
@@ -51,7 +52,7 @@ The app currently supports:
 
 ### Load EPG data
 
-1. Load an XMLTV file from the EPG menu, or enter an EPG URL in the toolbar.
+1. Load an XMLTV file from the EPG menu, or enter an EPG URL in the toolbar. For an Xtream source with no manual guide, the app loads the provider guide after the playlist loads; clicking "Load guide" with an empty URL field switches back to it.
 2. The app downloads/parses the source in a background task.
 3. Parsed programs are cached in SQLite and current program data appears in the channel list and now-playing area when channel IDs match.
 

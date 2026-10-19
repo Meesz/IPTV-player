@@ -36,6 +36,9 @@ class SettingsService:
                 ),
                 last_epg_url=self.repository.get_setting("last_epg_url", self.repository.get_setting("epg_url", "")),
                 last_epg_loaded_at=self.repository.get_setting("last_epg_loaded_at", self._settings.last_epg_loaded_at),
+                last_epg_xtream_identity=self.repository.get_setting(
+                    "last_epg_xtream_identity", self._settings.last_epg_xtream_identity
+                ),
                 window_width=int(self.repository.get_setting("window_width", str(self._settings.window_width))),
                 window_height=int(self.repository.get_setting("window_height", str(self._settings.window_height))),
                 play_on_single_click=self._to_bool(self.repository.get_setting("play_on_single_click", "false")),

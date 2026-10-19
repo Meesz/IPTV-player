@@ -44,6 +44,8 @@ The playlist manager's **Test Source** probe runs as a cooperatively cancellable
 
 EPG sources are XMLTV files or URLs. URL loads download to a temporary XML/XML.GZ file, then reuse the file parser. Parsed programs are stored in SQLite and kept in memory for the active session.
 
+Xtream provider guides: after an Xtream playlist finishes rendering, `MainWindow._auto_load_xtream_epg` loads `XtreamCredentials.epg_url()` (`<server>/xmltv.php?username=...&password=...`) through `EPGController.load_epg_xtream`, unless a manual `last_epg_path`/`last_epg_url` is set. That URL carries the password, so the controller reports the source identity as `last_loaded_source`, and settings store only `last_epg_xtream_identity` (never the URL). The guide is not downloaded again while the same source's cache is under 12 hours old (`last_epg_loaded_at`). "Refresh EPG" and "Load guide" with an empty field also fall back to the active Xtream source.
+
 Program times are normalized to timezone-aware UTC datetimes. UI display converts times to the local timezone when rendering channel rows.
 
 - Programmes that share a channel and start time (whole-second UTC) resolve "last wins": `EPGParser` replaces the earlier entry and adds a `duplicate_programme` parse warning, and `EPGRepository` saves with `INSERT OR REPLACE`.
@@ -52,7 +54,7 @@ Program times are normalized to timezone-aware UTC datetimes. UI display convert
 
 ## Download Limits
 
-Remote playlist, Xtream, and EPG downloads stream through `read_bounded` in `core/bounded_download.py`, using the constants in `core/limits.py` (`MAX_PLAYLIST_DOWNLOAD_BYTES`, `MAX_EPG_DOWNLOAD_BYTES`, `MAX_XTREAM_RESPONSE_BYTES`, and per-source `*_DOWNLOAD_DEADLINE_SECONDS`). Exceeding a download budget raises `DownloadLimitError` (a `NetworkError` subclass) without the URL in the message, and `PlaylistService` does not retry it. The separate `MAX_EPG_DECOMPRESSED_BYTES` gzip limit is enforced by `_LimitedReader` and surfaces as a `ParsingError`.
+Remote playlist, Xtream, and EPG downloads stream through `read_bounded` in `core/bounded_download.py`, using the constants in `core/limits.py` (`MAX_PLAYLIST_DOWNLOAD_BYTES`, `MAX_EPG_DOWNLOAD_BYTES`, `MAX_XTREAM_RESPONSE_BYTES`, and per-source `*_DOWNLOAD_DEADLINE_SECONDS`). Exceeding a download budget raises `DownloadLimitError` (a `NetworkError` subclass) without the URL in the message, and `PlaylistService` does not retry it. The separate `MAX_EPG_DECOMPRESSED_BYTES` gzip limit is enforced by `_LimitedReader` and surfaces as a `ParsingError`. All playlist, EPG, and Xtream requests send `USER_AGENT` from `core/bounded_download.py`; some providers answer 403 to the default `python-requests` User-Agent.
 
 - The byte budgets (declared `Content-Length` and bytes actually read) are the hard memory guard.
 - The wall-clock deadline is best-effort: it is checked between chunks, so a server that trickles data can overrun it. Each socket read is still bounded by the request timeout.
