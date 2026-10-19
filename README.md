@@ -176,8 +176,8 @@ See [docs/roadmap.md](docs/roadmap.md) for the detailed roadmap.
 - [Coding agent guide](AGENTS.md)
 
 Historical, point-in-time reports (not current guidance): [Phase 3 status](docs/phase3.md),
-[refactoring walkthrough](walkthrough.md), [production readiness review](PRODUCTION_READINESS.md),
-[test audit](TEST_AUDIT.md), and [UI audit](UI_AUDIT.md).
+[refactoring walkthrough](docs/archive/walkthrough.md), [production readiness review](docs/archive/PRODUCTION_READINESS.md),
+[test audit](docs/archive/TEST_AUDIT.md), [UI audit](docs/archive/UI_AUDIT.md), and [performance audit](docs/archive/PERFORMANCE_AUDIT.md).
 
 ## License
 

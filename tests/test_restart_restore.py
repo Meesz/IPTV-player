@@ -1,7 +1,7 @@
 """Restart round trip: persist the active playlist, rebuild everything, restore it.
 
 Kills M1 (identity no longer read back from the DB) and M2 (legacy ``is_url`` flag
-inverted) from TEST_AUDIT.md.
+inverted) from docs/archive/TEST_AUDIT.md.
 """
 
 import pytest

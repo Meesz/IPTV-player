@@ -69,7 +69,7 @@ Ruff config and rule rationale live in `pyproject.toml`; pre-commit runs ruff on
 ## Avoid unless the task is about them
 
 - `repomix-output.xml` (~360 KB generated dump), `*.log`, `.venv/`, `*_cache/`, `__pycache__/`.
-- `TEST_AUDIT.md`, `UI_AUDIT.md`, `PRODUCTION_READINESS.md`, `walkthrough.md`: point-in-time reports, not current guidance.
+- `docs/archive/`: point-in-time audit reports and the refactor walkthrough, not current guidance.
 - Large files: read targeted ranges of `tests/test_models_and_services.py`,
   `ui/windows/main_window.py`, and `ui/styles/themes.py` (mostly stylesheet data).
 

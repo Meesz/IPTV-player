@@ -1,6 +1,6 @@
 # Refactoring Walkthrough
 
-This note records the high-level v2 refactor direction. For current architecture details, use [docs/architecture.md](docs/architecture.md). For setup and commands, use [README.md](README.md) and [docs/development.md](docs/development.md).
+This note records the high-level v2 refactor direction. For current architecture details, use [docs/architecture.md](../architecture.md). For setup and commands, use [README.md](../../README.md) and [docs/development.md](../development.md).
 
 ## Refactor Goal
 
