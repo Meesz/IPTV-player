@@ -157,14 +157,12 @@ class SQLiteConnection:
                     CREATE INDEX IF NOT EXISTS ix_recent_channels_played_at
                         ON recent_channels (played_at DESC);
 
-                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_file', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_path', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('epg_url', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_url', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_epg_loaded_at', '');
-                    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_is_url', 'false');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_source_type', 'file');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('last_playlist_identity', '');
                     INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark');

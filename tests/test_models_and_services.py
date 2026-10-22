@@ -347,8 +347,6 @@ def test_settings_service_legacy_key_sync(tmp_path):
     # ... and the legacy mirror keys are written to the repository.
     assert settings_repo.get_setting("epg_url") == "https://example.com/epg.xml"
     assert settings_repo.get_setting("last_epg_url") == "https://example.com/epg.xml"
-    assert settings_repo.get_setting("last_playlist") == "https://example.com/list.m3u"
-    assert settings_repo.get_setting("last_playlist_is_url") == "true"
     assert settings_repo.get_setting("last_playlist_identity") == "url::https://example.com/list.m3u"
 
 
@@ -1451,13 +1449,7 @@ def test_main_controller_prefers_saved_identity_over_legacy_path():
 
     class _SettingsController:
         def get_setting(self, key, default=None):
-            values = {
-                "last_playlist_identity": saved.source_identity,
-                "last_playlist_source_type": "xtream",
-                "last_playlist_path": "",
-                "last_playlist": "",
-                "last_playlist_is_url": "false",
-            }
+            values = {"last_playlist_identity": saved.source_identity}
             return values.get(key, default)
 
     controller = MainController(_PlaylistController(), _SettingsController())

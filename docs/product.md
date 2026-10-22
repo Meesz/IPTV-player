@@ -54,7 +54,7 @@ The app currently supports:
 
 1. Load an XMLTV file from the EPG menu, or enter an EPG URL in the toolbar. For an Xtream source with no manual guide, the app loads the provider guide after the playlist loads; clicking "Load guide" with an empty URL field switches back to it.
 2. The app downloads/parses the source in a background task.
-3. Parsed programs are cached in SQLite and current program data appears in the channel list and now-playing area when channel IDs match.
+3. Parsed programs are cached in SQLite and current program data appears in the channel list and now-playing area when channel IDs match. The cache survives restarts; manual guides reload only on an explicit load or refresh, and the Xtream provider guide is re-downloaded on playlist load once it is older than 12 hours.
 
 ### Browse and play channels
 

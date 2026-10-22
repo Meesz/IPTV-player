@@ -1,6 +1,8 @@
 # Phase 3 Status
 
-This file used to be the Phase 3 backlog. It now records which Phase 3 items are implemented and which follow-up risks remain. Use [roadmap.md](roadmap.md) as the canonical future-work list.
+Point-in-time note, archived 2026-10-20. Some statements below are outdated (for example, mypy is now a blocking error-count ratchet in CI). For current guidance use [docs/architecture.md](../architecture.md) and [docs/roadmap.md](../roadmap.md).
+
+This file used to be the Phase 3 backlog. It recorded which Phase 3 items were implemented and which follow-up risks remained.
 
 ## Completed
 
@@ -62,4 +64,4 @@ This file used to be the Phase 3 backlog. It now records which Phase 3 items are
 
 ## Current Follow-Up Direction
 
-Use [roadmap.md](roadmap.md) for active planning. Near-term work should focus on dependency/tooling cleanup, CI test coverage, packaging decisions, diagnostics, and continued playback/platform hardening.
+Use [roadmap.md](../roadmap.md) for active planning. Near-term work should focus on dependency/tooling cleanup, CI test coverage, packaging decisions, diagnostics, and continued playback/platform hardening.

@@ -58,13 +58,13 @@ python -m app.main
 
 ## Using the app
 
-**Add a source.** Click **Sources** in the header (or press `Ctrl+P`, or use File > Playlist Manager). In the Playlist Manager, open the **Add** menu and choose **From File...** (`.m3u`, `.m3u8`), **From URL...**, or **From Xtream Codes...**. The Xtream dialog asks for server URL, username, password, and output format; when editing a saved source, leaving the password blank keeps the saved one. The manager also offers Edit (rename), Remove, **Test Source**, and **Load Playlist**; right-clicking a source offers Edit, Test Source, and Remove.
+**Add a source.** Click **Sources** in the header (or press `Ctrl+P`, or use File > Playlist Manager). In the Playlist Manager, open the **Add** menu and choose **From File...** (`.m3u`, `.m3u8`), **From URL...**, or **From Xtream Codes...**. The Xtream dialog asks for server URL, username, password, and output format; when editing a saved source, leaving the password blank keeps the saved one. The manager also offers **Edit** (rename, then change the file, URL, or Xtream details; the location of the currently active source cannot be changed), Remove, **Test Source**, and **Load Playlist**; right-clicking a source offers Edit, Test Source, and Remove.
 
-**Add a program guide (EPG).** Paste an XMLTV URL into the header's "XMLTV guide URL" field and click **Load guide**, or use File > EPG > **Load from File...**. File > EPG > **Refresh Last Source** (`Ctrl+R`) reloads the last guide. For Xtream sources, leaving the field empty loads the provider's guide. A guide older than 12 hours is refreshed, and a status chip shows the EPG state.
+**Add a program guide (EPG).** Paste an XMLTV URL into the header's "XMLTV guide URL" field and click **Load guide**, or use EPG > **Load from File...**. EPG > **Refresh Last Source** (`Ctrl+R`) reloads the last guide. Parsed guide data is cached in the database, so it is still shown after a restart; manual file/URL guides are only re-downloaded when you load or refresh them. For an Xtream source with no manual guide, the provider's guide loads automatically after the playlist loads, and is downloaded again on a later playlist load once the cached copy is older than 12 hours; leaving the URL field empty and clicking **Load guide** switches back to it. A status chip shows when the guide was last updated.
 
 **Browse.** The library has **Channels**, **Favorites**, and **Recent** tabs (Recent holds the last 12 channels). Pick a category from the searchable **Category** picker (or "All"), type in "Search channels or groups" (`Ctrl+L` focuses it), and sort A-Z, Z-A, by Group, or Favorites First. "Search within category" is on by default; turn it off to search all channels.
 
-**Play.** Double-click a channel, or enable View > **Play on Single Click**. The player has play, mute, fullscreen, **Retry stream**, **Copy stream URL**, and **Channel info** buttons. Mark a favorite with the star **Favorite** button in the channel details panel. The View menu also toggles "Show Current Program in Lists" and "Show Library Panel".
+**Play.** Double-click a channel, or enable View > **Play on Single Click**. The player has play, stop, mute, volume, fullscreen, **Retry stream**, **Copy stream URL**, and **Channel info** buttons. Mark a favorite with the star **Favorite** button in the channel details panel. The View menu also toggles "Show Current Program in Lists" and "Show Library Panel".
 
 ### Keyboard shortcuts
 
@@ -74,7 +74,7 @@ python -m app.main
 | `Ctrl+R` | Refresh last EPG source |
 | `Ctrl+L` | Focus channel search |
 | `Ctrl+Q` | Quit |
-| `Space` | Play / pause |
+| `Space` | Play (or restart) the selected channel; there is no pause |
 | `M` | Mute |
 | `F` | Fullscreen |
 | `Esc` | Exit fullscreen |
@@ -164,9 +164,9 @@ Near-term work focuses on dependency/tooling cleanup, stronger integration tests
 - [Roadmap](docs/roadmap.md)
 - [Coding agent guide](AGENTS.md)
 
-Historical, point-in-time reports (not current guidance): [Phase 3 status](docs/phase3.md),
+Historical, point-in-time reports (not current guidance): [Phase 3 status](docs/archive/phase3.md),
 [refactoring walkthrough](docs/archive/walkthrough.md), [production readiness review](docs/archive/PRODUCTION_READINESS.md),
-[test audit](docs/archive/TEST_AUDIT.md), [UI audit](docs/archive/UI_AUDIT.md), and [performance audit](docs/archive/PERFORMANCE_AUDIT.md).
+test audits ([first](docs/archive/TEST_AUDIT.md), [2026-10-20](docs/archive/TEST_AUDIT_2026-10-20.md)), [UI audit](docs/archive/UI_AUDIT.md), and [performance audit](docs/archive/PERFORMANCE_AUDIT.md).
 
 ## License
 
