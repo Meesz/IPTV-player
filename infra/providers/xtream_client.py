@@ -338,14 +338,6 @@ class XtreamClient:
             raise ValidationError("Xtream authentication failed. Check the server URL, username, and password.")
 
     @staticmethod
-    def _build_live_stream_url(credentials: XtreamCredentials, stream_id: str) -> str:
-        normalized = credentials.normalized()
-        username = quote(normalized.username, safe="")
-        password = quote(normalized.password, safe="")
-        encoded_stream_id = quote(str(stream_id).strip(), safe="")
-        return f"{normalized.server_url}/live/{username}/{password}/{encoded_stream_id}.{normalized.output}"
-
-    @staticmethod
     def _to_int(value: Any) -> int:
         try:
             return int(str(value).strip())

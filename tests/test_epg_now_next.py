@@ -160,7 +160,8 @@ def test_channel_missing_from_memory_is_looked_up_in_database(tmp_path):
     repository = EPGRepository(db)
     service = EPGService(repository)
     service.load_epg_from_path(str(_write_xmltv(tmp_path)))
-    repository.save_program("other", Program(title="Cached only", start_time=T10, end_time=T12))
+    # Replaces the cache, so "other" exists only in the database, never in memory.
+    repository.save_all({"other": [Program(title="Cached only", start_time=T10, end_time=T12)]})
 
     assert service.get_program_for_channel("other", current_time=T11).title == "Cached only"
     assert service.get_program_for_channel("unknown", current_time=T11) is None

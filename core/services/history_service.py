@@ -14,6 +14,3 @@ class HistoryService:
 
     def get_recent_channels(self, limit: int = 12) -> list[Channel]:
         return self.repository.get_recent_channels(limit=limit)
-
-    def get_last_played_at(self) -> datetime | None:
-        return self.repository.get_last_played_at()

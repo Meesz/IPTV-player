@@ -3,9 +3,8 @@
 Kills M3 (empty Xtream password accepted) and M4 (banned/disabled account accepted).
 """
 
-import json
-
 import pytest
+from _http import json_response
 
 from core.errors import ParsingError, ValidationError
 from core.models import PlaylistReference, PlaylistSourceType, XtreamCredentials
@@ -63,20 +62,7 @@ def _validate_with_payload(monkeypatch, payload):
     """Run XtreamClient.validate_credentials against a canned authentication response."""
     client = XtreamClient()
 
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps(payload).encode()
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: json_response(payload))
     credentials = XtreamCredentials(server_url="https://provider.example", username="alice", password="secret")
     return client.validate_credentials(credentials)
 

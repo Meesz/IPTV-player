@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 
 from core.errors import RepositoryError
 from core.models import Channel
@@ -82,14 +81,3 @@ class HistoryRepository:
         except Exception as exc:
             logger.error("Failed to read recent channels: %s", exc)
             raise RepositoryError("Failed to read recent channels") from exc
-
-    def get_last_played_at(self) -> datetime | None:
-        try:
-            with self.db.get_connection() as conn:
-                row = conn.execute("SELECT MAX(played_at) AS played_at FROM recent_channels").fetchone()
-                if not row or row["played_at"] is None:
-                    return None
-                return datetime.fromtimestamp(row["played_at"])
-        except Exception as exc:
-            logger.error("Failed to query playback history timestamp: %s", exc)
-            raise RepositoryError("Failed to query playback history") from exc

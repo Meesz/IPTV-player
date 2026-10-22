@@ -13,7 +13,7 @@ packaging/release workflow. Entry point: `app/main.py` (`python -m app.main`).
 | `infra/` | SQLite repositories + embedded migrations (`db/sqlite_connection.py`), M3U/XMLTV parsers, Xtream client, VLC setup (`playback/vlc_backend.py`) |
 | `ui/controllers/` | Qt signal orchestration and background tasks |
 | `ui/widgets/`, `ui/windows/`, `ui/dialogs/`, `ui/styles/`, `ui/utils/` | Presentation |
-| `tests/` | Flat pytest suite; `conftest.py` provides the `qapp` fixture, sets offscreen Qt, and redirects `Path.home()` to a temp dir for every test |
+| `tests/` | Flat pytest suite; `conftest.py` provides the `qapp` fixture, sets offscreen Qt, redirects `Path.home()` to a temp dir and closes leaked top-level widgets after every test; `_http.py` is the shared fake `requests` response |
 
 ## Commands
 
@@ -43,7 +43,8 @@ Ruff config and rule rationale live in `pyproject.toml`; pre-commit runs ruff on
   `QStyledItemDelegate`); never per-row widgets.
 - Never log Xtream passwords or channel URLs. `core/redaction.py` masks only userinfo and
   query secrets; Xtream stream URLs carry the password in the path.
-  `PlaylistReference.to_settings_value()` intentionally omits the password.
+  Settings store the active playlist by `source_identity`, which omits the password;
+  `last_channel_url` holds the raw stream URL (password included for Xtream).
 - SQLite migrations are embedded in `SQLiteConnection`; there are no migration files.
 - Tests use `tmp_path` databases and mocked `requests`; never touch `~/.simple_iptv/`.
   Prefer service/repository/controller tests over anything needing a media runtime.

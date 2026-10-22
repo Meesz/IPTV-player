@@ -12,27 +12,6 @@ class EPGRepository:
     def __init__(self, db: SQLiteConnection):
         self.db = db
 
-    def save_program(self, channel_id: str, program: Program) -> None:
-        try:
-            with self.db.get_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO epg_data
-                    (channel_id, start_time, end_time, title, description)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        channel_id,
-                        int(self._normalize_time(program.start_time).timestamp()),
-                        int(self._normalize_time(program.end_time).timestamp()),
-                        program.title,
-                        program.description,
-                    ),
-                )
-        except Exception as exc:
-            logger.error("Failed to save program for channel %s: %s", channel_id, exc)
-            raise RepositoryError("Failed to save EPG program") from exc
-
     def save_all(self, programs_by_channel: dict[str, list[Program]]) -> None:
         try:
             with self.db.get_connection() as conn:

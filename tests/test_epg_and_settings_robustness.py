@@ -1,20 +1,20 @@
-"""Low-severity correctness alignments (Qt-free).
+"""EPG cache correctness (Qt-free).
 
 1. EPGRepository.get_upcoming_programs must exclude the currently-airing
    program so it matches the in-memory EPGChannel path and is not duplicated
    with the now-playing view after a restart (DB-cache path).
-2. PlaylistReference.from_settings_value must degrade gracefully on an
-   unrecognized source_type instead of raising ValueError.
+2. A second guide load must replace the SQLite guide cache, and a load cancelled
+   after parsing must leave the previous cache intact.
 """
 
-import json
 import re
+from concurrent.futures import CancelledError
 from datetime import UTC, datetime
 
 import pytest
 
 from core.errors import ParsingError
-from core.models import EPGChannel, PlaylistReference, PlaylistSourceType, Program
+from core.models import EPGChannel, Program
 from core.services.epg_service import EPGService
 from infra.db.epg_repository import EPGRepository
 from infra.db.sqlite_connection import SQLiteConnection
@@ -47,34 +47,6 @@ def test_db_upcoming_excludes_currently_airing_and_matches_memory(tmp_path):
 
     assert db_upcoming == ["Later"]
     assert db_upcoming == memory_upcoming
-
-
-def test_from_settings_value_degrades_on_unknown_source_type():
-    reference = PlaylistReference.from_settings_value(
-        json.dumps({"source_type": "bogus", "path": "https://example.com/list.m3u"})
-    )
-
-    assert reference is not None
-    assert reference.source_type == PlaylistSourceType.URL
-    assert reference.path == "https://example.com/list.m3u"
-
-
-def test_from_settings_value_unknown_type_file_path_defaults_to_file():
-    reference = PlaylistReference.from_settings_value(
-        json.dumps({"source_type": "future_kind", "path": "/tmp/list.m3u"})
-    )
-
-    assert reference is not None
-    assert reference.source_type == PlaylistSourceType.FILE
-
-
-def test_from_settings_value_still_reads_known_types():
-    reference = PlaylistReference.from_settings_value(
-        json.dumps({"source_type": "url", "path": "https://example.com/list.m3u"})
-    )
-
-    assert reference is not None
-    assert reference.source_type == PlaylistSourceType.URL
 
 
 def _epg_service(tmp_path):
@@ -132,3 +104,51 @@ def test_load_epg_malformed_xml_raises_parsing_error(tmp_path):
         _epg_service(tmp_path).load_epg_from_path(str(xml_path))
 
     assert re.search(r"line \d+, column \d+", str(exc_info.value.__cause__))
+
+
+def _write_guide(path, channel_id: str, title: str):
+    path.write_text(
+        f'<tv><programme start="20260401100000 +0000" stop="20260401110000 +0000" channel="{channel_id}">'
+        f"<title>{title}</title></programme></tv>",
+        encoding="utf-8",
+    )
+    return str(path)
+
+
+def test_second_guide_load_replaces_cached_guide(tmp_path):
+    guide_a = _write_guide(tmp_path / "a.xml", "a", "Guide A")
+    guide_b = _write_guide(tmp_path / "b.xml", "b", "Guide B")
+    service = _epg_service(tmp_path)
+
+    service.load_epg_from_path(guide_a)
+    service.load_epg_from_path(guide_b)
+
+    # A fresh repository reads only what was persisted, as after a restart.
+    repository = EPGRepository(SQLiteConnection(db_path=tmp_path / "epg.sqlite"))
+    assert repository.get_current_program("a", current_time=_NOW) is None
+    current_b = repository.get_current_program("b", current_time=_NOW)
+    assert current_b is not None
+    assert current_b.title == "Guide B"
+
+
+def test_guide_load_cancelled_after_parse_keeps_previous_cache(tmp_path):
+    guide_a = _write_guide(tmp_path / "a.xml", "a", "Guide A")
+    guide_b = _write_guide(tmp_path / "b.xml", "b", "Guide B")
+    service = _epg_service(tmp_path)
+    service.load_epg_from_path(guide_a)
+
+    # Cancelled once parsing is under way, i.e. superseded before the cache save.
+    progress: list[str] = []
+    with pytest.raises(CancelledError):
+        service.load_epg_from_path(
+            guide_b,
+            progress_callback=progress.append,
+            cancel_callback=lambda: "Parsing EPG data" in progress,
+        )
+
+    repository = EPGRepository(SQLiteConnection(db_path=tmp_path / "epg.sqlite"))
+    current_a = repository.get_current_program("a", current_time=_NOW)
+    assert current_a is not None
+    assert current_a.title == "Guide A"
+    assert repository.get_current_program("b", current_time=_NOW) is None
+    assert service.get_program_for_channel("a", current_time=_NOW) is not None

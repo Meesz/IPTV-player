@@ -103,6 +103,73 @@ def test_player_logs_reconnects_and_final_error_without_stream_url(player, caplo
     assert "SECRETTOKEN" not in caplog.text
 
 
+def test_player_reconnects_with_backoff_until_cap_then_gives_up(player):
+    media_new = player.instance.media_new
+    player.play(SECRET_STREAM_URL)
+    delays: list[int] = []
+
+    for _ in range(player.max_reconnect_attempts):
+        player._handle_playback_error("Media playback failed")
+        assert player.reconnect_timer.isActive()
+        delays.append(player.reconnect_timer.interval())
+        player.reconnect_timer.timeout.emit()
+
+    assert player.max_reconnect_attempts == 5
+    assert delays == [2000, 4000, 8000, 16000, 30000]
+    assert media_new.call_count == 1 + player.max_reconnect_attempts
+
+    player._handle_playback_error("Media playback failed")
+
+    assert player.current_state == "error"
+    assert not player.reconnect_timer.isActive()
+    assert media_new.call_count == 1 + player.max_reconnect_attempts
+
+
+def test_player_reconnect_budget_resets_once_stream_plays(player):
+    player.play(SECRET_STREAM_URL)
+    player._handle_playback_error("Media playback failed")
+    player.reconnect_timer.timeout.emit()
+    assert player.reconnect_attempts == 1
+
+    player._on_media_playing()
+    player._handle_playback_error("Media playback failed")
+
+    assert player.reconnect_attempts == 1
+    assert player.reconnect_timer.interval() == 2000
+
+
+def test_player_stop_cancels_pending_reconnect(player):
+    player.play(SECRET_STREAM_URL)
+    player._handle_playback_error("Media playback failed")
+    assert player.reconnect_timer.isActive()
+
+    player.stop()
+
+    assert not player.reconnect_timer.isActive()
+    assert player.reconnect_attempts == 0
+    assert player.current_state == "idle"
+    assert player.instance.media_new.call_count == 1
+
+
+def test_player_toggle_mute_sets_and_returns_new_state(player):
+    player.player.audio_get_mute.return_value = 0
+
+    assert player.toggle_mute() is True
+    player.player.audio_set_mute.assert_called_once_with(True)
+
+
+def test_player_start_failure_logs_without_stream_url(player, caplog):
+    # VLC exception text can echo the stream URL, whose path carries the Xtream password.
+    player.instance.media_new.side_effect = RuntimeError(f"cannot open {SECRET_STREAM_URL}")
+
+    with caplog.at_level(logging.DEBUG):
+        player.play(SECRET_STREAM_URL)
+
+    assert "VLC failed to start stream: RuntimeError" in caplog.text
+    assert player.current_state == "reconnecting"
+    assert "SECRETTOKEN" not in caplog.text
+
+
 class _BrokenDb:
     def get_connection(self):
         raise sqlite3.OperationalError("database is locked")
@@ -252,7 +319,7 @@ def test_player_without_vlc_initialises_and_ignores_controls(qapp, monkeypatch):
         widget.play(SECRET_STREAM_URL)
         widget.pause()
         widget.set_volume(50)
-        assert widget.toggle_mute() is True
+        assert widget.toggle_mute() is False
         assert widget.toggle_fullscreen() is False
         widget.stop()
         assert widget.retry_now() is False
