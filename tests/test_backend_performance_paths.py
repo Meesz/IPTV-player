@@ -26,8 +26,6 @@ from infra.providers.xtream_client import XtreamClient
         ("20240115103000 -0530", datetime(2024, 1, 15, 16, 0, 0, tzinfo=UTC)),
         ("202401151030 +0200", datetime(2024, 1, 15, 8, 30, 0, tzinfo=UTC)),
         ("20240115103000 +0100 trailing", datetime(2024, 1, 15, 9, 30, 0, tzinfo=UTC)),
-        ("20240115103000garbage", datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)),
-        ("2024011510300", datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)),
         ("20240229235959", datetime(2024, 2, 29, 23, 59, 59, tzinfo=UTC)),
         ("20240101000000 +0100", datetime(2023, 12, 31, 23, 0, 0, tzinfo=UTC)),
     ],
@@ -37,6 +35,19 @@ def test_parse_date_accepted_inputs(raw, expected):
 
     assert parsed == expected
     assert parsed.utcoffset() == timedelta(0)
+
+
+# Deliberate tolerance: real-world guides are messy, so anything after a valid 14- or
+# 12-digit prefix is ignored rather than dropping the programme.
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("20240115103000garbage", datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)),
+        ("2024011510300", datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)),  # 13 digits: 12-digit prefix wins
+    ],
+)
+def test_parse_date_tolerates_trailing_junk_after_valid_prefix(raw, expected):
+    assert EPGParser.parse_date(raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -261,7 +272,6 @@ def test_xtream_live_urls_are_unchanged(monkeypatch, server, expected_base):
     assert [c.name for c in channels] == ["One", "Two"]
     assert channels[0].url == f"{expected_base}/live/us%20er/p%40ss%2Fw%3Ard/12.m3u8"
     assert channels[1].url == f"{expected_base}/live/us%20er/p%40ss%2Fw%3Ard/a%2Fb.m3u8"
-    assert channels[0].url == XtreamClient._build_live_stream_url(credentials, "12")
     assert (channels[0].group, channels[0].epg_id, channels[0].channel_number) == ("News", "one.uk", 3)
 
 

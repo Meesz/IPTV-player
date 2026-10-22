@@ -127,7 +127,7 @@ Startup errors are logged and shown as critical dialogs before the app exits. Ru
 The app is local-first and has no server-side auth boundary. The main sensitive data is Xtream credentials:
 
 - Passwords are stored in the local SQLite database for source reloads.
-- `PlaylistReference.to_settings_value()` omits the password.
+- Settings store the active playlist by `PlaylistReference.source_identity` (`xtream::<server>::<user>::<output>`), which omits the password. `last_channel_url` stores the last played stream URL as-is; for Xtream that path contains the password, like the `playlists` table.
 - Xtream logging is designed to redact passwords and avoid logging raw credential URLs.
 - `app/main.py` installs `RedactingFormatter` (`core/redaction.py`) on both the console and rotating file log handlers. It applies `redact_text` to the whole formatted record, including chained tracebacks. It masks only query-style passwords and userinfo passwords; path-embedded Xtream stream passwords are not masked, so call sites must still not log channel URLs.
 - On POSIX, `SQLiteConnection` creates the data directory with mode 0700 and sets `database.db` (and `-wal`/`-shm` files when present) to 0600. The directory is chmod-ed only for the default `~/.simple_iptv` location, not for a caller-supplied parent. Failures to set modes are logged as warnings. The database is not encrypted, and no modes are changed on Windows.

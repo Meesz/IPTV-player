@@ -1,4 +1,3 @@
-import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -146,59 +145,6 @@ class PlaylistReference:
             return self.normalized_url()
         return self.normalized_xtream().redacted_summary()
 
-    def to_settings_value(self) -> str:
-        payload = {
-            "source_type": self.source_type.value,
-            "path": (self.normalized_url() if self.source_type == PlaylistSourceType.URL else self.normalized_path()),
-            "source_identity": self.source_identity,
-        }
-        if self.source_type == PlaylistSourceType.XTREAM:
-            creds = self.normalized_xtream()
-            payload["xtream"] = {
-                "server_url": creds.server_url,
-                "username": creds.username,
-                "output": creds.output,
-            }
-        return json.dumps(payload, separators=(",", ":"), sort_keys=True)
-
-    @classmethod
-    def from_settings_value(cls, value: str) -> "PlaylistReference | None":
-        raw = str(value).strip()
-        if not raw:
-            return None
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            source_type = PlaylistSourceType.URL if raw.startswith(("http://", "https://")) else PlaylistSourceType.FILE
-            return cls(name="Playlist", path=raw, source_type=source_type)
-
-        raw_source_type = str(payload.get("source_type", PlaylistSourceType.FILE.value))
-        try:
-            source_type = PlaylistSourceType(raw_source_type)
-        except ValueError:
-            # Degrade gracefully on an unknown/forward-incompatible source_type,
-            # mirroring the malformed-JSON branch above, so corrupted settings
-            # cannot crash the caller.
-            path_value = str(payload.get("path", ""))
-            source_type = (
-                PlaylistSourceType.URL if path_value.startswith(("http://", "https://")) else PlaylistSourceType.FILE
-            )
-        xtream_payload = payload.get("xtream")
-        xtream = None
-        if isinstance(xtream_payload, dict):
-            xtream = XtreamCredentials(
-                server_url=str(xtream_payload.get("server_url", "")),
-                username=str(xtream_payload.get("username", "")),
-                password="",
-                output=str(xtream_payload.get("output", "ts")),
-            )
-        return cls(
-            name=str(payload.get("name", "Playlist")),
-            path=str(payload.get("path", "")),
-            source_type=source_type,
-            xtream=xtream,
-        )
-
 
 @dataclass(frozen=True)
 class ParseWarning:
@@ -296,7 +242,6 @@ class Playlist:
     _categories: dict[str, list[Channel]] = field(default_factory=dict)
     _categories_set: set[str] = field(default_factory=set)
     _url_index: dict[str, Channel] = field(default_factory=dict)
-    _name_index: dict[str, list[Channel]] = field(default_factory=dict)
 
     def __post_init__(self):
         self._rebuild_indexes()
@@ -318,15 +263,10 @@ class Playlist:
 
         self._url_index[channel.url] = channel
 
-        if channel.name not in self._name_index:
-            self._name_index[channel.name] = []
-        self._name_index[channel.name].append(channel)
-
     def _rebuild_indexes(self) -> None:
         self._categories.clear()
         self._categories_set.clear()
         self._url_index.clear()
-        self._name_index.clear()
         for channel in self.channels:
             self._update_indexes(channel)
 
@@ -350,10 +290,6 @@ class Program:
     end_time: datetime
     description: str = ""
     category: str = ""
-
-    @property
-    def duration_minutes(self) -> int:
-        return int((self.end_time - self.start_time).total_seconds() / 60)
 
 
 @dataclass

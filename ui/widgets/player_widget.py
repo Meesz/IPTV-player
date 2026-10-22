@@ -338,6 +338,9 @@ class PlayerWidget(QFrame):
             self.player.audio_set_mute(bool(muted))
 
     def toggle_mute(self) -> bool:
+        """Toggle mute and return the resulting state; without VLC nothing is muted."""
+        if not self.vlc_available or not self.player:
+            return False
         next_state = not self.is_muted()
         self.set_muted(next_state)
         return next_state

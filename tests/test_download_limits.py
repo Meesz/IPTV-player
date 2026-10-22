@@ -7,6 +7,7 @@ import tempfile
 
 import pytest
 import requests
+from _http import FakeResponse
 
 from core import limits
 from core.bounded_download import USER_AGENT, read_bounded
@@ -27,22 +28,9 @@ EPG_XML = (
 )
 
 
-class _StreamResponse:
-    def __init__(self, body: bytes, *, content_length: str | None = None, chunk_size: int = 10):
-        self._body = body
-        self._chunk_size = chunk_size
-        self.headers = {} if content_length is None else {"Content-Length": content_length}
-        self.closed = False
-
-    def raise_for_status(self) -> None:
-        return None
-
-    def iter_content(self, chunk_size: int = 1):
-        for start in range(0, len(self._body), self._chunk_size):
-            yield self._body[start : start + self._chunk_size]
-
-    def close(self) -> None:
-        self.closed = True
+def _stream_response(body: bytes, *, content_length: str | None = None) -> FakeResponse:
+    headers = {} if content_length is None else {"Content-Length": content_length}
+    return FakeResponse(body, headers=headers, chunk_size=10)
 
 
 @pytest.fixture
@@ -75,14 +63,14 @@ def _install_playlist_get(monkeypatch, response):
 
 
 def test_read_bounded_collects_body_and_closes():
-    response = _StreamResponse(b"x" * 25)
+    response = _stream_response(b"x" * 25)
 
     assert read_bounded(response, max_bytes=100, deadline_seconds=10, description="Test") == b"x" * 25
     assert response.closed
 
 
 def test_read_bounded_writes_to_sink():
-    response = _StreamResponse(b"y" * 25)
+    response = _stream_response(b"y" * 25)
     sink = io.BytesIO()
 
     assert read_bounded(response, max_bytes=100, deadline_seconds=10, description="Test", sink=sink) == b""
@@ -90,7 +78,7 @@ def test_read_bounded_writes_to_sink():
 
 
 def test_read_bounded_ignores_malformed_content_length():
-    response = _StreamResponse(b"z" * 5, content_length="not-a-number")
+    response = _stream_response(b"z" * 5, content_length="not-a-number")
 
     assert read_bounded(response, max_bytes=100, deadline_seconds=10, description="Test") == b"z" * 5
 
@@ -98,7 +86,7 @@ def test_read_bounded_ignores_malformed_content_length():
 def test_read_bounded_deadline_uses_monotonic_clock_and_closes(monkeypatch):
     ticks = iter([0.0, 1.0, 50.0, 100.0])
     monkeypatch.setattr("core.bounded_download.time.monotonic", lambda: next(ticks))
-    response = _StreamResponse(b"x" * 100)
+    response = _stream_response(b"x" * 100)
 
     with pytest.raises(NetworkError, match="too long"):
         read_bounded(response, max_bytes=1000, deadline_seconds=10, description="Test")
@@ -108,7 +96,7 @@ def test_read_bounded_deadline_uses_monotonic_clock_and_closes(monkeypatch):
 
 def test_playlist_over_budget_by_content_length_is_not_retried(monkeypatch, temp_dir):
     monkeypatch.setattr(limits, "MAX_PLAYLIST_DOWNLOAD_BYTES", 10)
-    response = _StreamResponse(M3U_BODY, content_length=str(len(M3U_BODY)))
+    response = _stream_response(M3U_BODY, content_length=str(len(M3U_BODY)))
     calls = _install_playlist_get(monkeypatch, response)
 
     with pytest.raises(NetworkError, match="too large"):
@@ -121,7 +109,7 @@ def test_playlist_over_budget_by_content_length_is_not_retried(monkeypatch, temp
 
 def test_playlist_over_budget_by_streamed_chunks_is_not_retried(monkeypatch, temp_dir):
     monkeypatch.setattr(limits, "MAX_PLAYLIST_DOWNLOAD_BYTES", 20)
-    response = _StreamResponse(M3U_BODY)  # no Content-Length header
+    response = _stream_response(M3U_BODY)  # no Content-Length header
     calls = _install_playlist_get(monkeypatch, response)
 
     with pytest.raises(NetworkError, match="too large"):
@@ -133,7 +121,7 @@ def test_playlist_over_budget_by_streamed_chunks_is_not_retried(monkeypatch, tem
 
 def test_playlist_deadline_exceeded_is_not_retried(monkeypatch, temp_dir):
     monkeypatch.setattr(limits, "PLAYLIST_DOWNLOAD_DEADLINE_SECONDS", -1)
-    response = _StreamResponse(M3U_BODY)
+    response = _stream_response(M3U_BODY)
     calls = _install_playlist_get(monkeypatch, response)
 
     with pytest.raises(NetworkError, match="too long"):
@@ -144,7 +132,7 @@ def test_playlist_deadline_exceeded_is_not_retried(monkeypatch, temp_dir):
 
 
 def test_playlist_mid_stream_error_is_retried_and_mapped(monkeypatch, temp_dir):
-    class _Broken(_StreamResponse):
+    class _Broken(FakeResponse):
         def iter_content(self, chunk_size: int = 1):
             yield b"#EXTM3U\n"
             raise requests.exceptions.ChunkedEncodingError("connection broken")
@@ -158,10 +146,9 @@ def test_playlist_mid_stream_error_is_retried_and_mapped(monkeypatch, temp_dir):
     assert len(calls) == 3
 
 
-class _StatusResponse(_StreamResponse):
+class _StatusResponse(FakeResponse):
     def __init__(self, status_code: int):
-        super().__init__(b"")
-        self.status_code = status_code
+        super().__init__(b"", status_code=status_code)
 
     def raise_for_status(self) -> None:
         raise requests.exceptions.HTTPError(f"{self.status_code} Error for url: {PLAYLIST_URL}", response=self)  # type: ignore[arg-type]
@@ -195,18 +182,16 @@ def test_playlist_404_is_not_retried(monkeypatch):
 
 @pytest.mark.parametrize("status", [408, 429, 500, 503])
 def test_playlist_transient_http_status_is_retried(monkeypatch, status):
-    calls = _install_sequence(monkeypatch, [_StatusResponse(status), _StreamResponse(M3U_BODY)])
+    calls = _install_sequence(monkeypatch, [_StatusResponse(status), _stream_response(M3U_BODY)])
 
     assert _playlist_service()._download_with_retries(PLAYLIST_URL) == M3U_BODY
     assert len(calls) == 2
 
 
 def test_playlist_http_error_without_response_is_retried(monkeypatch):
-    class _NoResponse(_StreamResponse):
-        def raise_for_status(self) -> None:
-            raise requests.exceptions.HTTPError("no response attached")
+    no_response = FakeResponse(error=requests.exceptions.HTTPError("no response attached"))
 
-    calls = _install_sequence(monkeypatch, [_NoResponse(b""), _StreamResponse(M3U_BODY)])
+    calls = _install_sequence(monkeypatch, [no_response, _stream_response(M3U_BODY)])
 
     assert _playlist_service()._download_with_retries(PLAYLIST_URL) == M3U_BODY
     assert len(calls) == 2
@@ -258,7 +243,7 @@ def test_playlist_retry_does_not_sleep_after_cancellation(monkeypatch):
 
 def test_epg_url_over_budget_raises_network_error_and_removes_temp_file(monkeypatch, tmp_path, temp_dir, caplog):
     monkeypatch.setattr(limits, "MAX_EPG_DOWNLOAD_BYTES", 20)
-    response = _StreamResponse(EPG_XML)
+    response = _stream_response(EPG_XML)
     monkeypatch.setattr("core.services.epg_service.requests.get", lambda url, **kwargs: response)
 
     with caplog.at_level(logging.DEBUG), pytest.raises(DownloadLimitError, match="too large"):
@@ -270,7 +255,7 @@ def test_epg_url_over_budget_raises_network_error_and_removes_temp_file(monkeypa
 
 
 def test_epg_url_within_budget_loads(monkeypatch, tmp_path, temp_dir):
-    response = _StreamResponse(EPG_XML)
+    response = _stream_response(EPG_XML)
     monkeypatch.setattr("core.services.epg_service.requests.get", lambda url, **kwargs: response)
     service = _epg_service(tmp_path)
 
@@ -286,7 +271,7 @@ def test_epg_url_download_sends_app_user_agent(monkeypatch, tmp_path, temp_dir):
 
     def fake_get(url, **kwargs):
         seen_headers.append(kwargs.get("headers"))
-        return _StreamResponse(EPG_XML)
+        return _stream_response(EPG_XML)
 
     monkeypatch.setattr("core.services.epg_service.requests.get", fake_get)
     _epg_service(tmp_path).load_epg_from_url(EPG_URL)
@@ -297,7 +282,7 @@ def test_epg_url_download_sends_app_user_agent(monkeypatch, tmp_path, temp_dir):
 def test_xtream_response_over_budget_raises_network_error(monkeypatch):
     monkeypatch.setattr(limits, "MAX_XTREAM_RESPONSE_BYTES", 10)
     client = XtreamClient()
-    response = _StreamResponse(b'{"user_info": {"auth": 1, "status": "Active"}}')
+    response = _stream_response(b'{"user_info": {"auth": 1, "status": "Active"}}')
     response.status_code = 200  # type: ignore[attr-defined]
     monkeypatch.setattr(client.session, "get", lambda url, **kwargs: response)
     credentials = XtreamCredentials(server_url="https://provider.example", username="alice", password="secret")
@@ -312,7 +297,7 @@ def test_xtream_response_over_budget_raises_network_error(monkeypatch):
 def test_xtream_https_retry_over_budget_surfaces_limit_error(monkeypatch):
     monkeypatch.setattr(limits, "MAX_XTREAM_RESPONSE_BYTES", 10)
     client = XtreamClient()
-    big = _StreamResponse(b'{"user_info": {"auth": 1, "status": "Active"}}')
+    big = _stream_response(b'{"user_info": {"auth": 1, "status": "Active"}}')
 
     def fake_get(url, **kwargs):
         if url.startswith("http://"):
@@ -326,8 +311,8 @@ def test_xtream_https_retry_over_budget_surfaces_limit_error(monkeypatch):
         client.validate_credentials(credentials)
 
 
-def _json_response(body: bytes, content_type: str) -> _StreamResponse:
-    response = _StreamResponse(body)
+def _json_response(body: bytes, content_type: str) -> FakeResponse:
+    response = _stream_response(body)
     response.headers["Content-Type"] = content_type
     return response
 
@@ -365,7 +350,7 @@ def test_xtream_json_utf8_without_charset(monkeypatch):
 
 def test_xtream_invalid_json_still_raises_parsing_error(monkeypatch):
     client = XtreamClient()
-    response = _StreamResponse(b"<html>not json</html>")
+    response = _stream_response(b"<html>not json</html>")
     monkeypatch.setattr(client.session, "get", lambda url, **kwargs: response)
     credentials = XtreamCredentials(server_url="https://provider.example", username="alice", password="secret")
 

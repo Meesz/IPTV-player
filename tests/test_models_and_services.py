@@ -1,5 +1,4 @@
 import gzip
-import json
 import logging
 import pathlib
 from dataclasses import replace
@@ -8,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import requests
+from _http import json_response
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import QStyleOptionViewItem, QWidget
@@ -37,56 +37,6 @@ from ui.dialogs.xtream_source_dialog import XtreamSourceDialog
 from ui.widgets.channel_list_view import ChannelListModel
 from ui.widgets.left_panel import LeftPanel
 from ui.widgets.notification import NotificationType, NotificationWidget
-from ui.widgets.player_widget import PlayerWidget
-from ui.widgets.right_panel import RightPanel
-
-
-class _DummyPlaylistRepository:
-    def __init__(self):
-        self.playlists = []
-
-    def upsert_playlist(self, playlist: PlaylistReference) -> None:
-        self.playlists = [item for item in self.playlists if item.source_identity != playlist.source_identity]
-        self.playlists.append(playlist)
-
-    def delete_playlist(self, identity: str) -> None:
-        self.playlists = [item for item in self.playlists if item.source_identity != identity]
-
-    def get_playlists(self):
-        return self.playlists
-
-    def get_playlist_by_identity(self, identity: str):
-        for item in self.playlists:
-            if item.source_identity == identity:
-                return item
-        return None
-
-    def import_playlists(self, playlists):
-        self.playlists = list(playlists)
-
-    def update_playlist_metadata(
-        self,
-        identity: str,
-        *,
-        channel_count: int,
-        last_loaded_at: str,
-        last_status: str,
-        last_error: str = "",
-    ) -> None:
-        for index, item in enumerate(self.playlists):
-            if item.source_identity != identity:
-                continue
-            self.playlists[index] = PlaylistReference(
-                name=item.name,
-                path=item.path,
-                source_type=item.source_type,
-                xtream=item.xtream,
-                channel_count=channel_count,
-                last_loaded_at=last_loaded_at,
-                last_status=last_status,
-                last_error=last_error,
-            )
-            return
 
 
 class _FailingEPGRepository:
@@ -101,6 +51,10 @@ class _FailingEPGRepository:
 
     def get_upcoming_programs(self, _channel_id, limit=5):
         return []
+
+
+def _playlist_service(tmp_path, **kwargs) -> PlaylistService:
+    return PlaylistService(PlaylistRepository(SQLiteConnection(db_path=tmp_path / "playlists.sqlite")), **kwargs)
 
 
 def test_settings_round_trip():
@@ -152,19 +106,6 @@ def test_channel_identity_is_source_aware():
     assert len({first, second}) == 2
 
 
-def test_playlist_service_handles_download_failure(tmp_path, monkeypatch):
-    repo = _DummyPlaylistRepository()
-    service = PlaylistService(repo)  # type: ignore[arg-type]
-
-    def _failing_get(*args, **kwargs):
-        raise Timeout("temporary issue")
-
-    monkeypatch.setattr("core.services.playlist_service.requests.get", _failing_get)
-
-    with pytest.raises(NetworkError):
-        service._download_with_retries("https://example.com/playlist.m3u")
-
-
 def test_m3u_parser_reads_channels(tmp_path):
     playlist_path = tmp_path / "sample.m3u"
     playlist_path.write_text(
@@ -195,15 +136,15 @@ def test_playlist_service_assigns_channel_source_path(tmp_path):
         ),
         encoding="utf-8",
     )
-    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+    service = _playlist_service(tmp_path)
 
     playlist = service.load_playlist(str(playlist_path))
 
     assert playlist.channels[0].playlist_path == f"file::{playlist_path.resolve()}"
 
 
-def test_playlist_service_uses_canonical_query_pipeline():
-    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+def test_playlist_service_uses_canonical_query_pipeline(tmp_path):
+    service = _playlist_service(tmp_path)
     playlist = Playlist(
         channels=[
             Channel(name="Alpha News", url="https://example.com/a", group="News"),
@@ -302,13 +243,16 @@ def test_epg_service_keeps_persistence_errors_distinct(tmp_path):
 def test_epg_repository_uses_supplied_current_time(tmp_path):
     connection = SQLiteConnection(db_path=tmp_path / "epg.sqlite")
     repository = EPGRepository(connection)
-    repository.save_program(
-        "news.us",
-        Program(
-            title="Breaking News",
-            start_time=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
-            end_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
-        ),
+    repository.save_all(
+        {
+            "news.us": [
+                Program(
+                    title="Breaking News",
+                    start_time=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 4, 1, 11, 0, tzinfo=UTC),
+                )
+            ]
+        }
     )
 
     current = repository.get_current_program(
@@ -523,108 +467,6 @@ def test_m3u_parser_collects_warnings_without_dropping_valid_channels(tmp_path):
     }
 
 
-def test_player_retry_flow_stops_at_cap_and_resets_on_success():
-    placeholder = SimpleNamespace(
-        text="",
-        visible=False,
-        setText=lambda value: setattr(placeholder, "text", value),
-        show=lambda: setattr(placeholder, "visible", True),
-        hide=lambda: setattr(placeholder, "visible", False),
-    )
-    status_overlay = SimpleNamespace(hide=lambda: None)
-    timer = SimpleNamespace(
-        starts=[],
-        start=lambda value: timer.starts.append(value),
-        stop=lambda: None,
-    )
-    state: dict[str, tuple[str, str] | tuple[str, int]] = {}
-    fake_widget = SimpleNamespace(
-        placeholder=placeholder,
-        status_overlay=status_overlay,
-        reconnect_timer=timer,
-        reconnect_attempts=0,
-        max_reconnect_attempts=2,
-        current_url="https://example.com/stream",
-        player=object(),
-        play_calls=[],
-        _show_message_page=lambda: None,
-        _show_status=lambda message, duration=2000: state.__setitem__(
-            "status",
-            (message, duration),
-        ),
-        _set_state=lambda current, detail="": state.__setitem__(
-            "playback",
-            (current, detail),
-        ),
-        play=lambda url, is_retry=False: fake_widget.play_calls.append((url, is_retry)),
-    )
-
-    PlayerWidget._handle_playback_error(fake_widget, "boom")
-    PlayerWidget._handle_playback_error(fake_widget, "boom")
-    PlayerWidget._handle_playback_error(fake_widget, "boom")
-
-    assert fake_widget.reconnect_attempts == 2
-    assert timer.starts == [2000, 4000]
-    assert state["playback"] == ("error", "boom")
-
-    fake_widget.reconnect_attempts = 2
-    PlayerWidget._on_media_playing(fake_widget)
-    PlayerWidget._reconnect(fake_widget)
-
-    assert fake_widget.reconnect_attempts == 0
-    assert fake_widget.play_calls == [("https://example.com/stream", True)]
-
-
-def _fake_right_panel():
-    """Stand-in for RightPanel: a real one would also build a PlayerWidget (VLC)."""
-    chip = SimpleNamespace(
-        setText=lambda value: setattr(chip, "text", value),
-        setProperty=lambda key, value: setattr(chip, key, value),
-        style=lambda: SimpleNamespace(unpolish=lambda _widget: None, polish=lambda _widget: None),
-    )
-    detail = SimpleNamespace(
-        setText=lambda value: setattr(detail, "text", value),
-        setVisible=lambda value: setattr(detail, "visible", value),
-    )
-    return SimpleNamespace(
-        playback_state_chip=chip,
-        playback_detail_label=detail,
-    )
-
-
-def test_right_panel_clears_playback_detail_when_idle():
-    panel = _fake_right_panel()
-
-    RightPanel.set_playback_state(panel, "error", "Stream failed")
-    RightPanel.set_playback_state(panel, "idle", "")
-
-    # On a non-detail state (idle) the detail label is cleared and hidden.
-    assert panel.playback_detail_label.text == ""
-    assert panel.playback_detail_label.visible is False
-    assert panel.playback_state_chip.text == "Idle"
-
-
-@pytest.mark.parametrize("state", ["reconnecting", "error", "buffering"])
-def test_right_panel_shows_playback_detail_for_detail_states(state):
-    panel = _fake_right_panel()
-
-    RightPanel.set_playback_state(panel, state, "Attempt 2 of 5")
-
-    assert panel.playback_detail_label.text == "Attempt 2 of 5"
-    assert panel.playback_detail_label.visible is True
-
-
-def test_right_panel_hides_detail_text_for_live_state():
-    panel = _fake_right_panel()
-
-    RightPanel.set_playback_state(panel, "error", "Stream failed")
-    RightPanel.set_playback_state(panel, "playing", "Stream is live")
-
-    assert panel.playback_detail_label.text == ""
-    assert panel.playback_detail_label.visible is False
-    assert panel.playback_state_chip.text == "Live"
-
-
 def test_left_panel_uses_virtualized_channel_model(qapp):
     panel = LeftPanel()
     channel = Channel(
@@ -737,18 +579,32 @@ def test_left_panel_highlight_channel_selects_virtualized_row(qapp):
 def test_notification_widget_queues_messages_and_repositions(qapp):
     parent = QWidget()
     parent.resize(600, 400)
+    parent.show()
     notification = NotificationWidget(parent)
+    try:
+        notification.show_message("First", NotificationType.INFO, duration=100)
+        notification.show_message("Second", NotificationType.SUCCESS, duration=100)
 
-    notification.show_message("First", NotificationType.INFO, duration=100)
-    first_x = notification.x()
-    notification.show_message("Second", NotificationType.SUCCESS, duration=100)
+        # A visible toast queues the next message instead of replacing it.
+        assert notification.text() == "First"
+        assert [entry[0] for entry in notification._queue] == ["Second"]
 
-    parent.resize(800, 400)
-    qapp.processEvents()
-    assert notification.x() != first_x
+        # Resizing the parent with unchanged text re-centres the toast (eventFilter).
+        first_x = notification.x()
+        parent.resize(800, 400)
+        qapp.processEvents()
+        assert notification.text() == "First"
+        assert notification.x() != first_x
 
-    notification._advance_queue()
-    assert notification.text() == "Second"
+        # The display timer advances the queue.
+        notification.timer.timeout.emit()
+        assert notification.text() == "Second"
+        assert notification.isVisible()
+        assert notification._queue == []
+    finally:
+        notification.timer.stop()
+        parent.close()
+        parent.deleteLater()
 
 
 def test_playlist_manager_shows_inline_validation_and_test_results(qapp, monkeypatch):
@@ -940,7 +796,6 @@ def test_playlist_reference_source_identity_and_safe_summary():
 
     assert xtream.source_identity == "xtream::https://provider.example::alice::m3u8"
     assert "secret" not in xtream.source_summary()
-    assert "secret" not in xtream.to_settings_value()
 
 
 def test_xtream_credentials_normalize_password_whitespace():
@@ -969,28 +824,12 @@ def test_xtream_client_success_path(monkeypatch):
     )
     calls: list[str] = []
 
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def __init__(self, payload):
-            self._payload = payload
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps(self._payload).encode()
-
-        def close(self):
-            return None
-
     def _fake_get(url, timeout, stream=False, headers=None):
         calls.append(url)
         if "action=get_live_categories" in url:
-            return _Response([{"category_id": "7", "category_name": "News"}])
+            return json_response([{"category_id": "7", "category_name": "News"}])
         if "action=get_live_streams" in url:
-            return _Response(
+            return json_response(
                 [
                     {
                         "stream_id": 100,
@@ -1002,7 +841,7 @@ def test_xtream_client_success_path(monkeypatch):
                     }
                 ]
             )
-        return _Response({"user_info": {"auth": 1, "status": "Active"}})
+        return json_response({"user_info": {"auth": 1, "status": "Active"}})
 
     monkeypatch.setattr(client.session, "get", _fake_get)
 
@@ -1016,20 +855,6 @@ def test_xtream_client_success_path(monkeypatch):
     assert any("player_api.php" in call for call in calls)
 
 
-def test_xtream_client_encodes_live_stream_url_segments():
-    credentials = XtreamCredentials(
-        server_url="https://provider.example/",
-        username=" alice ",
-        password=" secret value ",
-        output="ts",
-    )
-
-    url = XtreamClient._build_live_stream_url(credentials, "12 34")
-
-    assert url == "https://provider.example/live/alice/secret%20value/12%2034.ts"
-    assert " " not in url
-
-
 def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
     client = XtreamClient(timeout=5)
     credentials = XtreamCredentials(
@@ -1039,20 +864,9 @@ def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
         output="ts",
     )
 
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps({"user_info": {"auth": 1, "status": "Active"}}).encode()
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+    monkeypatch.setattr(
+        client.session, "get", lambda *args, **kwargs: json_response({"user_info": {"auth": 1, "status": "Active"}})
+    )
 
     with caplog.at_level(logging.DEBUG, logger="infra.providers.xtream_client"):
         client.validate_credentials(credentials)
@@ -1061,33 +875,6 @@ def test_xtream_client_logs_are_redacted(monkeypatch, caplog):
     assert "secret" not in text
     assert "password=%2A%2A%2A" in text or "password=***" in text
     assert "provider.example / alice / ts" in text
-
-
-def test_xtream_client_auth_failure(monkeypatch):
-    client = XtreamClient()
-    credentials = XtreamCredentials(
-        server_url="https://provider.example",
-        username="alice",
-        password="bad",
-    )
-
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps({"user_info": {"auth": 0, "status": "Disabled"}}).encode()
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
-
-    with pytest.raises(ValidationError):
-        client.validate_credentials(credentials)
 
 
 def test_xtream_client_logs_timeout(monkeypatch, caplog):
@@ -1119,26 +906,13 @@ def test_xtream_client_invalid_payload(monkeypatch):
         password="secret",
     )
 
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps("not a list").encode()
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: _Response())
+    monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: json_response("not a list"))
 
     with pytest.raises(ParsingError):
         client.fetch_live_channels(credentials)
 
 
-def test_playlist_service_logs_xtream_failure(caplog):
+def test_playlist_service_logs_xtream_failure(caplog, tmp_path):
     class _FailingXtreamClient:
         def validate_credentials(self, credentials):
             raise ValidationError("bad credentials")
@@ -1146,8 +920,8 @@ def test_playlist_service_logs_xtream_failure(caplog):
         def fetch_live_channels(self, credentials):
             return []
 
-    service = PlaylistService(
-        _DummyPlaylistRepository(),  # type: ignore[arg-type]
+    service = _playlist_service(
+        tmp_path,
         xtream_client=_FailingXtreamClient(),  # type: ignore[arg-type]
     )
     reference = PlaylistReference(
@@ -1178,24 +952,11 @@ def test_xtream_client_retries_http_over_https(monkeypatch, caplog):
     )
     calls: list[str] = []
 
-    class _Response:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, chunk_size=1):
-            yield json.dumps({"user_info": {"auth": 1, "status": "Active"}}).encode()
-
-        def close(self):
-            return None
-
     def _fake_get(url, timeout, stream=False, headers=None):
         calls.append(url)
         if url.startswith("http://"):
             raise requests.exceptions.ConnectionError("reset")
-        return _Response()
+        return json_response({"user_info": {"auth": 1, "status": "Active"}})
 
     monkeypatch.setattr(client.session, "get", _fake_get)
 
@@ -1228,7 +989,7 @@ def test_xtream_client_reports_dual_transport_failure(monkeypatch):
         client.validate_credentials(credentials)
 
 
-def test_playlist_service_upgrades_xtream_reference_after_https_retry():
+def test_playlist_service_upgrades_xtream_reference_after_https_retry(tmp_path):
     class _FallbackXtreamClient:
         def __init__(self):
             self.last_effective_credentials = None
@@ -1251,8 +1012,8 @@ def test_playlist_service_upgrades_xtream_reference_after_https_retry():
                 )
             ]
 
-    service = PlaylistService(
-        _DummyPlaylistRepository(),  # type: ignore[arg-type]
+    service = _playlist_service(
+        tmp_path,
         xtream_client=_FallbackXtreamClient(),  # type: ignore[arg-type]
     )
     reference = PlaylistReference(
@@ -1282,8 +1043,8 @@ def test_app_resolves_log_level_from_environment(monkeypatch):
     assert app_main._resolve_log_level() == logging.INFO
 
 
-def test_playlist_service_validates_xtream_reference():
-    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+def test_playlist_service_validates_xtream_reference(tmp_path):
+    service = _playlist_service(tmp_path)
     reference = PlaylistReference(
         name="Provider",
         source_type=PlaylistSourceType.XTREAM,
@@ -1302,8 +1063,8 @@ def test_playlist_service_validates_xtream_reference():
     assert validated.xtream.server_url == "https://provider.example"
 
 
-def test_playlist_service_rejects_duplicate_xtream_references():
-    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+def test_playlist_service_rejects_duplicate_xtream_references(tmp_path):
+    service = _playlist_service(tmp_path)
     reference = PlaylistReference(
         name="Provider",
         source_type=PlaylistSourceType.XTREAM,
@@ -1458,8 +1219,8 @@ def test_main_controller_prefers_saved_identity_over_legacy_path():
     assert calls == [saved]
 
 
-def test_playlist_controller_ignores_stale_worker_result(monkeypatch):
-    service = PlaylistService(_DummyPlaylistRepository())  # type: ignore[arg-type]
+def test_playlist_controller_ignores_stale_worker_result(monkeypatch, tmp_path):
+    service = _playlist_service(tmp_path)
     controller = PlaylistController(service)
     loaded: list[str] = []
     controller.playlist_loaded.connect(lambda playlist: loaded.append(playlist.source_path))

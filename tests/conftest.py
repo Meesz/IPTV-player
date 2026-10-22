@@ -4,6 +4,7 @@ PyQt6 is imported lazily inside the fixture so Qt-free test files stay Qt-free.
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,23 @@ def isolated_home(tmp_path, monkeypatch):
 def no_retry_backoff_sleep(monkeypatch):
     """Playlist download retries back off; never actually wait in tests."""
     monkeypatch.setattr("core.services.playlist_service._sleep", lambda _seconds: None)
+
+
+@pytest.fixture(autouse=True)
+def close_leaked_widgets():
+    """Close and delete top-level widgets a test left behind, so later tests start clean."""
+    yield
+    qt_widgets = sys.modules.get("PyQt6.QtWidgets")
+    app = qt_widgets.QApplication.instance() if qt_widgets else None
+    if app is None:
+        return
+    from PyQt6.QtCore import QEvent
+
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
 
 
 @pytest.fixture(scope="session")

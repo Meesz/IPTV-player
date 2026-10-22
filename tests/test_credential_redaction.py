@@ -10,6 +10,7 @@ import logging
 
 import pytest
 import requests
+from _http import FakeResponse
 
 from core.errors import NetworkError, RepositoryError, ValidationError
 from core.models import PlaylistReference, PlaylistSourceType, XtreamCredentials
@@ -208,19 +209,6 @@ def _raise_http_error(url, timeout=20, stream=False, headers=None):
     raise requests.exceptions.HTTPError(f"404 Client Error: Not Found for url: {url}")
 
 
-class _OkResponse:
-    headers: dict[str, str] = {}
-
-    def raise_for_status(self):
-        return None
-
-    def iter_content(self, chunk_size=1):
-        yield _M3U_BODY
-
-    def close(self):
-        return None
-
-
 @pytest.mark.parametrize("failure", [_raise_timeout, _raise_connection_error, _raise_http_error])
 def test_m3u_url_failure_does_not_leak_password(monkeypatch, caplog, failure):
     monkeypatch.setattr("core.services.playlist_service.requests.get", failure)
@@ -235,7 +223,8 @@ def test_m3u_url_failure_does_not_leak_password(monkeypatch, caplog, failure):
 
 def test_m3u_url_success_does_not_leak_password(monkeypatch, caplog):
     monkeypatch.setattr(
-        "core.services.playlist_service.requests.get", lambda url, timeout=20, stream=False, headers=None: _OkResponse()
+        "core.services.playlist_service.requests.get",
+        lambda url, timeout=20, stream=False, headers=None: FakeResponse(_M3U_BODY),
     )
 
     with caplog.at_level(logging.DEBUG):
@@ -338,7 +327,7 @@ def test_m3u_url_with_bad_port_does_not_leak_password(monkeypatch, caplog):
     monkeypatch.setattr("core.services.playlist_service.requests.get", _fail)
     url = f"http://alice:{_SECRET}@host:80a/list.m3u"
 
-    with caplog.at_level(logging.DEBUG), pytest.raises((NetworkError, ValidationError)) as excinfo:
+    with caplog.at_level(logging.DEBUG), pytest.raises(NetworkError) as excinfo:
         _playlist_service().load_playlist(url, is_url=True)
 
     assert _SECRET not in caplog.text

@@ -7,9 +7,9 @@ from itertools import pairwise
 
 import pytest
 from PyQt6.QtCore import QPoint, QRect
-from PyQt6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
-from core.models import Channel, Playlist, PlaylistReference, PlaylistSourceType, Program
+from core.models import Channel, Playlist, PlaylistReference, PlaylistSourceType, Program, XtreamCredentials
 from core.services.epg_service import EPGService
 from core.services.favorites_service import FavoritesService
 from core.services.history_service import HistoryService
@@ -177,6 +177,30 @@ def test_long_channel_title_is_elided_to_label_width(qapp, no_vlc, width):
         assert shown.endswith("…")
     finally:
         panel.close()
+
+
+@pytest.mark.parametrize(("state", "chip_text"), [("idle", "Idle"), ("playing", "Live")])
+def test_playback_detail_is_cleared_and_hidden_for_non_detail_states(qapp, no_vlc, state, chip_text):
+    panel = RightPanel()
+    panel.set_playback_state("error", "Stream failed")
+    assert panel.playback_detail_label.text() == "Stream failed"
+    assert not panel.playback_detail_label.isHidden()
+
+    panel.set_playback_state(state, "Stream is live" if state == "playing" else "")
+
+    assert panel.playback_state_chip.text() == chip_text
+    assert panel.playback_detail_label.text() == ""
+    assert panel.playback_detail_label.isHidden()
+
+
+@pytest.mark.parametrize("state", ["reconnecting", "error", "buffering"])
+def test_playback_detail_is_shown_for_detail_states(qapp, no_vlc, state):
+    panel = RightPanel()
+
+    panel.set_playback_state(state, "Attempt 2 of 5")
+
+    assert panel.playback_detail_label.text() == "Attempt 2 of 5"
+    assert not panel.playback_detail_label.isHidden()
 
 
 def test_icon_buttons_have_tooltip_and_accessible_name(qapp, no_vlc):
@@ -485,13 +509,17 @@ def cross_source_window(main_window, monkeypatch):
 
 
 def _finish_render_of(window, monkeypatch, channel: Channel) -> None:
+    """Deliver a finished load of ``channel``'s source through the real loaded/render handlers."""
     playlist = Playlist(name="Loaded", channels=[channel])
-    monkeypatch.setattr(window, "_current_playlist", lambda: playlist)
+    window.playlist_controller.service.set_current_playlist(playlist)
     window._on_playlist_loading_started()
-    # As _on_playlist_loaded does: the load phase is over once rendering begins.
-    window._playlist_loading_active = False
-    window._playlist_render_active = True
-    window._on_playlist_render_complete()
+    window._on_playlist_loaded(playlist)
+    app = QApplication.instance()
+    for _ in range(200):
+        if not window._playlist_render_active:
+            return
+        app.processEvents()
+    pytest.fail("channel list render did not complete")
 
 
 @pytest.mark.parametrize("end_load", ["failed", "cancelled"])
@@ -626,20 +654,18 @@ def test_playlist_manager_has_a_single_accent_button(qapp):
 
 @pytest.mark.parametrize("mode", MODES)
 def test_playlist_manager_buttons_do_not_overlap(qapp, mode):
-    qapp.setStyleSheet(Themes.get_dark_theme() if mode == "dark" else Themes.get_light_theme())
-    try:
-        dialog = _manager_with_playlist()
-        dialog.show()
-        qapp.processEvents()
-        row = [dialog.add_button, dialog.edit_button, dialog.remove_button, dialog.test_button]
-        for left, right in pairwise(row):
-            assert left.geometry().right() < right.geometry().left()
-        for button in (*row, dialog.select_button, dialog.cancel_button):
-            assert button.width() >= button.sizeHint().width()
-        assert dialog.detail_path.width() > 150
-        dialog.close()
-    finally:
-        qapp.setStyleSheet("")
+    # Scoped to the dialog: an app-wide stylesheet re-polishes every live widget.
+    dialog = _manager_with_playlist()
+    dialog.setStyleSheet(Themes.get_dark_theme() if mode == "dark" else Themes.get_light_theme())
+    dialog.show()
+    qapp.processEvents()
+    row = [dialog.add_button, dialog.edit_button, dialog.remove_button, dialog.test_button]
+    for left, right in pairwise(row):
+        assert left.geometry().right() < right.geometry().left()
+    for button in (*row, dialog.select_button, dialog.cancel_button):
+        assert button.width() >= button.sizeHint().width()
+    assert dialog.detail_path.width() > 150
+    dialog.close()
 
 
 def test_playlist_manager_details_keep_the_full_long_value(qapp):
@@ -676,6 +702,26 @@ def test_xtream_dialog_error_label_hidden_until_validation_fails(qapp):
     dialog.accept()
     assert not dialog.error_label.isVisibleTo(dialog)
     assert dialog.result() == dialog.DialogCode.Accepted
+
+
+def test_xtream_dialog_edit_with_blank_password_keeps_saved_password(qapp):
+    saved = PlaylistReference(
+        name="Provider",
+        path="",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials("https://provider.example", "alice", "saved-secret"),
+    )
+    dialog = XtreamSourceDialog(reference=saved)
+    assert dialog.password_input.text() == ""
+
+    dialog.username_input.setText("alice2")
+    dialog.accept()
+
+    assert dialog.result() == dialog.DialogCode.Accepted
+    edited = dialog.to_reference()
+    assert edited.xtream is not None
+    assert edited.xtream.username == "alice2"
+    assert edited.xtream.password == "saved-secret"
 
 
 def test_xtream_dialog_primary_and_cancel_buttons(qapp):

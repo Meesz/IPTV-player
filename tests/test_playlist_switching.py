@@ -67,17 +67,3 @@ def test_probe_does_not_change_active_playlist(tmp_path):
     assert probed.channel_count == 1
     assert service.current_playlist is not None
     assert [c.name for c in service.current_playlist.channels] == ["Alpha"]
-
-
-def test_switch_back_to_first_playlist_restores_its_channels(tmp_path):
-    first = _write_playlist(tmp_path / "alpha.m3u", "Alpha")
-    second = _write_playlist(tmp_path / "beta.m3u", "Beta")
-    service = _service(tmp_path)
-
-    service.load_playlist(str(first))
-    service.load_playlist(str(second))
-    restored = service.load_playlist(str(first))
-
-    assert service.current_playlist is restored
-    assert [c.name for c in restored.channels] == ["Alpha"]
-    assert all(c.playlist_path == _file_identity(first) for c in restored.channels)

@@ -8,8 +8,9 @@ from concurrent.futures import CancelledError
 
 import pytest
 import requests
+from _http import FakeResponse
 
-from core.errors import NetworkError, ParsingError
+from core.errors import NetworkError
 from core.models import Channel, Playlist
 from core.services.playlist_service import PlaylistService
 
@@ -25,32 +26,6 @@ M3U_BODY = (
 
 class _NoRepository:
     """URL loading and querying never touch the repository."""
-
-
-class _Response:
-    def __init__(
-        self,
-        content: bytes = b"",
-        error: Exception | None = None,
-        headers: dict[str, str] | None = None,
-        chunk_size: int | None = None,
-    ):
-        self.content = content
-        self._error = error
-        self.headers = headers or {}
-        self._chunk_size = chunk_size or max(len(content), 1)
-        self.closed = False
-
-    def raise_for_status(self) -> None:
-        if self._error is not None:
-            raise self._error
-
-    def iter_content(self, chunk_size: int = 1):
-        for start in range(0, len(self.content), self._chunk_size):
-            yield self.content[start : start + self._chunk_size]
-
-    def close(self) -> None:
-        self.closed = True
 
 
 @pytest.fixture
@@ -84,7 +59,7 @@ def _install_get(monkeypatch, responses):
 
 
 def test_load_url_playlist_parses_channels_tags_source_and_removes_temp_file(service, temp_dir, monkeypatch):
-    calls = _install_get(monkeypatch, [_Response(M3U_BODY)])
+    calls = _install_get(monkeypatch, [FakeResponse(M3U_BODY)])
 
     playlist = service.load_playlist(PLAYLIST_URL, is_url=True)
 
@@ -97,11 +72,11 @@ def test_load_url_playlist_parses_channels_tags_source_and_removes_temp_file(ser
 
 
 def test_load_url_playlist_removes_temp_file_when_parsing_is_cancelled(service, temp_dir, monkeypatch):
-    _install_get(monkeypatch, [_Response(M3U_BODY)])
+    _install_get(monkeypatch, [FakeResponse(M3U_BODY)])
     states = iter([False, True])  # not cancelled before download, cancelled after parsing
 
-    # The service currently re-wraps the cancellation as ParsingError; either is fine here.
-    with pytest.raises((CancelledError, ParsingError)):
+    # Cancellation must surface as CancelledError: a ParsingError would show the user an error toast.
+    with pytest.raises(CancelledError):
         service.load_playlist(PLAYLIST_URL, is_url=True, cancel_callback=lambda: next(states, True))
 
     assert list(temp_dir.iterdir()) == []
@@ -118,7 +93,7 @@ def test_download_failure_attempts_three_times_then_raises(service, temp_dir, mo
 
 
 def test_download_http_error_attempts_three_times(service, temp_dir, monkeypatch):
-    failing = _Response(error=requests.HTTPError("503"))
+    failing = FakeResponse(error=requests.HTTPError("503"))
     calls = _install_get(monkeypatch, [failing, failing, failing])
 
     with pytest.raises(NetworkError):
@@ -129,7 +104,7 @@ def test_download_http_error_attempts_three_times(service, temp_dir, monkeypatch
 
 
 def test_transient_failure_then_success_returns_content(service, temp_dir, monkeypatch):
-    calls = _install_get(monkeypatch, [requests.Timeout("slow"), _Response(M3U_BODY)])
+    calls = _install_get(monkeypatch, [requests.Timeout("slow"), FakeResponse(M3U_BODY)])
 
     playlist = service.load_playlist(PLAYLIST_URL, is_url=True)
 
@@ -182,3 +157,14 @@ def test_default_sort_is_ascending_by_name_when_mode_is_omitted():
     results = service.search_channels("", playlist=playlist)
 
     assert [channel.name for channel in results] == ["Alpha", "bravo", "Charlie", "delta"]
+
+
+def test_search_matches_group_case_insensitively():
+    playlist, service = _sort_fixture()
+
+    by_group = service.search_channels("NEWS", playlist=playlist)
+    by_name = service.search_channels("char", playlist=playlist)
+
+    # Neither "bravo" nor "Alpha" has "news" in its name; only the group matches.
+    assert [channel.name for channel in by_group] == ["Alpha", "bravo"]
+    assert [channel.name for channel in by_name] == ["Charlie"]

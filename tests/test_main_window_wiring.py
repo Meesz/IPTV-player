@@ -1,4 +1,4 @@
-"""Headless MainWindow wiring: real controllers and SQLite on tmp_path, VLC disabled.
+"""Headless MainWindow wiring: the real app.main.create_window on a tmp_path SQLite file, VLC disabled.
 
 Covers load -> settings/library, channel activation -> play/last channel/history,
 favourite toggle, close -> UI state persisted and restart restore (docs/archive/TEST_AUDIT.md F6).
@@ -10,25 +10,16 @@ from pathlib import Path
 import pytest
 from PyQt6.QtCore import QEvent
 
-from core.models import Playlist, PlaylistReference, PlaylistSourceType, XtreamCredentials
+from app import main as app_main
+from core.models import Channel, Playlist, PlaylistReference, PlaylistSourceType, XtreamCredentials
 from core.services.epg_service import EPGService
-from core.services.favorites_service import FavoritesService
-from core.services.history_service import HistoryService
-from core.services.playlist_service import PlaylistService
 from core.services.settings_service import SettingsService
-from infra.db.epg_repository import EPGRepository
 from infra.db.favorites_repository import FavoritesRepository
 from infra.db.history_repository import HistoryRepository
 from infra.db.playlist_repository import PlaylistRepository
 from infra.db.settings_repository import SettingsRepository
 from infra.db.sqlite_connection import SQLiteConnection
 from infra.playback.vlc_backend import VLCBackend
-from ui.controllers.epg_controller import EPGController
-from ui.controllers.favorites_controller import FavoritesController
-from ui.controllers.history_controller import HistoryController
-from ui.controllers.main_controller import MainController
-from ui.controllers.playlist_controller import PlaylistController
-from ui.controllers.settings_controller import SettingsController
 from ui.widgets.player_widget import PlayerWidget
 from ui.windows.main_window import MainWindow
 
@@ -49,20 +40,11 @@ class _SyncPool:
 
 
 def _build_window(db_path: Path) -> MainWindow:
-    """Mirror app.main.create_window, but on an explicit SQLite file."""
-    assert Path.home() / ".simple_iptv" not in db_path.parents
-    connection = SQLiteConnection(db_path=db_path)
-    playlist_controller = PlaylistController(PlaylistService(PlaylistRepository(connection)))
-    playlist_controller._thread_pool = _SyncPool()
-    settings_controller = SettingsController(SettingsService(SettingsRepository(connection)))
-    return MainWindow(
-        MainController(playlist_controller, settings_controller),
-        playlist_controller,
-        EPGController(EPGService(EPGRepository(connection))),
-        settings_controller,
-        FavoritesController(FavoritesService(FavoritesRepository(connection))),
-        HistoryController(HistoryService(HistoryRepository(connection))),
-    )
+    """Build through the real app factory, so wiring drift in app.main.create_window fails here."""
+    window = app_main.create_window()
+    assert window.settings_controller.service.repository.db.db_path == db_path
+    window.playlist_controller._thread_pool = _SyncPool()
+    return window
 
 
 def _pump_until(qapp, condition, attempts: int = 200) -> None:
@@ -103,8 +85,9 @@ def file_identity(playlist_file) -> str:
 
 
 @pytest.fixture
-def db_path(tmp_path) -> Path:
-    return tmp_path / "app.sqlite"
+def db_path(isolated_home) -> Path:
+    """The app's default database; conftest's isolated_home keeps it under tmp_path."""
+    return isolated_home / ".simple_iptv" / "database.db"
 
 
 @pytest.fixture
@@ -260,6 +243,21 @@ def test_closing_window_cancels_background_loads(loaded_window, monkeypatch):
     assert sorted(cancelled) == ["epg", "playlist"]
 
 
+def test_reloading_saved_playlist_keeps_its_library_name(qapp, make_window, db_path, playlist_file, file_identity):
+    window = make_window(db_path)
+    window.playlist_controller.save_playlist_reference(
+        PlaylistReference(name="My TV", path=str(playlist_file), source_type=PlaylistSourceType.FILE)
+    )
+
+    for _ in range(2):
+        window.playlist_controller.load_playlist(str(playlist_file))
+        _wait_for_render(qapp, window)
+
+    saved = window.playlist_controller.get_saved_playlist_by_identity(file_identity)
+    assert saved is not None
+    assert saved.name == "My TV"
+
+
 def test_restart_restores_last_playlist_and_channel(
     qapp, make_window, loaded_window, db_path, played_urls, file_identity
 ):
@@ -305,7 +303,7 @@ def test_xtream_epg_url_targets_xmltv_endpoint():
     assert credentials.epg_url() == "http://provider.example:8080/xmltv.php?username=user&password=p%26ss+word"
 
 
-def test_xtream_source_auto_loads_provider_guide_without_storing_password(qapp, xtream_window, db_path):
+def test_xtream_guide_auto_load_stores_no_password_in_settings(qapp, xtream_window, db_path):
     window = xtream_window
     window._auto_load_xtream_epg()
     qapp.processEvents()
@@ -318,9 +316,21 @@ def test_xtream_source_auto_loads_provider_guide_without_storing_password(qapp, 
     assert settings.last_epg_path == ""
     assert settings.last_epg_xtream_identity == window.xtream_identity
     assert window.menu_bar.epg_url_input.text() == ""
+    # Holds only until a channel plays; see the last_channel_url test below.
     with SQLiteConnection(db_path=db_path).get_connection() as conn:
         stored_values = [row[0] for row in conn.execute("SELECT value FROM settings")]
     assert not any(XTREAM_PASSWORD in value for value in stored_values)
+
+
+def test_playing_xtream_channel_stores_raw_stream_url_as_last_channel(qapp, xtream_window, db_path, played_urls):
+    # Documented behaviour (docs/architecture.md): last_channel_url keeps the stream URL as-is,
+    # so for Xtream it carries the password, which the playlists table already stores locally.
+    window = xtream_window
+    stream_url = f"http://provider.example:8080/live/user/{XTREAM_PASSWORD}/101.ts"
+    window._play_channel(Channel(name="Provider One", url=stream_url, playlist_path=window.xtream_identity))
+
+    assert played_urls == [stream_url]
+    assert _reload_settings(db_path).settings.last_channel_url == stream_url
 
 
 def test_xtream_guide_is_not_redownloaded_while_cache_is_fresh(qapp, xtream_window):
@@ -335,6 +345,28 @@ def test_xtream_guide_is_not_redownloaded_while_cache_is_fresh(qapp, xtream_wind
     window._auto_load_xtream_epg()
     qapp.processEvents()
     assert len(window.requested_epg_urls) == 2
+
+
+def test_switching_xtream_provider_loads_new_guide_despite_fresh_cache(qapp, xtream_window):
+    window = xtream_window
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+    assert len(window.requested_epg_urls) == 1
+
+    other = PlaylistReference(
+        name="Other Provider",
+        path="",
+        source_type=PlaylistSourceType.XTREAM,
+        xtream=XtreamCredentials("http://other.example:8080/", "bob", "other-pass"),
+    )
+    window.playlist_controller.service.set_current_playlist(
+        Playlist(name="Other Provider", source_path=other.source_identity, source_reference=other)
+    )
+    window._auto_load_xtream_epg()
+    qapp.processEvents()
+
+    assert window.requested_epg_urls[1:] == ["http://other.example:8080/xmltv.php?username=bob&password=other-pass"]
+    assert window.settings_controller.get_setting("last_epg_xtream_identity", "") == other.source_identity
 
 
 def test_manual_guide_url_disables_xtream_auto_load(qapp, xtream_window):
