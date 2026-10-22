@@ -42,19 +42,6 @@ These are speculative and should not be documented as current product scope:
 - A plugin system for parsers/providers.
 - A web or mobile client.
 
-## Recently Completed Phase 3 Work
+## Completed Work
 
-The old Phase 3 backlog included several items that are now implemented:
-
-- Database initialization fails fast and startup errors show a dialog.
-- Channel/favorite identity is source-aware.
-- EPG parsing, persistence, and current-time handling are separated more cleanly.
-- XMLTV parsing supports gzip and namespace-tolerant child lookup.
-- Playlist and EPG loading run through background controller tasks.
-- Additional UI state is persisted.
-- Channel rows use a virtualized model/delegate list.
-- Player controls include retry, mute, fullscreen, copy URL, and channel info surfaces.
-- Playlist manager validation/testing is implemented.
-- Xtream credentials and generated live stream URLs are normalized and encoded.
-
-See [phase3.md](phase3.md) for the status note that replaced the stale backlog.
+Completed Phase 3 items are recorded in the archived [Phase 3 status note](archive/phase3.md). Implemented scope is listed in [product.md](product.md).

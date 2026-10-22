@@ -78,11 +78,12 @@ Current tests cover:
 - model behavior
 - settings persistence and legacy key sync, verified by reloading from SQLite
 - restart restore of the active playlist (file, URL, Xtream) across fresh service instances (`tests/test_restart_restore.py`)
-- playlist parsing/loading/validation, URL download retries, and channel sort order
+- playlist parsing/loading/validation, URL download retries, and channel sort order (`tests/test_m3u_parser.py`, `tests/test_playlist_url_and_query.py`)
 - Xtream input validation and authentication decisions (`tests/test_xtream_validation.py`)
 - credential redaction in logs and error messages for Xtream, EPG URL, and M3U URL sources
-- EPG parsing/loading, timezone handling, and now/next boundaries (`tests/test_epg_now_next.py`)
-- SQLite repositories and schema migrations (playlists and legacy favorites)
+- EPG parsing/loading, timezone handling, and now/next boundaries (`tests/test_epg_now_next.py`, `tests/test_epg_and_settings_robustness.py`)
+- the optimized XMLTV date parsing and Xtream channel-mapping paths (`tests/test_backend_performance_paths.py`)
+- SQLite repositories and schema migrations (playlists and legacy favorites; `tests/test_sqlite_migration.py`, `tests/test_favorites_migration.py`)
 - Xtream client URL/auth/error behavior
 - background controller stale, failure, and cancellation handling (`tests/test_async_controllers.py`), plus cancellation of the playlist-manager probe (`tests/test_probe_cancellation.py`)
 - service-level playlist switching (`tests/test_playlist_switching.py`)
@@ -93,7 +94,7 @@ Current tests cover:
 - player fullscreen round-trips, video surface switching, and platform embedding decisions (`tests/test_player_fullscreen.py`, `tests/test_player_surface.py`, `tests/test_video_embedding.py`)
 - the widget-to-repository/parser/HTTP import boundary (`tests/test_layer_boundaries.py`)
 - headless `MainWindow` wiring with VLC disabled: load, play, favorites, history, save on close, restart (`tests/test_main_window_wiring.py`)
-- selected PyQt widget and delegate behavior
+- selected PyQt widget and delegate behavior (`tests/test_searchable_combo_box.py`, `tests/test_channel_list_view_updates.py`)
 - theme tokens (painter-safe colors), channel row painting, and main-window/dialog layout invariants such as no clipping or overlap, elision, and empty-state actions (`tests/test_ui_theme.py`, `tests/test_ui_layout.py`)
 - startup and VLC-unavailable dialog behavior
 

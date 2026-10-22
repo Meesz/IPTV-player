@@ -23,7 +23,7 @@ class SettingsController(QObject):
     def save_active_playlist(self, reference: PlaylistReference) -> None:
         """Persist the active playlist as the restart target.
 
-        Saving the legacy path keys recomputes identity and source type, so they are
+        Saving ``last_playlist_path`` recomputes identity and source type, so it is
         written first and the authoritative keys last.
         """
         is_xtream = reference.source_type == PlaylistSourceType.XTREAM
@@ -31,8 +31,6 @@ class SettingsController(QObject):
         self.save_settings(
             {
                 "last_playlist_path": path,
-                "last_playlist": path,
-                "last_playlist_is_url": "true" if reference.source_type == PlaylistSourceType.URL else "false",
                 "last_playlist_source_type": reference.source_type.value,
                 "last_playlist_identity": reference.source_identity,
             }

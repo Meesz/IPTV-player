@@ -251,15 +251,6 @@ class PlaylistService:
             last_error=playlist.parse_warnings[0].message if playlist.parse_warnings else "",
         )
 
-    def build_legacy_reference(self, path: str, is_url: bool = False) -> PlaylistReference:
-        normalized_path = self._normalize_source(path, is_url)
-        name = "URL Playlist" if is_url else Path(normalized_path).name or "Playlist"
-        return PlaylistReference(
-            name=name,
-            path=normalized_path,
-            source_type=PlaylistSourceType.URL if is_url else PlaylistSourceType.FILE,
-        )
-
     def _load_from_file(
         self,
         reference: PlaylistReference,

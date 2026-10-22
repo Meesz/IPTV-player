@@ -63,7 +63,7 @@ Ruff config and rule rationale live in `pyproject.toml`; pre-commit runs ruff on
 | Layers, data flow, persistence, playback, error handling | `docs/architecture.md` |
 | Setup, env vars, test workflow, debugging | `docs/development.md` |
 | Implemented scope vs non-goals | `docs/product.md` |
-| Planned work | `docs/roadmap.md` (`docs/phase3.md` is historical; do not revive it) |
+| Planned work | `docs/roadmap.md` (`docs/archive/phase3.md` is historical; do not revive it) |
 | User-facing setup and limitations | `README.md` |
 
 ## Avoid unless the task is about them

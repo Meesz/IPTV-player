@@ -18,10 +18,7 @@ class SettingsService:
                 theme=self.repository.get_setting("theme", self._settings.theme),
                 volume=int(self.repository.get_setting("volume", str(self._settings.volume))),
                 is_muted=self._to_bool(self.repository.get_setting("is_muted", "false")),
-                last_playlist_path=self.repository.get_setting(
-                    "last_playlist_path",
-                    self.repository.get_setting("last_playlist", self._settings.last_playlist_path),
-                ),
+                last_playlist_path=self.repository.get_setting("last_playlist_path", self._settings.last_playlist_path),
                 last_playlist_source_type=self.repository.get_setting(
                     "last_playlist_source_type", self._settings.last_playlist_source_type
                 ),
@@ -65,19 +62,10 @@ class SettingsService:
             self._persist_legacy_compatibility_settings()
 
     def _persist_legacy_compatibility_settings(self) -> None:
-        self.repository.save_setting("last_playlist", self._settings.last_playlist_path)
         self.repository.save_setting("last_epg_file", self._settings.last_epg_path)
         self.repository.save_setting("epg_url", self._settings.last_epg_url)
         self.repository.save_setting("last_playlist_source_type", self._settings.last_playlist_source_type)
         self.repository.save_setting("last_playlist_identity", self._settings.last_playlist_identity)
-        playlist_is_url = self.repository.get_setting("last_playlist_is_url", "false")
-        normalized_value = str(playlist_is_url).strip().lower()
-        is_recognized_bool = normalized_value in {"0", "1", "true", "false", "yes", "no", "on", "off"}
-        if not is_recognized_bool:
-            playlist_is_url = (
-                "true" if self._settings.last_playlist_source_type == PlaylistSourceType.URL.value else "false"
-            )
-        self.repository.save_setting("last_playlist_is_url", playlist_is_url)
 
     @staticmethod
     def _to_bool(value: str) -> bool:
@@ -130,38 +118,6 @@ class SettingsService:
                 last_playlist_path=normalized_value,
                 last_playlist_source_type=source_type.value,
                 last_playlist_identity=source_identity,
-            )
-            self.repository.save_setting("last_playlist", normalized_value)
-            self.repository.save_setting(
-                "last_playlist_is_url",
-                "true" if str(value).startswith(("http://", "https://")) else "false",
-            )
-            self.repository.save_setting(
-                "last_playlist_identity",
-                source_identity,
-            )
-            self.repository.save_setting(
-                "last_playlist_source_type",
-                source_type.value,
-            )
-        elif normalized_key == "last_playlist":
-            source_type = (
-                PlaylistSourceType.URL if str(value).startswith(("http://", "https://")) else PlaylistSourceType.FILE
-            )
-            source_identity = PlaylistReference(
-                name="Playlist",
-                path=normalized_value,
-                source_type=source_type,
-            ).source_identity
-            self._settings = self._settings.with_updates(
-                last_playlist_path=normalized_value,
-                last_playlist_source_type=source_type.value,
-                last_playlist_identity=source_identity,
-            )
-            self.repository.save_setting("last_playlist_path", normalized_value)
-            self.repository.save_setting(
-                "last_playlist_is_url",
-                "true" if str(value).startswith(("http://", "https://")) else "false",
             )
             self.repository.save_setting(
                 "last_playlist_identity",
