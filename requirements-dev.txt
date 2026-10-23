@@ -7,7 +7,7 @@ pytest==9.0.3
 pytest-qt==4.5.0
 
 # Lint + format (single tool: see [tool.ruff] in pyproject.toml)
-ruff==0.15.18
+ruff==0.17.1
 
 # Type checking (CI error-count ratchet; see [tool.mypy] in pyproject.toml)
 mypy==2.1.0
