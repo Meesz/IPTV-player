@@ -69,6 +69,9 @@ The app currently supports:
 1. Close the app.
 2. On next launch, settings and library state are read from `~/.simple_iptv/database.db`.
 3. The app restores UI preferences such as theme, window size, splitter sizes, active tab, search text, selected category, sort mode, mute state, and recent channels.
+4. The last active source is reloaded, and the last played channel starts again if it is still in that playlist.
+
+The stored theme defaults to dark. A light theme is implemented, but no menu or setting in the UI switches to it.
 
 ## Implemented Features
 

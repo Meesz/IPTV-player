@@ -71,7 +71,7 @@ python -m pytest -q tests/test_models_and_services.py
 python -m pytest -q
 ```
 
-Qt tests share the session `qapp` fixture in `tests/conftest.py` and need `QT_QPA_PLATFORM=offscreen` on headless machines. An autouse fixture closes and deletes top-level widgets after each test, so set stylesheets on the widget under test rather than on `qapp`. Use `tests/_http.py` (`FakeResponse`, `json_response`) instead of defining another fake `requests` response.
+Qt tests share the session `qapp` fixture in `tests/conftest.py` and need `QT_QPA_PLATFORM=offscreen` on headless machines. An autouse `isolated_home` fixture points `Path.home()` at a temp directory so no test can reach the real `~/.simple_iptv/`. Another autouse fixture closes and deletes top-level widgets after each test, so set stylesheets on the widget under test rather than on `qapp`. Use `tests/_http.py` (`FakeResponse`, `json_response`) instead of defining another fake `requests` response.
 
 Current tests cover:
 

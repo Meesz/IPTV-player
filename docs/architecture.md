@@ -26,6 +26,8 @@ There is no frontend/backend split. Everything runs in one desktop process.
 6. Controllers emit success/error/progress signals back to `MainWindow`.
 7. `MainWindow` updates the left panel, right panel, status chips, loading overlay, favorites, history, and persisted settings.
 
+Startup restore: `MainController.start` looks up `last_playlist_identity` among saved playlists and loads it. `MainWindow` keeps `last_channel_url` as a pending channel and plays it once that playlist has loaded, if the URL is still present. Playing a favorite or recent channel whose `playlist_path` is another saved source loads that source first and plays the channel when it arrives; if the source was removed, a warning is shown instead.
+
 ## Playlist Sources
 
 The current source types are:

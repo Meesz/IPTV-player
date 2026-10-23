@@ -18,7 +18,7 @@ It is a local PyQt6 app, not a web service: there is no backend, account system,
 - Handles large channel lists smoothly, with channel logos and a placeholder while loading.
 - Playback with buffering status, automatic reconnect, retry, mute, fullscreen, and copy-URL controls.
 - Favorites and recently played channels.
-- Remembers your window layout, active tab, category, search text, sort mode, and mute state.
+- Remembers your window layout, active tab, category, search text, sort mode, and mute state, and on launch reopens the last active source and resumes the last played channel if it is still in that playlist.
 
 ## Quick start
 
@@ -64,7 +64,7 @@ python -m app.main
 
 **Browse.** The library has **Channels**, **Favorites**, and **Recent** tabs (Recent holds the last 12 channels). Pick a category from the searchable **Category** picker (or "All"), type in "Search channels or groups" (`Ctrl+L` focuses it), and sort A-Z, Z-A, by Group, or Favorites First. "Search within category" is on by default; turn it off to search all channels.
 
-**Play.** Double-click a channel, or enable View > **Play on Single Click**. The player has play, stop, mute, volume, fullscreen, **Retry stream**, **Copy stream URL**, and **Channel info** buttons. Mark a favorite with the star **Favorite** button in the channel details panel. The View menu also toggles "Show Current Program in Lists" and "Show Library Panel".
+**Play.** Double-click a channel, or enable View > **Play on Single Click**. The player has play, stop, mute, volume, fullscreen, **Retry stream**, **Copy stream URL**, and **Channel info** buttons. Mark a favorite with the star **Favorite** button in the channel details panel. Playing a favorite or recent channel that belongs to another saved source loads that source first. The View menu also toggles "Show Current Program in Lists" and "Show Library Panel".
 
 ### Keyboard shortcuts
 
@@ -80,7 +80,7 @@ python -m app.main
 | `Esc` | Exit fullscreen |
 | `Up` / `Down` / `PgUp` / `PgDn`, `Enter`, `Esc` | Navigate, confirm, and close the category and sort pickers |
 
-`Space`, `M`, and `F` are handled by the main window, so they only work when the focused widget does not consume the key. Text fields (channel search, category search, XMLTV URL) and the channel lists (which use Qt's default key handling, such as type-ahead search) can swallow them.
+`Space`, `M`, `F`, and `Ctrl+L` are handled by the main window rather than as menu shortcuts, so they only work when the focused widget does not consume the key. Text fields (channel search, category search, XMLTV URL) and the channel lists (which use Qt's default key handling, such as type-ahead search) can swallow them.
 
 ## Your data
 
@@ -118,6 +118,7 @@ None are required for normal use; see `.env.example` for a template.
 - No account system, remote sync, or multi-device state.
 - Channel logos are fetched directly by the channel list (10 s transfer timeout, up to 500 images cached in memory, nothing cached on disk). Unlike playlist and EPG downloads, logo responses have no size limit.
 - Playlist and EPG downloads use blocking HTTP calls in worker tasks; cancelling ignores stale results but cannot always abort an in-flight request immediately.
+- The UI uses a dark theme. A light theme exists in the code, but there is no menu option to switch to it.
 - Packaging and release distribution are not defined.
 
 ## Development
