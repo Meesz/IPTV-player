@@ -56,7 +56,10 @@ class EPGService:
         try:
             self._ensure_not_cancelled(cancel_callback)
             self._emit_progress(progress_callback, "Saving EPG cache")
-            self.repository.save_all({key: epg.programs for key, epg in parsed_channels.items()})
+            self.repository.save_all(
+                {key: epg.programs for key, epg in parsed_channels.items()},
+                cancel_callback=cancel_callback,
+            )
         except RepositoryError:
             logger.error("Failed to persist EPG data for %s", path)
             raise

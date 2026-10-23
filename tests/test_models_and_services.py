@@ -40,7 +40,7 @@ from ui.widgets.notification import NotificationType, NotificationWidget
 
 
 class _FailingEPGRepository:
-    def save_all(self, _programs_by_channel):
+    def save_all(self, _programs_by_channel, *, cancel_callback=None):
         raise RepositoryError("persist failed")
 
     def clear(self) -> None:
