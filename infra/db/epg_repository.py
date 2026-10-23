@@ -1,5 +1,8 @@
 import logging
+from collections.abc import Callable
+from concurrent.futures import CancelledError
 from datetime import UTC, datetime
+from itertools import batched
 
 from core.errors import RepositoryError
 from core.models import Program
@@ -7,37 +10,63 @@ from infra.db.sqlite_connection import SQLiteConnection
 
 logger = logging.getLogger(__name__)
 
+# Rows per insert between cancellation checks while saving the guide cache.
+SAVE_CHUNK_ROWS = 10_000
+
 
 class EPGRepository:
     def __init__(self, db: SQLiteConnection):
         self.db = db
 
-    def save_all(self, programs_by_channel: dict[str, list[Program]]) -> None:
+    def save_all(
+        self,
+        programs_by_channel: dict[str, list[Program]],
+        *,
+        cancel_callback: Callable[[], bool] | None = None,
+    ) -> None:
+        """Replace the guide cache in one transaction.
+
+        Cancellation is checked between insert chunks and before commit; a
+        cancelled save rolls back, keeping the previous cache, and releases the
+        write lock early so a newer load is not blocked past the busy timeout.
+        """
+        rows = (
+            (
+                channel_id,
+                int(self._normalize_time(program.start_time).timestamp()),
+                int(self._normalize_time(program.end_time).timestamp()),
+                program.title,
+                program.description,
+            )
+            for channel_id, programs in programs_by_channel.items()
+            for program in programs
+        )
+        cancelled = False
         try:
             with self.db.get_connection() as conn:
                 conn.execute("DELETE FROM epg_data")
-                # OR REPLACE: a repeated (channel_id, start_time) keeps the later row.
-                conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO epg_data
-                    (channel_id, start_time, end_time, title, description)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            channel_id,
-                            int(self._normalize_time(program.start_time).timestamp()),
-                            int(self._normalize_time(program.end_time).timestamp()),
-                            program.title,
-                            program.description,
-                        )
-                        for channel_id, programs in programs_by_channel.items()
-                        for program in programs
-                    ],
-                )
+                for chunk in batched(rows, SAVE_CHUNK_ROWS):
+                    if cancel_callback is not None and cancel_callback():
+                        cancelled = True
+                        break
+                    # OR REPLACE: a repeated (channel_id, start_time) keeps the later row.
+                    conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO epg_data
+                        (channel_id, start_time, end_time, title, description)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        chunk,
+                    )
+                cancelled = cancelled or (cancel_callback is not None and cancel_callback())
+                if cancelled:
+                    # Roll back here so get_connection's commit is a no-op, not an error.
+                    conn.rollback()
         except Exception as exc:
             logger.error("Failed to save EPG cache: %s", exc)
             raise RepositoryError("Failed to persist EPG cache") from exc
+        if cancelled:
+            raise CancelledError("EPG cache save cancelled")
 
     def clear(self) -> None:
         try:

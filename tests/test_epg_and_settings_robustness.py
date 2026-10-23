@@ -152,3 +152,46 @@ def test_guide_load_cancelled_after_parse_keeps_previous_cache(tmp_path):
     assert current_a.title == "Guide A"
     assert repository.get_current_program("b", current_time=_NOW) is None
     assert service.get_program_for_channel("a", current_time=_NOW) is not None
+
+
+def test_guide_load_cancelled_during_cache_save_keeps_previous_cache(tmp_path):
+    guide_a = _write_guide(tmp_path / "a.xml", "a", "Guide A")
+    guide_b = _write_guide(tmp_path / "b.xml", "b", "Guide B")
+    service = _epg_service(tmp_path)
+    service.load_epg_from_path(guide_a)
+
+    # Superseded after the pre-save check passed: the save must roll back, not commit.
+    progress: list[str] = []
+    with pytest.raises(CancelledError):
+        service.load_epg_from_path(
+            guide_b,
+            progress_callback=progress.append,
+            cancel_callback=lambda: "Saving EPG cache" in progress,
+        )
+
+    repository = EPGRepository(SQLiteConnection(db_path=tmp_path / "epg.sqlite"))
+    current_a = repository.get_current_program("a", current_time=_NOW)
+    assert current_a is not None
+    assert current_a.title == "Guide A"
+    assert repository.get_current_program("b", current_time=_NOW) is None
+
+
+def test_save_all_stops_inserting_once_cancelled(tmp_path, monkeypatch):
+    monkeypatch.setattr("infra.db.epg_repository.SAVE_CHUNK_ROWS", 2)
+    repository = EPGRepository(SQLiteConnection(db_path=tmp_path / "epg.sqlite"))
+    repository.save_all({"a": [_AIRING]})
+    stale = {f"ch{i}": [_AIRING] for i in range(10)}
+    checks = 0
+
+    def cancelled() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks > 2
+
+    # A stale save holds the SQLite write lock, so it must give it up early.
+    with pytest.raises(CancelledError):
+        repository.save_all(stale, cancel_callback=cancelled)
+
+    assert checks == 3
+    assert repository.get_current_program("a", current_time=_NOW) is not None
+    assert repository.get_current_program("ch0", current_time=_NOW) is None

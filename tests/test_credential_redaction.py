@@ -85,7 +85,7 @@ def test_epg_url_failure_redacts_password_in_log(monkeypatch, caplog):
     """A non-network failure after a successful download must not log the URL password."""
 
     class _FailingRepo:
-        def save_all(self, _programs_by_channel):
+        def save_all(self, _programs_by_channel, *, cancel_callback=None):
             raise RepositoryError("database is locked")
 
         def clear(self):
@@ -177,7 +177,7 @@ def test_epg_url_failure_redacts_basic_auth_in_log(monkeypatch, caplog):
 
 
 class _NoopRepo:
-    def save_all(self, _programs_by_channel):
+    def save_all(self, _programs_by_channel, *, cancel_callback=None):
         return None
 
     def clear(self):
@@ -367,7 +367,7 @@ def test_repository_error_log_does_not_leak_identity_secret(caplog):
 
 def test_epg_unexpected_failure_log_redacts_exception_text(monkeypatch, caplog):
     class _LeakyRepo:
-        def save_all(self, _programs_by_channel):
+        def save_all(self, _programs_by_channel, *, cancel_callback=None):
             raise RuntimeError(f"boom at http://h/x?password={_SECRET}")
 
         def clear(self):
