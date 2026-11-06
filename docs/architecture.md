@@ -53,6 +53,7 @@ Program times are normalized to timezone-aware UTC datetimes. UI display convert
 - Programmes that share a channel and start time (whole-second UTC) resolve "last wins": `EPGParser` replaces the earlier entry and adds a `duplicate_programme` parse warning, and `EPGRepository` saves with `INSERT OR REPLACE`.
 - Malformed XML (and other `ValueError` parse failures) from `EPGParser` is converted by `EPGService` into a `ParsingError`. The underlying parser error (logged and chained as the cause) includes the line and column; the `ParsingError` shown to the user names only the file.
 - URL downloads are size- and time-bounded (see Download Limits). Gzip EPGs are decompressed through `_LimitedReader` in `infra/parsers/epg_parser.py`, which fails once decompressed data exceeds `MAX_EPG_DECOMPRESSED_BYTES`.
+- XML entity attacks are rejected without `defusedxml`. expat 2.4.1 and newer stops entity-expansion bombs (billion laughs, quadratic blowup) with its input-amplification limit, and ElementTree never resolves external entities, so XXE payloads fail as undefined entities. `EPGParser` refuses to parse on older expat. `tests/test_epg_and_settings_robustness.py` covers all three payloads and the version guard. defusedxml was measured and rejected: it switches to the pure-Python ElementTree parser and made a 40 MB guide parse about 22% slower.
 
 ## Channel Logos
 

@@ -1,22 +1,23 @@
 # STATUS
 
 ## Current goal
-Bring mypy to zero errors and lock CI at zero (branch `chore/mypy-zero`, PR open against `main`).
+Close the "defusedxml" open item (branch `chore/defusedxml`, PR against `main`).
+Decision (2026-11-06): no defusedxml. Rely on expat's own protection, add a version guard and tests.
 
 ## Done
-- mypy: 75 → 0 errors across `app core infra ui` without `type: ignore` or `cast()`.
-- `Settings.with_updates` now uses `dataclasses.replace` (unknown keys ignored,
-  `last_epg_xtream_identity` coerced to `str`); covered by
-  `test_settings_with_updates_ignores_unknown_keys_and_coerces_epg_identity`.
-- CI `MYPY_MAX_ERRORS` set to 0 in `.github/workflows/lint.yml`; docs (README, AGENTS.md,
-  `docs/development.md`, `docs/architecture.md`, `docs/roadmap.md`) updated.
+- mypy-zero: PR #44 merged to `main` (merge `949dbe6`); CI ratchet `MYPY_MAX_ERRORS` is 0.
+- Measured: the stdlib EPG parser already rejects billion-laughs and quadratic-blowup payloads
+  (expat 2.10 amplification limit) and external entities (ElementTree never resolves them).
+  defusedxml 0.7.1 made a 40 MB guide parse ~22% slower (3.09 s → 3.78 s, pure-Python parser).
+- `infra/parsers/epg_parser.py`: refuses to parse on expat < 2.4.1 (`_MIN_EXPAT_VERSION`).
+- `tests/test_epg_and_settings_robustness.py`: three attack payloads + version-guard test.
+- `docs/architecture.md` (EPG section) documents why defusedxml is not used.
 
 ## Next steps
-1. Merge the mypy-zero PR once CI is green.
+1. Merge the defusedxml PR once CI is green.
 2. Optional: enable mypy `--check-untyped-defs` (notes at `ui/dialogs/playlist_manager_dialog.py:87`,
    `ui/widgets/left_panel.py:206`).
-3. Quick win: use `defusedxml` for XMLTV parsing (needs a new dependency; ask first).
-4. Larger: move Xtream passwords to the OS keychain (see `docs/roadmap.md` Medium-Term).
+3. Larger: move Xtream passwords to the OS keychain (see `docs/roadmap.md` Medium-Term).
 
 ## Open decisions
 - Packaging strategy (source-only vs PyInstaller etc.) is undecided.
@@ -24,6 +25,7 @@ Bring mypy to zero errors and lock CI at zero (branch `chore/mypy-zero`, PR open
 
 ## Gotchas
 - Use `.venv/bin/python`, `.venv/bin/ruff`, `.venv/bin/mypy`; the system python lacks PyQt6/ruff/mypy.
+- Merged local branches (`chore/mypy-zero`) are not deleted unless asked.
 
 ## Verify
 ```
