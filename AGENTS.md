@@ -25,7 +25,7 @@ Test/lint tools come from `requirements-dev.txt`; `requirements.txt` is runtime-
 | Focused tests | `python -m pytest -q tests/test_<area>.py` |
 | Full tests | `python -m pytest -q` |
 | Lint / format check | `ruff check .` / `ruff format --check .` |
-| Type check (CI ratchet: count must not rise) | `mypy app core infra ui` |
+| Type check (CI ratchet at 0: must stay clean) | `mypy app core infra ui` |
 | Run app (GUI; writes `~/.simple_iptv/` including `iptv_player.log`; may use network) | `python -m app.main` |
 
 CI (PRs and pushes to main; tests on 3.12 + 3.14) runs ruff check, ruff format --check, pytest, and a mypy error-count ratchet.

@@ -150,4 +150,4 @@ Do not add logging that prints raw Xtream passwords, full authenticated URLs, or
 - Xtream-compatible providers vary in response shape and transport behavior.
 - VLC embedding is platform-sensitive and may behave differently under Linux Wayland, macOS, and Windows setups. On Linux, playback needs the `xcb` Qt platform (XWayland on Wayland) and is refused otherwise.
 - Logo downloads run in the widget layer outside the bounded-download helpers, so a single logo response has no size limit.
-- Tests cover important seams, but there is no full app-level integration suite. CI runs pytest (Python 3.12 and 3.14, offscreen Qt), ruff, and a blocking mypy error-count ratchet on pull requests and pushes to `main`; mypy errors are not yet zero.
+- Tests cover important seams, but there is no full app-level integration suite. CI runs pytest (Python 3.12 and 3.14, offscreen Qt), ruff, and blocking mypy (error-count ratchet at 0) on pull requests and pushes to `main`.

@@ -5,7 +5,7 @@ from collections.abc import MutableMapping
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
+from PyQt6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -100,7 +100,7 @@ def prefer_xcb_on_wayland(env: MutableMapping[str, str], platform: str = sys.pla
     return True
 
 
-def _forward_qt_message(msg_type, _context, message: str) -> None:
+def _forward_qt_message(msg_type: QtMsgType, _context: QMessageLogContext, message: str | None) -> None:
     qt_logger.log(_QT_LOG_LEVELS.get(msg_type, logging.WARNING), message)
 
 

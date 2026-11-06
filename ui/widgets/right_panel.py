@@ -44,8 +44,8 @@ class ElidedLabel(QLabel):
     def full_text(self) -> str:
         return self._full_text
 
-    def setText(self, text: str) -> None:
-        self.set_text_with_suffix(text, "")
+    def setText(self, text: str | None) -> None:
+        self.set_text_with_suffix("" if text is None else text, "")
 
     def set_text_with_suffix(self, head: str, suffix: str) -> None:
         """Show ``head`` + ``suffix``; only ``head`` is elided so the suffix stays visible."""
@@ -100,7 +100,8 @@ class ClampedTextLabel(QLabel):
     def full_text(self) -> str:
         return self._full_text
 
-    def setText(self, text: str) -> None:
+    def setText(self, text: str | None) -> None:
+        text = "" if text is None else text
         self._full_text = text
         self.setToolTip(text)
         self._apply_clamp()
@@ -365,8 +366,10 @@ class RightPanel(QFrame):
         }
         self.playback_state_chip.setText(titles.get(state, state.title()))
         self.playback_state_chip.setProperty("stateTone", tones.get(state, "default"))
-        self.playback_state_chip.style().unpolish(self.playback_state_chip)
-        self.playback_state_chip.style().polish(self.playback_state_chip)
+        chip_style = self.playback_state_chip.style()
+        assert chip_style is not None  # a constructed widget always has a style
+        chip_style.unpolish(self.playback_state_chip)
+        chip_style.polish(self.playback_state_chip)
 
         show_detail = state in ("reconnecting", "error", "buffering")
         self.playback_detail_label.setVisible(show_detail)

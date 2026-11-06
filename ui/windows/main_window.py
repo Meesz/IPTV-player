@@ -590,10 +590,10 @@ class MainWindow(QMainWindow):
         else:
             epg_widget.set_current_program(program)
             epg_widget.set_upcoming_programs(upcoming)
+        current_playlist = self.playlist_controller.get_current_playlist()
         playlist_label = (
-            self.playlist_controller.get_current_playlist().source_reference.display_label()
-            if self.playlist_controller.get_current_playlist()
-            and self.playlist_controller.get_current_playlist().source_reference
+            current_playlist.source_reference.display_label()
+            if current_playlist and current_playlist.source_reference
             else ""
         )
         self.right_panel.set_now_playing(self._current_channel, program, playlist_label)
@@ -638,7 +638,9 @@ class MainWindow(QMainWindow):
         if not url:
             self.show_notification("No stream URL available", NotificationType.WARNING)
             return
-        QApplication.clipboard().setText(url)
+        clipboard = QApplication.clipboard()
+        assert clipboard is not None  # a running QApplication always has a clipboard
+        clipboard.setText(url)
         self.show_notification("Stream URL copied", NotificationType.SUCCESS, duration=1500)
 
     def _on_toggle_fullscreen(self) -> None:
@@ -831,8 +833,10 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _set_status_chip(label: QLabel, text: str, tone: str) -> None:
         label.setProperty("stateTone", tone)
-        label.style().unpolish(label)
-        label.style().polish(label)
+        style = label.style()
+        assert style is not None  # a constructed widget always has a style
+        style.unpolish(label)
+        style.polish(label)
         # Measure the chip chrome (padding, border, margin) from the polished style so the
         # ellipsis is computed for the real text width and never clipped.
         label.setText(text)

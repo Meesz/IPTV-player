@@ -55,7 +55,7 @@ Run from repo root.
 | Lint | `ruff check .` | Matches `.github/workflows/lint.yml`. |
 | Format | `ruff format .` | Config lives in `pyproject.toml` (line-length 120, target py312). |
 | Check formatting | `ruff format --check .` | Useful in CI or before committing. |
-| Type check | `mypy app core infra ui` | Blocking error-count ratchet in CI: fails if the error count exceeds the maximum recorded in `.github/workflows/lint.yml` (`MYPY_MAX_ERRORS`). |
+| Type check | `mypy app core infra ui` | Blocking error-count ratchet in CI: fails if the error count exceeds the maximum recorded in `.github/workflows/lint.yml` (`MYPY_MAX_ERRORS`, currently 0). |
 | Install git hooks | `pre-commit install` | Runs ruff (lint + format) and hygiene hooks on commit. |
 | Syntax check | `python -m compileall app core infra ui tests` | Useful when Qt runtime is unavailable. |
 
@@ -98,7 +98,7 @@ Current tests cover:
 - theme tokens (painter-safe colors), channel row painting, and main-window/dialog layout invariants such as no clipping or overlap, elision, and empty-state actions (`tests/test_ui_theme.py`, `tests/test_ui_layout.py`)
 - startup and VLC-unavailable dialog behavior
 
-CI runs lint and tests on pull requests and on pushes to `main` (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy`; the mypy step is a blocking error-count ratchet that fails when the count exceeds `MYPY_MAX_ERRORS` (lower it as errors are fixed, never raise it).
+CI runs lint and tests on pull requests and on pushes to `main` (`.github/workflows/lint.yml` and `.github/workflows/tests.yml`). The lint workflow runs `ruff check`, `ruff format --check`, and `mypy`; the mypy step is a blocking error-count ratchet that fails when the count exceeds `MYPY_MAX_ERRORS` (currently 0, so any new mypy error fails CI; never raise it).
 
 ## Debugging Tips
 

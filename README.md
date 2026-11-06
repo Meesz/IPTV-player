@@ -134,7 +134,7 @@ Run from the repository root:
 | Lint | `ruff check .` |
 | Check formatting | `ruff format --check .` |
 | Format | `ruff format .` |
-| Type check (CI blocks if the error count rises) | `mypy app core infra ui` |
+| Type check (CI blocks on any mypy error) | `mypy app core infra ui` |
 | Install git hooks | `pre-commit install` |
 
 CI runs on pull requests and pushes to `main`: ruff check, ruff format check, pytest (Python 3.12 and 3.14), and the mypy error-count ratchet.

@@ -57,7 +57,7 @@ class M3UParser:
 
             if value.startswith("#EXTINF"):
                 match = _EXTINF_RE.match(value)
-                attrs_blob, raw_name = M3UParser._split_extinf_tail(match.group("rest")) if match else (None, None)
+                attrs_blob, raw_name = M3UParser._split_extinf_tail(match.group("rest")) if match else ("", None)
                 if not match or raw_name is None:
                     parse_warnings.append(
                         ParseWarning(
@@ -158,7 +158,7 @@ class M3UParser:
         raise ParsingError(f"Could not decode playlist with supported encodings: {source}")
 
     @staticmethod
-    def _split_extinf_tail(rest: str) -> tuple[str | None, str | None]:
+    def _split_extinf_tail(rest: str) -> tuple[str, str | None]:
         """Split the EXTINF tail into ``(attributes, title)``.
 
         The title is separated from the attribute block by the first comma that

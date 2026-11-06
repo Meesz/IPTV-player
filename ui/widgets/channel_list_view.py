@@ -2,8 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt6.QtCore import (
+    QAbstractListModel,
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QAbstractItemView, QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from core.models import Channel, Program
@@ -176,10 +188,11 @@ class ChannelRowDelegate(QStyledItemDelegate):
 
     def paint(  # noqa: PLR0915  (custom delegate painting)
         self,
-        painter: QPainter,
+        painter: QPainter | None,
         option: QStyleOptionViewItem,
         index: QModelIndex,
     ) -> None:
+        assert painter is not None  # Qt always supplies a painter
         painter.save()
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -274,7 +287,7 @@ class ChannelRowDelegate(QStyledItemDelegate):
         finally:
             painter.restore()
 
-    def _paint_logo(self, painter: QPainter, logo_rect: QRect, pixmap: object) -> None:
+    def _paint_logo(self, painter: QPainter, logo_rect: QRect, pixmap: QPixmap | None) -> None:
         logo_bg = QPainterPath()
         logo_bg.addRoundedRect(QRectF(logo_rect), 8, 8)
         painter.fillPath(logo_bg, self._color("raised"))
@@ -364,7 +377,9 @@ class ChannelListView(QListView):
         logo_provider.logo_loaded.connect(self._on_logo_loaded)
         self.clicked.connect(self._emit_channel_clicked)
         self.doubleClicked.connect(self._emit_channel_activated)
-        self.verticalScrollBar().valueChanged.connect(self._schedule_visible_channels_changed)
+        scroll_bar = self.verticalScrollBar()
+        assert scroll_bar is not None  # QAbstractScrollArea always creates its scroll bars
+        scroll_bar.valueChanged.connect(self._schedule_visible_channels_changed)
         self.installEventFilter(self)
 
     @property
@@ -390,7 +405,9 @@ class ChannelListView(QListView):
 
     def set_theme_mode(self, mode: str) -> None:
         self._delegate.set_theme_mode(mode)
-        self.viewport().update()
+        viewport = self.viewport()
+        assert viewport is not None  # item views always have a viewport
+        viewport.update()
 
     def set_channels(
         self,
@@ -432,14 +449,16 @@ class ChannelListView(QListView):
         if row_count == 0:
             return []
 
+        viewport = self.viewport()
+        assert viewport is not None  # item views always have a viewport
         top_index = self.indexAt(QPoint(8, 8))
-        bottom_index = self.indexAt(QPoint(8, max(8, self.viewport().height() - 8)))
+        bottom_index = self.indexAt(QPoint(8, max(8, viewport.height() - 8)))
 
         start_row = top_index.row() if top_index.isValid() else 0
         if bottom_index.isValid():
             end_row = bottom_index.row()
         else:
-            estimated = max(1, self.viewport().height() // ChannelRowDelegate.ROW_HEIGHT + 1)
+            estimated = max(1, viewport.height() // ChannelRowDelegate.ROW_HEIGHT + 1)
             end_row = min(row_count - 1, start_row + estimated)
 
         return [
@@ -451,7 +470,8 @@ class ChannelListView(QListView):
     def cancel_pending_updates(self) -> None:
         self._visible_channels_timer.stop()
 
-    def eventFilter(self, watched: object, event: QEvent) -> bool:
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:
+        assert event is not None  # Qt always supplies an event
         if watched is self and event.type() in {
             QEvent.Type.Show,
             QEvent.Type.Resize,

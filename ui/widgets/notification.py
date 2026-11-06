@@ -63,8 +63,10 @@ class NotificationWidget(QLabel):
         duration: int,
     ) -> None:
         self.setProperty("stateTone", _TONE_MAP[notification_type])
-        self.style().unpolish(self)
-        self.style().polish(self)
+        style = self.style()
+        assert style is not None  # a constructed widget always has a style
+        style.unpolish(self)
+        style.polish(self)
 
         self.setText(message)
         max_w = max(240, self._available_rect().width() - 48)
@@ -99,7 +101,8 @@ class NotificationWidget(QLabel):
             anchor.installEventFilter(self)
 
     def _available_rect(self) -> QRect:
-        parent = self.parent()
+        # A widget's parent is always a QWidget, so parentWidget() is the same object as parent().
+        parent = self.parentWidget()
         if parent is None:
             return QRect(0, 0, 600, 400)
         if self._anchor is not None and self._anchor.isVisible():
