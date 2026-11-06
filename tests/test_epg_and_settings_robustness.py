@@ -5,6 +5,9 @@
    with the now-playing view after a restart (DB-cache path).
 2. A second guide load must replace the SQLite guide cache, and a load cancelled
    after parsing must leave the previous cache intact.
+3. Entity-expansion bombs and external entities must be rejected (expat's own
+   amplification limits; no defusedxml), and parsing must refuse an expat older
+   than 2.4.1, which lacks those limits.
 """
 
 import re
@@ -104,6 +107,53 @@ def test_load_epg_malformed_xml_raises_parsing_error(tmp_path):
         _epg_service(tmp_path).load_epg_from_path(str(xml_path))
 
     assert re.search(r"line \d+, column \d+", str(exc_info.value.__cause__))
+
+
+def _guide_with_dtd(dtd: str, title_entity: str) -> str:
+    return (
+        f'<?xml version="1.0"?><!DOCTYPE tv [{dtd}]><tv><channel id="c"/>'
+        '<programme start="20260401100000 +0000" stop="20260401110000 +0000" channel="c">'
+        f"<title>&{title_entity};</title></programme></tv>"
+    )
+
+
+_BILLION_LAUGHS = _guide_with_dtd(
+    '<!ENTITY l0 "lollollollollollollollollollol">'
+    + "".join(f'<!ENTITY l{i} "{f"&l{i - 1};" * 10}">' for i in range(1, 10)),
+    "l9",
+)
+_QUADRATIC_BLOWUP = _guide_with_dtd(f'<!ENTITY a "{"A" * 100_000}">', "a" + ";&a" * 3000)
+_EXTERNAL_ENTITY = _guide_with_dtd('<!ENTITY x SYSTEM "file:///etc/hostname">', "x")
+
+
+@pytest.mark.parametrize(
+    ("payload", "reason"),
+    [
+        (_BILLION_LAUGHS, "amplification"),
+        (_QUADRATIC_BLOWUP, "amplification"),
+        (_EXTERNAL_ENTITY, "undefined entity"),
+    ],
+    ids=["billion-laughs", "quadratic-blowup", "external-entity"],
+)
+def test_load_epg_rejects_entity_attacks(tmp_path, payload, reason):
+    xml_path = tmp_path / "attack.xml"
+    xml_path.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ParsingError) as exc_info:
+        _epg_service(tmp_path).load_epg_from_path(str(xml_path))
+
+    assert reason in str(exc_info.value.__cause__)
+
+
+def test_epg_parse_refuses_expat_without_amplification_limits(tmp_path, monkeypatch):
+    from infra.parsers import epg_parser
+
+    monkeypatch.setattr(epg_parser.expat, "version_info", (2, 4, 0))
+    xml_path = tmp_path / "guide.xml"
+    _write_guide(xml_path, "c", "Safe")
+
+    with pytest.raises(ValueError, match=r"expat 2\.4\.1 or newer"):
+        epg_parser.EPGParser.parse(str(xml_path))
 
 
 def _write_guide(path, channel_id: str, title: str):

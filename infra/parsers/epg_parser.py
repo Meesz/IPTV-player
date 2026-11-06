@@ -7,11 +7,17 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
+from xml.parsers import expat
 
 from core import limits
 from core.models import EPGChannel, ParseWarning, Program
 
 logger = logging.getLogger(__name__)
+
+# expat 2.4.1 added the input-amplification limits that reject entity-expansion bombs
+# (billion laughs, quadratic blowup); ElementTree never fetches external entities. Those
+# two together are why the EPG parser does not need defusedxml, so refuse older expat.
+_MIN_EXPAT_VERSION = (2, 4, 1)
 
 
 class _LimitedReader:
@@ -189,6 +195,12 @@ class EPGParser:
         XML is only detected when the stream reaches it, so yielded data is provisional
         until the generator is exhausted.
         """
+        if expat.version_info < _MIN_EXPAT_VERSION:
+            found = ".".join(map(str, expat.version_info))
+            raise ValueError(
+                f"EPG parsing requires expat 2.4.1 or newer (found {found}); "
+                "older expat cannot reject XML entity-expansion attacks"
+            )
         with open(file_path, "rb") as stream:
             signature = stream.read(2)
 
