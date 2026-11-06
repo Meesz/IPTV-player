@@ -2,7 +2,7 @@ certifi==2026.10.19
 charset-normalizer==3.5.2
 idna==3.20
 PyQt6==6.11.0
-PyQt6-Qt6==6.11.2
+PyQt6-Qt6==6.12.0
 PyQt6_sip==13.13.0
 python-vlc==3.0.21203
 requests==2.34.2
