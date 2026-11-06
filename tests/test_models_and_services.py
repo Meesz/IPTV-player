@@ -85,6 +85,14 @@ def test_settings_round_trip():
     assert updated.left_panel_visible is False
 
 
+def test_settings_with_updates_ignores_unknown_keys_and_coerces_epg_identity():
+    settings = Settings.defaults()
+    updated = settings.with_updates(not_a_setting="x", defaults="y", last_epg_xtream_identity=123)
+    assert updated == settings.with_updates(last_epg_xtream_identity="123")
+    assert updated.last_epg_xtream_identity == "123"
+    assert updated.theme == settings.theme
+
+
 def test_playlist_indexing():
     channels = [
         Channel(name="Alpha", url="https://example.com/a", group="News"),

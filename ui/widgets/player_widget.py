@@ -424,7 +424,9 @@ class PlayerWidget(QFrame):
 
     def _enter_fullscreen(self) -> None:
         self.normal_parent = self.parent()
-        self.normal_layout = self.parent().layout() if self.parent() else None
+        # A widget's parent is always a QWidget, so parentWidget() is the same object as parent().
+        parent_widget = self.parentWidget()
+        self.normal_layout = parent_widget.layout() if parent_widget else None
         # QLayout defines __len__, so an empty layout is falsy; compare with None explicitly.
         if self.normal_layout is not None:
             self.normal_index = self.normal_layout.indexOf(self)
@@ -446,7 +448,9 @@ class PlayerWidget(QFrame):
         if not self.is_fullscreen:
             return
         if self.fullscreen_window is not None:
-            self.fullscreen_window.layout().removeWidget(self)
+            fullscreen_layout = self.fullscreen_window.layout()
+            assert fullscreen_layout is not None  # set_player_widget installed the layout
+            fullscreen_layout.removeWidget(self)
             self.fullscreen_window.hide()
         self.setParent(self.normal_parent)
         # The layout is empty here (we removed ourselves), so a truthiness check would skip re-inserting.

@@ -92,7 +92,9 @@ class PlaylistManagerDialog(QDialog):
         opt = QStyleOption()
         opt.initFrom(self)
         painter = QPainter(self)
-        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
+        style = self.style()
+        assert style is not None  # a constructed widget always has a style
+        style.drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
 
     def _init_ui(self) -> None:  # noqa: PLR0915  (Qt UI builder; pre-existing size)
         root_layout = QVBoxLayout(self)
@@ -437,6 +439,7 @@ class PlaylistManagerDialog(QDialog):
         playlists: list[PlaylistReference] = []
         for index in range(self.playlist_list.count()):
             item = self.playlist_list.item(index)
+            assert item is not None  # index is within count()
             data = item.data(Qt.ItemDataRole.UserRole)
             if not isinstance(data, PlaylistReference):
                 continue
@@ -465,6 +468,7 @@ class PlaylistManagerDialog(QDialog):
         self._active_playlist_path = path
         for index in range(self.playlist_list.count()):
             item = self.playlist_list.item(index)
+            assert item is not None  # index is within count()
             data = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(data, PlaylistReference):
                 item.setText(self._item_title(data))
@@ -497,6 +501,7 @@ class PlaylistManagerDialog(QDialog):
     ) -> bool:
         for index in range(self.playlist_list.count()):
             item = self.playlist_list.item(index)
+            assert item is not None  # index is within count()
             if item is ignore_item:
                 continue
             data = item.data(Qt.ItemDataRole.UserRole)
@@ -647,8 +652,10 @@ class PlaylistManagerDialog(QDialog):
     def _set_feedback(self, tone: str, message: str) -> None:
         self.feedback_label.setText(message)
         self.feedback_label.setProperty("stateTone", tone)
-        self.feedback_label.style().unpolish(self.feedback_label)
-        self.feedback_label.style().polish(self.feedback_label)
+        style = self.feedback_label.style()
+        assert style is not None  # a constructed widget always has a style
+        style.unpolish(self.feedback_label)
+        style.polish(self.feedback_label)
 
     def _set_details(self, playlist: PlaylistReference | None) -> None:
         self.details_placeholder.setVisible(playlist is None)

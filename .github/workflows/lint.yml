@@ -29,7 +29,7 @@ jobs:
         # Blocking: fails if the mypy error count exceeds the recorded maximum, or if
         # mypy crashes (exit >= 2) or prints no parseable summary.
         env:
-          MYPY_MAX_ERRORS: "75" # lower this when errors are fixed; never raise it
+          MYPY_MAX_ERRORS: "0" # lower this when errors are fixed; never raise it
         run: |
           set +e
           mypy app core infra ui | tee mypy.out

@@ -32,7 +32,9 @@ class XtreamSourceDialog(QDialog):
         opt = QStyleOption()
         opt.initFrom(self)
         painter = QPainter(self)
-        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
+        style = self.style()
+        assert style is not None  # a constructed widget always has a style
+        style.drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
 
     def _init_ui(self) -> None:
         self.setWindowTitle("Xtream Codes Source")
@@ -93,6 +95,7 @@ class XtreamSourceDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         save_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
         cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        assert save_button is not None and cancel_button is not None  # both standard buttons were requested
         save_button.setText("Save Source")
         save_button.setProperty("accent", True)
         cancel_button.setProperty("ghost", True)

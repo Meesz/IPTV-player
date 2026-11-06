@@ -1,7 +1,8 @@
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
 
 
@@ -199,31 +200,12 @@ class Settings:
         return cls()
 
     def with_updates(self, **kwargs: object) -> "Settings":
-        return type(self)(
-            theme=kwargs.get("theme", self.theme),
-            volume=kwargs.get("volume", self.volume),
-            is_muted=kwargs.get("is_muted", self.is_muted),
-            last_playlist_path=kwargs.get("last_playlist_path", self.last_playlist_path),
-            last_playlist_source_type=kwargs.get("last_playlist_source_type", self.last_playlist_source_type),
-            last_playlist_identity=kwargs.get("last_playlist_identity", self.last_playlist_identity),
-            last_channel_url=kwargs.get("last_channel_url", self.last_channel_url),
-            last_channel_group=kwargs.get("last_channel_group", self.last_channel_group),
-            last_epg_path=kwargs.get("last_epg_path", self.last_epg_path),
-            last_epg_url=kwargs.get("last_epg_url", self.last_epg_url),
-            last_epg_loaded_at=kwargs.get("last_epg_loaded_at", self.last_epg_loaded_at),
-            last_epg_xtream_identity=str(kwargs.get("last_epg_xtream_identity", self.last_epg_xtream_identity)),
-            window_width=kwargs.get("window_width", self.window_width),
-            window_height=kwargs.get("window_height", self.window_height),
-            play_on_single_click=kwargs.get("play_on_single_click", self.play_on_single_click),
-            show_now_playing_in_list=kwargs.get("show_now_playing_in_list", self.show_now_playing_in_list),
-            search_current_category_only=kwargs.get("search_current_category_only", self.search_current_category_only),
-            channel_sort_mode=kwargs.get("channel_sort_mode", self.channel_sort_mode),
-            splitter_sizes=kwargs.get("splitter_sizes", self.splitter_sizes),
-            active_tab_index=kwargs.get("active_tab_index", self.active_tab_index),
-            selected_category=kwargs.get("selected_category", self.selected_category),
-            search_text=kwargs.get("search_text", self.search_text),
-            left_panel_visible=kwargs.get("left_panel_visible", self.left_panel_visible),
-        )
+        # Unknown keys are ignored (not a TypeError), as before.
+        field_names = {f.name for f in fields(self)}
+        known: dict[str, Any] = {key: value for key, value in kwargs.items() if key in field_names}
+        if "last_epg_xtream_identity" in known:
+            known["last_epg_xtream_identity"] = str(known["last_epg_xtream_identity"])
+        return replace(self, **known)
 
 
 @dataclass

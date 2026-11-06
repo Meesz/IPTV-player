@@ -76,6 +76,7 @@ class ChannelLogoProvider(QWidget):
                 request = QNetworkRequest(QUrl(source))
                 request.setTransferTimeout(_LOGO_TRANSFER_TIMEOUT_MS)
                 reply = self._manager.get(request)
+                assert reply is not None  # QNetworkAccessManager.get always returns a reply
                 self._inflight[reply] = source
             fallback = self._fallback_logo(fallback_text, self._theme_mode)
             self._cache_put(source, fallback)
@@ -216,6 +217,7 @@ class LeftPanel(QFrame):
 
         self.tabs = QTabWidget()
         tab_bar = self.tabs.tabBar()
+        assert tab_bar is not None  # QTabWidget always creates its tab bar
         tab_bar.setExpanding(True)
         tab_bar.setUsesScrollButtons(False)
         tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
